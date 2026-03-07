@@ -3672,6 +3672,241 @@ const demoF13 = document.getElementById("demo13")!;
 }
 
 // ══════════════════════════════════════════════════════════════
+//  FASE 15: Forms
+//  Tests → #tests15 | Summary → #summary15 | Demo → #demo15
+// ══════════════════════════════════════════════════════════════
+import {
+  useField, createForm,
+  required, minLength, maxLength, email, min, max,
+} from "./nix";
+import type { FieldState } from "./nix";
+
+{
+  const testsEl   = document.getElementById("tests15")!;
+  const summaryEl = document.getElementById("summary15")!;
+  let pass = 0, fail = 0;
+
+  function assert15(condition: boolean, label: string) {
+    const row = document.createElement("div");
+    row.className = `test-line ${condition ? "pass" : "fail"}`;
+    row.textContent = `${condition ? "✅" : "❌"} ${label}`;
+    testsEl.appendChild(row);
+    if (condition) pass++; else { fail++; console.error("❌ F15:", label); }
+  }
+
+  // Helper: simulate typing into a field
+  function type(field: FieldState<unknown>, value: string, inputType = "text") {
+    const el = Object.assign(document.createElement("input"), { value, type: inputType });
+    field.onInput({ target: el } as unknown as Event);
+  }
+  function blur(field: FieldState<unknown>) { field.onBlur(); }
+  // ── useField ─────────────────────────────────────────────────────────────
+  const f1 = useField("hello");
+  assert15(f1.value.value === "hello",         "useField — initial value");
+  assert15(!f1.touched.value,                  "useField — not touched initially");
+  assert15(!f1.dirty.value,                    "useField — not dirty initially");
+  assert15(f1.error.value === null,            "useField — no error before interaction");
+
+  const f2 = useField("", [required()]);
+  blur(f2);
+  assert15(f2.error.value === "Required",      "useField — error shows after blur");
+
+  type(f2, "hello");
+  assert15(f2.error.value === null,            "useField — error clears when valid value entered");
+  assert15(f2.dirty.value,                     "useField — dirty after input");
+
+  f2.reset();
+  assert15(f2.value.value === "",              "useField — reset restores initial value");
+  assert15(!f2.touched.value,                  "useField — reset clears touched");
+  assert15(f2.error.value === null,            "useField — error hidden after reset");
+
+  // ── Built-in validators ──────────────────────────────────────────────────
+  const fMin = useField("", [minLength(3)]);
+  blur(fMin); type(fMin, "ab");
+  assert15(fMin.error.value !== null,          "minLength — fails when too short");
+  type(fMin, "abc");
+  assert15(fMin.error.value === null,          "minLength — passes at exact length");
+
+  const fMax = useField("", [maxLength(3)]);
+  blur(fMax); type(fMax, "abcd");
+  assert15(fMax.error.value !== null,          "maxLength — fails when too long");
+
+  const fEmail = useField("", [email()]);
+  blur(fEmail); type(fEmail, "notanemail");
+  assert15(fEmail.error.value !== null,        "email — fails for invalid email");
+  type(fEmail, "test@example.com");
+  assert15(fEmail.error.value === null,        "email — passes for valid email");
+
+  const fNum = useField<number>(0, [min(18), max(120)]);
+  blur(fNum);
+  fNum.value.value = 10;
+  assert15(fNum.error.value !== null,          "min — fails below minimum");
+  fNum.value.value = 18;
+  fNum.dirty.value = true;
+  assert15(fNum.error.value === null,          "min — passes at minimum");
+  fNum.value.value = 200;
+  assert15(fNum.error.value !== null,          "max — fails above maximum");
+
+  // ── External error injection (_setExternalError) ─────────────────────────
+  const fExt = useField("ok");
+  fExt._setExternalError("Server error");
+  assert15(fExt.error.value === "Server error", "_setExternalError — injects external error");
+  assert15(fExt.touched.value,                  "_setExternalError — marks field as touched");
+  type(fExt, "new value");
+  assert15(fExt.error.value === null,           "_setExternalError — clears when user re-types");
+
+  // ── createForm ───────────────────────────────────────────────────────────
+  const form1 = createForm({ name: "", email: "" });
+  assert15("name" in form1.fields && "email" in form1.fields, "createForm — creates fields for all keys");
+
+  // handleSubmit — preventDefault
+  let prevented = false;
+  const fakeEv = { preventDefault: () => { prevented = true; } } as unknown as Event;
+  form1.handleSubmit(() => {})(fakeEv);
+  assert15(prevented, "handleSubmit — calls preventDefault");
+
+  // handleSubmit — calls fn when no validators + fields untouched
+  let called = false;
+  const form2 = createForm({ x: "hello" });
+  form2.handleSubmit(() => { called = true; })(fakeEv);
+  assert15(called, "handleSubmit — calls fn when form has no validators");
+
+  // handleSubmit — does NOT call fn when validators fail
+  let called3 = false;
+  const form3 = createForm({ name: "" }, { validators: { name: [required()] } });
+  form3.handleSubmit(() => { called3 = true; })(fakeEv);
+  assert15(!called3, "handleSubmit — does NOT call fn when built-in validators fail");
+  assert15(form3.fields.name.error.value !== null, "handleSubmit — touches all fields showing errors");
+
+  // handleSubmit — external validate (Zod-style)
+  let called4 = false;
+  const form4 = createForm(
+    { name: "valid name" },
+    { validate: () => ({ name: "Server says no" }) }
+  );
+  form4.handleSubmit(() => { called4 = true; })(fakeEv);
+  assert15(!called4, "handleSubmit — does NOT call fn when schema validate returns errors");
+  assert15(form4.fields.name.error.value === "Server says no", "handleSubmit — injects schema errors into fields");
+
+  // setErrors
+  const form5 = createForm({ email: "" });
+  form5.setErrors({ email: "Email taken" });
+  assert15(form5.fields.email.error.value === "Email taken", "setErrors — injects external error into field");
+  type(form5.fields.email, "new@email.com");
+  assert15(form5.fields.email.error.value === null, "setErrors — clears when user re-types");
+
+  // values computed
+  const form6 = createForm({ a: "x", b: "y" });
+  form6.fields.a.value.value = "changed";
+  assert15(form6.values.value.a === "changed", "values — reactive snapshot updates");
+
+  // dirty signal
+  const form7 = createForm({ x: "" });
+  assert15(!form7.dirty.value, "dirty — false initially");
+  type(form7.fields.x, "abc");
+  assert15(form7.dirty.value, "dirty — true after input");
+
+  // reset
+  form7.reset();
+  assert15(!form7.dirty.value,        "reset — dirty cleared");
+  assert15(form7.fields.x.value.value === "", "reset — value restored");
+
+  // ── Summary ───────────────────────────────────────────────────────────────
+  summaryEl.textContent = `${pass} passed, ${fail} failed`;
+  summaryEl.className   = fail === 0 ? "pass" : "fail";
+
+  // ── Demo — Registration form ──────────────────────────────────────────────
+  const demoEl = document.getElementById("demo15")!;
+
+  const regForm = createForm(
+    { name: "", email: "", age: 18, password: "", confirm: "" },
+    {
+      validators: {
+        name:     [required(), minLength(3), maxLength(30)],
+        email:    [required(), email()],
+        age:      [required(), min(18, "Must be at least 18 years old"), max(120)],
+        password: [required(), minLength(8, "At least 8 characters")],
+      },
+      validate(values) {
+        if (values.confirm !== values.password) return { confirm: "Passwords do not match" };
+        return null;
+      },
+    }
+  );
+
+  const submitted = signal<null | typeof regForm.values.value>(null);
+
+  // ── Field row helper ──────────────────────────────────────────────────────
+  function fieldRow(
+    label: string,
+    field: FieldState<string | number>,
+    inputType = "text"
+  ) {
+    return html`
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <label style="font-size:13px;color:#94a3b8">${label}</label>
+        <input
+          type=${inputType}
+          value=${() => String(field.value.value)}
+          @input=${field.onInput}
+          @blur=${field.onBlur}
+          style=${() => `
+            padding:8px 10px;border-radius:6px;font-size:14px;
+            background:#1e293b;color:#e2e8f0;
+            border:1px solid ${field.error.value ? "#ef4444" : field.dirty.value ? "#22c55e" : "#334155"};
+            outline:none;width:100%;box-sizing:border-box
+          `}
+        />
+        ${() => field.error.value
+          ? html`<p style="margin:0;font-size:12px;color:#f87171">${field.error.value}</p>`
+          : null}
+      </div>
+    `;
+  }
+
+  mount(html`
+    <div style="max-width:420px">
+      ${() => submitted.value
+        ? html`
+            <div style="padding:18px;border-radius:8px;background:#14532d;border:1px solid #22c55e;color:#bbf7d0">
+              <strong>✅ Registered successfully!</strong>
+              <pre style="margin:10px 0 0;font-size:12px;color:#86efac">${() => JSON.stringify(submitted.value, null, 2)}</pre>
+            </div>
+          `
+        : html`
+            <form @submit=${regForm.handleSubmit((v) => { submitted.value = v; })}
+                  style="display:flex;flex-direction:column;gap:14px">
+
+              ${fieldRow("Full name", regForm.fields.name)}
+              ${fieldRow("Email", regForm.fields.email, "email")}
+              ${fieldRow("Age", regForm.fields.age as FieldState<string | number>, "number")}
+              ${fieldRow("Password", regForm.fields.password, "password")}
+              ${fieldRow("Confirm password", regForm.fields.confirm as FieldState<string | number>, "password")}
+
+              <div style="display:flex;gap:10px;align-items:center">
+                <button
+                  type="submit"
+                  style="padding:9px 20px;font-size:14px;border-radius:6px;
+                         background:#3b82f6;color:#fff;border:none;cursor:pointer"
+                >Register</button>
+                <button
+                  type="button"
+                  @click=${() => { regForm.reset(); submitted.value = null; }}
+                  style="padding:9px 20px;font-size:14px;border-radius:6px;
+                         background:#1e293b;color:#94a3b8;border:1px solid #334155;cursor:pointer"
+                >Reset</button>
+              </div>
+
+              <p style="font-size:12px;color:#475569;margin:0">
+                Try submitting empty — errors appear. Then fill valid data and submit again.
+              </p>
+            </form>
+          `}
+    </div>
+  `, demoEl);
+}
+
+// ══════════════════════════════════════════════════════════════
 //  FASE 14: Children & Slots
 //  Tests → #tests14 | Summary → #summary14 | Demo → #demo14
 // ══════════════════════════════════════════════════════════════

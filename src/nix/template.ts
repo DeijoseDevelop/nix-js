@@ -372,10 +372,16 @@ function activateBindings(
                 continue;
             }
 
+            // Properties like `value` and `checked` must be set as DOM properties
+            // (not HTML attributes) so reactive bindings update the live input state.
+            const isDomProp = (attrName === "value" || attrName === "checked" || attrName === "selected") && attrName in el;
+
             if (typeof value === "function") {
                 const dispose = effect(() => {
                     const v = (value as () => unknown)();
-                    if (v == null || v === false) {
+                    if (isDomProp) {
+                        (el as unknown as Record<string, unknown>)[attrName] = v ?? "";
+                    } else if (v == null || v === false) {
                         el.removeAttribute(attrName);
                     } else {
                         el.setAttribute(attrName, String(v));
@@ -384,7 +390,9 @@ function activateBindings(
                 disposes.push(dispose);
             } else {
                 // Valor estático
-                if (value != null && value !== false) {
+                if (isDomProp) {
+                    (el as unknown as Record<string, unknown>)[attrName] = value ?? "";
+                } else if (value != null && value !== false) {
                     el.setAttribute(attrName, String(value));
                 }
             }
