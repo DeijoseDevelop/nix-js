@@ -3670,3 +3670,168 @@ const demoF13 = document.getElementById("demo13")!;
 
   mount(new ThemeProvider(), demoF13);
 }
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 14: Children & Slots
+//  Tests → #tests14 | Summary → #summary14 | Demo → #demo14
+// ══════════════════════════════════════════════════════════════
+import type { NixChildren } from "./nix";
+
+{
+  const testsEl  = document.getElementById("tests14")!;
+  const summaryEl = document.getElementById("summary14")!;
+  let pass = 0, fail = 0;
+
+  function assert14(condition: boolean, label: string) {
+    const row = document.createElement("div");
+    row.className = `test-line ${condition ? "pass" : "fail"}`;
+    row.textContent = `${condition ? "✅" : "❌"} ${label}`;
+    testsEl.appendChild(row);
+    if (condition) pass++; else { fail++; console.error("❌ F14:", label); }
+  }
+
+  // ── TEST 1: children en class component ──────────────────────────────────
+  class Box extends NixComponent {
+    override render() {
+      return html`<div class="box">${this.children}</div>`;
+    }
+  }
+
+  const div14a = document.createElement("div");
+  new Box().setChildren(html`<span id="child14a">hola</span>`).render().mount(div14a);
+  assert14(!!div14a.querySelector("#child14a"), "class component — children default slot se renderiza");
+
+  // ── TEST 2: named slots ───────────────────────────────────────────────────
+  class TwoSlot extends NixComponent {
+    override render() {
+      return html`
+        <div>
+          <header>${this.slot("header")}</header>
+          <main>${this.children}</main>
+          <footer>${this.slot("footer")}</footer>
+        </div>
+      `;
+    }
+  }
+
+  const div14b = document.createElement("div");
+  new TwoSlot()
+    .setSlot("header", html`<h1 id="slot-header">Cabecera</h1>`)
+    .setChildren(html`<p id="slot-body">Cuerpo</p>`)
+    .setSlot("footer", html`<small id="slot-footer">Pie</small>`)
+    .render()
+    .mount(div14b);
+
+  assert14(!!div14b.querySelector("#slot-header"), "named slot 'header' se renderiza");
+  assert14(!!div14b.querySelector("#slot-body"),   "children (default slot) se renderiza junto a named slots");
+  assert14(!!div14b.querySelector("#slot-footer"), "named slot 'footer' se renderiza");
+
+  // ── TEST 3: children en función componente ────────────────────────────────
+  function FnCard({ children }: { children?: NixChildren }) {
+    return html`<article class="fn-card">${children}</article>`;
+  }
+
+  const div14c = document.createElement("div");
+  FnCard({ children: html`<span id="fn-child">fn children</span>` }).mount(div14c);
+  assert14(!!div14c.querySelector("#fn-child"), "function component — children como prop funciona");
+
+  // ── TEST 4: children puede ser un NixComponent ────────────────────────────
+  class Inner extends NixComponent {
+    override render() { return html`<b id="inner-comp">inner</b>`; }
+  }
+
+  const div14d = document.createElement("div");
+  new Box().setChildren(new Inner()).render().mount(div14d);
+  assert14(!!div14d.querySelector("#inner-comp"), "children puede ser un NixComponent");
+
+  // ── TEST 5: slot vacío no rompe ──────────────────────────────────────────
+  const div14e = document.createElement("div");
+  let threw = false;
+  try {
+    new TwoSlot().render().mount(div14e); // sin setSlot ni setChildren
+  } catch { threw = true; }
+  assert14(!threw, "slot vacío (undefined) no lanza error");
+
+  // ── TEST 6: setChildren es fluido (retorna this) ──────────────────────────
+  const box = new Box();
+  assert14(box.setChildren(html`<span>x</span>`) === box, "setChildren() retorna this (fluent API)");
+
+  // ── TEST 7: setSlot es fluido ─────────────────────────────────────────────
+  const ts = new TwoSlot();
+  assert14(ts.setSlot("header", html`<h1>h</h1>`) === ts, "setSlot() retorna this (fluent API)");
+
+  // ── TEST 8: children array ────────────────────────────────────────────────
+  const div14f = document.createElement("div");
+  new Box().setChildren([
+    html`<span id="arr-a">A</span>`,
+    html`<span id="arr-b">B</span>`,
+  ]).render().mount(div14f);
+  assert14(!!div14f.querySelector("#arr-a") && !!div14f.querySelector("#arr-b"),
+    "children acepta array de templates");
+
+  // ── TEST 9: children con señales reactivas ────────────────────────────────
+  const reactive14 = signal("v1");
+  const div14g = document.createElement("div");
+  new Box().setChildren(html`<span id="react-child">${() => reactive14.value}</span>`).render().mount(div14g);
+  assert14(div14g.querySelector("#react-child")?.textContent === "v1", "children reactivos muestran valor inicial");
+  reactive14.value = "v2";
+  assert14(div14g.querySelector("#react-child")?.textContent === "v2", "children reactivos actualizan al cambiar señal");
+
+  // ── Summary ───────────────────────────────────────────────────────────────
+  summaryEl.textContent = `${pass} passed, ${fail} failed`;
+  summaryEl.className   = fail === 0 ? "pass" : "fail";
+
+  // ── Demo ──────────────────────────────────────────────────────────────────
+  const demoEl = document.getElementById("demo14")!;
+
+  class DemoCard extends NixComponent {
+    override render() {
+      return html`
+        <div style="border:1px solid #334155;border-radius:8px;overflow:hidden;max-width:360px">
+          <div style="background:#1e293b;padding:12px 16px;font-weight:600;color:#e2e8f0">
+            ${this.slot("header") ?? html`<span style="color:#64748b">(sin header)</span>`}
+          </div>
+          <div style="padding:14px 16px;color:#cbd5e1">
+            ${this.children ?? html`<span style="color:#64748b">(sin children)</span>`}
+          </div>
+          <div style="background:#0f172a;padding:8px 16px;font-size:12px;color:#475569">
+            ${this.slot("footer") ?? html`<span>(sin footer)</span>`}
+          </div>
+        </div>
+      `;
+    }
+  }
+
+  const activeTab = signal(0);
+
+  const tabs = [
+    { label: "Solo children" },
+    { label: "Header + children" },
+    { label: "Todo" },
+  ];
+
+  function renderDemo() {
+    const idx = activeTab.value;
+    const card = new DemoCard();
+    if (idx >= 1) card.setSlot("header", html`<span>🃏 Título del card</span>`);
+    if (idx >= 0) card.setChildren(html`<p style="margin:0">Contenido del <strong>slot default</strong>.</p>`);
+    if (idx >= 2) card.setSlot("footer", html`<span>📅 Última actualización: hoy</span>`);
+    return card;
+  }
+
+  const tabButtons = tabs.map((t, i) =>
+    html`<button
+      style=${() => `padding:5px 12px;font-size:12px;border-radius:4px;cursor:pointer;
+        background:${activeTab.value === i ? "#3b82f6" : "#1e293b"};
+        color:${activeTab.value === i ? "#fff" : "#94a3b8"};border:none`}
+      @click=${() => { activeTab.value = i; }}
+    >${t.label}</button>`
+  );
+
+  mount(html`
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="display:flex;gap:8px">${tabButtons}</div>
+      ${() => renderDemo()}
+    </div>
+  `, demoEl);
+}
