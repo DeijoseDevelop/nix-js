@@ -26,6 +26,7 @@ export {
     portalOutlet,
     provideOutlet,
     injectOutlet,
+    createErrorBoundary,
     // Components
     mount,
     NixComponent,
@@ -68,6 +69,7 @@ export type {
     KeyedList,
     NixRef,
     PortalOutlet,
+    ErrorFallback,
     // Store
     Store,
     StoreSignals,

@@ -4671,3 +4671,215 @@ import type { PortalOutlet } from "./nix";
     );
   }
 }
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 18: Error Boundaries
+//  Tests → #tests18 | Summary → #summary18 | Demo → #demo18
+// ══════════════════════════════════════════════════════════════
+import { createErrorBoundary } from "./nix";
+
+{
+  let passed18 = 0, failed18 = 0;
+  const labels18: string[] = [];
+  function assert18(cond: boolean, label: string) {
+    labels18.push(label);
+    if (cond) { passed18++; console.log(`  ✅ ${label}`); }
+    else       { failed18++; console.error(`  ❌ FAIL: ${label}`); }
+  }
+
+  console.group("Fase 18 — Error Boundaries");
+
+  // ─── Test 1: renders content when no error ────────────────────────────────
+  const host1 = document.createElement("div");
+  document.body.appendChild(host1);
+  createErrorBoundary(
+    html`<span id="eb-ok">content</span>`,
+    html`<span id="eb-fb1">fallback</span>`
+  ).mount(host1);
+  assert18(host1.querySelector("#eb-ok") !== null,  "no error → content rendered");
+  assert18(host1.querySelector("#eb-fb1") === null, "no error → fallback NOT rendered");
+  host1.remove();
+
+  // ─── Test 2: renders fallback when template throws on render ─────────────
+  const host2 = document.createElement("div");
+  document.body.appendChild(host2);
+  createErrorBoundary(
+    html`<span>${() => { throw new Error("render fail"); }}</span>`,
+    html`<span id="eb-fb2">fallback</span>`
+  ).mount(host2);
+  assert18(host2.querySelector("#eb-fb2") !== null, "render throw → fallback shown");
+  host2.remove();
+
+  // ─── Test 3: fallback receives the error ──────────────────────────────────
+  const host3 = document.createElement("div");
+  document.body.appendChild(host3);
+  const caughtErr = signal<unknown>(null);
+  createErrorBoundary(
+    html`${() => { throw new TypeError("typed error"); }}`,
+    (err) => { caughtErr.value = err; return html`<span id="eb-fb3">err</span>`; }
+  ).mount(host3);
+  assert18(caughtErr.value instanceof TypeError, "fallback fn receives the error object");
+  assert18((caughtErr.value as Error).message === "typed error", "fallback fn: correct error message");
+  host3.remove();
+
+  // ─── Test 4: NixComponent — onInit throws ─────────────────────────────────
+  class BrokenInit extends NixComponent {
+    onInit() { throw new Error("init fail"); }
+    render()  { return html`<span id="eb-broken-init">never</span>`; }
+  }
+  const host4 = document.createElement("div");
+  document.body.appendChild(host4);
+  createErrorBoundary(new BrokenInit(), html`<span id="eb-fb4">caught init</span>`).mount(host4);
+  assert18(host4.querySelector("#eb-broken-init") === null, "onInit throw → content NOT rendered");
+  assert18(host4.querySelector("#eb-fb4") !== null,         "onInit throw → fallback shown");
+  host4.remove();
+
+  // ─── Test 5: NixComponent — render() throws ──────────────────────────────
+  class BrokenRender extends NixComponent {
+    render() { throw new Error("render method fail"); return html``; }
+  }
+  const host5 = document.createElement("div");
+  document.body.appendChild(host5);
+  createErrorBoundary(new BrokenRender(), html`<span id="eb-fb5">caught render</span>`).mount(host5);
+  assert18(host5.querySelector("#eb-fb5") !== null, "render() throw → fallback shown");
+  host5.remove();
+
+  // ─── Test 6: reactive error triggers fallback ─────────────────────────────
+  const boom = signal(false);
+  const host6 = document.createElement("div");
+  document.body.appendChild(host6);
+  createErrorBoundary(
+    html`<span id="eb-reactive">${() => {
+      if (boom.value) throw new Error("reactive fail");
+      return "ok";
+    }}</span>`,
+    html`<span id="eb-fb6">reactive fallback</span>`
+  ).mount(host6);
+  assert18(host6.querySelector("#eb-reactive") !== null, "reactive: content visible before error");
+  assert18(host6.querySelector("#eb-fb6") === null,       "reactive: fallback hidden before error");
+  boom.value = true;
+  assert18(host6.querySelector("#eb-reactive") === null, "reactive throw → content removed");
+  assert18(host6.querySelector("#eb-fb6") !== null,       "reactive throw → fallback shown");
+  host6.remove();
+
+  // ─── Test 7: unmount cleans up boundary ──────────────────────────────────
+  const host7 = document.createElement("div");
+  document.body.appendChild(host7);
+  const handle7 = createErrorBoundary(
+    html`<span id="eb-unmount">unmount test</span>`,
+    html`<span>fb</span>`
+  ).mount(host7);
+  assert18(host7.querySelector("#eb-unmount") !== null, "before unmount: content present");
+  handle7.unmount();
+  assert18(host7.querySelector("#eb-unmount") === null, "after unmount: content removed");
+  host7.remove();
+
+  // ─── Test 8: nested boundaries — inner catches first ─────────────────────
+  const host8 = document.createElement("div");
+  document.body.appendChild(host8);
+  const innerErr = signal(false);
+  createErrorBoundary(
+    html`
+      <span id="eb-outer-ok">outer content</span>
+      ${createErrorBoundary(
+        html`<span>${() => { if (innerErr.value) throw new Error("inner"); return "inner ok"; }}</span>`,
+        html`<span id="eb-inner-fb">inner fallback</span>`
+      )}
+    `,
+    html`<span id="eb-outer-fb">outer fallback</span>`
+  ).mount(host8);
+  assert18(host8.querySelector("#eb-outer-ok") !== null,  "nested: outer content visible");
+  assert18(host8.querySelector("#eb-inner-fb") === null,  "nested: inner fallback hidden initially");
+  innerErr.value = true;
+  assert18(host8.querySelector("#eb-inner-fb") !== null,  "nested: inner boundary caught the error");
+  assert18(host8.querySelector("#eb-outer-fb") === null,  "nested: outer boundary NOT triggered");
+  assert18(host8.querySelector("#eb-outer-ok") !== null,  "nested: outer content unaffected");
+  host8.remove();
+
+  console.groupEnd();
+
+  // ─── Summary ──────────────────────────────────────────────────────────────
+  const tests18El   = document.getElementById("tests18");
+  const summary18El = document.getElementById("summary18");
+
+  if (tests18El) {
+    tests18El.innerHTML = labels18.map((l, i) => {
+      const ok = i < passed18;
+      return `<div style="padding:4px 8px;border-left:3px solid ${ok ? "#22c55e" : "#ef4444"};margin:3px 0;font-size:13px">${ok ? "✅" : "❌"} ${l}</div>`;
+    }).join("");
+  }
+  if (summary18El) {
+    const total = passed18 + failed18;
+    summary18El.innerHTML = `<p style="font-weight:600;color:${failed18 === 0 ? "#22c55e" : "#ef4444"}">${passed18}/${total} tests pasados</p>`;
+  }
+
+  // ─── Demo ─────────────────────────────────────────────────────────────────
+  const demo18El = document.getElementById("demo18");
+  if (demo18El) {
+    // Simulates a widget that can fail on demand
+    const shouldFail = signal(false);
+    const failMsg    = signal("Something went wrong");
+    const resetKey   = signal(0); // bump to re-mount content
+
+    class DataWidget extends NixComponent {
+      private data = signal(["Alice", "Bob", "Carol"]);
+      render() {
+        return html`
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <p style="font-size:13px;color:#94a3b8;margin:0">
+              Widget interno — puede fallar por señal reactiva:
+            </p>
+            <ul style="margin:0;padding:0 0 0 18px">
+              ${() => {
+                if (shouldFail.value) throw new Error(failMsg.value);
+                return this.data.value.map(name => html`<li style="color:#e2e8f0;font-size:14px">${name}</li>`);
+              }}
+            </ul>
+          </div>
+        `;
+      }
+    }
+
+    mount(html`
+      <div style="display:flex;flex-direction:column;gap:14px">
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button
+            style="padding:6px 14px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => { shouldFail.value = true; }}
+          >💥 Tirar error</button>
+          <button
+            style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => { shouldFail.value = false; resetKey.value++; }}
+          >🔄 Recuperar</button>
+          <input
+            type="text"
+            placeholder="Mensaje de error..."
+            style="padding:6px 10px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;font-size:13px"
+            value="Something went wrong"
+            @input=${(e: Event) => { failMsg.value = (e.target as HTMLInputElement).value; }}
+          />
+        </div>
+
+        <!-- The boundary key-resets by conditionally swapping based on resetKey -->
+        ${() => createErrorBoundary(
+          new DataWidget(),
+          (err) => html`
+            <div style="padding:14px;border-radius:8px;border:1px solid #7f1d1d;background:#450a0a;color:#fca5a5">
+              <strong style="display:block;margin-bottom:6px">❌ Error Boundary capturó un fallo</strong>
+              <code style="font-size:12px;color:#f87171">${String(err)}</code>
+              <p style="font-size:12px;color:#fca5a5;margin:8px 0 0">
+                Pulsa <strong>Recuperar</strong> para reiniciar el widget.
+              </p>
+            </div>
+          `
+        )}
+
+        <p style="font-size:12px;color:#64748b;margin:0">
+          El error boundary aísla el fallo. El botón "Recuperar" limpia la señal de error
+          y el boundary vuelve a renderizar el contenido original.
+        </p>
+      </div>
+    `, demo18El);
+  }
+}
