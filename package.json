@@ -1,0 +1,57 @@
+{
+  "name": "@deijose/nix-js",
+  "version": "0.1.4",
+  "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
+  "license": "MIT",
+  "type": "module",
+  "keywords": [
+    "reactive",
+    "signals",
+    "micro-framework",
+    "ui",
+    "dom",
+    "typescript",
+    "no-vdom",
+    "frontend"
+  ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/lib/index.d.ts",
+        "default": "./dist/lib/nix-js.js"
+      },
+      "require": {
+        "types": "./dist/lib/index.d.ts",
+        "default": "./dist/lib/nix-js.cjs"
+      }
+    }
+  },
+  "main": "./dist/lib/nix-js.cjs",
+  "module": "./dist/lib/nix-js.js",
+  "types": "./dist/lib/index.d.ts",
+  "files": [
+    "dist/lib",
+    "!dist/lib/*.map"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc --project tsconfig.lib.json && terser dist/lib/nix-js.js -c -m -o dist/lib/nix-js.js && terser dist/lib/nix-js.cjs -c -m -o dist/lib/nix-js.cjs",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "cp README.md .readme-full.md && cp .readme-npm.md README.md",
+    "postpublish": "mv .readme-full.md README.md"
+  },
+  "devDependencies": {
+    "terser": "^5.46.0",
+    "typescript": "~5.9.3",
+    "vite": "^8.0.0-beta.13"
+  },
+  "overrides": {
+    "vite": "^8.0.0-beta.13"
+  }
+}
