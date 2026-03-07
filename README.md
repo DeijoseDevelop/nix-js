@@ -68,6 +68,11 @@
     - [Built-in validators](#built-in-validators)
     - [Zod / Valibot interop](#zod--valibot-interop)
     - [Server-side errors](#server-side-errors)
+  - [show / hide directive](#show--hide-directive)
+    - [`show` attribute](#show-attribute)
+    - [`hide` attribute](#hide-attribute)
+    - [`showWhen()`](#showwhen)
+    - [show vs conditional rendering](#show-vs-conditional-rendering)
   - [API Reference](#api-reference)
     - [Reactivity](#reactivity-1)
     - [Signal methods](#signal-methods)
@@ -1245,6 +1250,86 @@ async function onSubmit(values) {
   router.push("/dashboard");
 }
 ```
+
+---
+
+## show / hide directive
+
+Toggle element visibility **without removing the element from the DOM**.
+The element stays mounted — its state, event listeners, and child components
+are preserved. Only `style.display` changes.
+
+### `show` attribute
+
+The element is **visible** when the value is truthy, **hidden** when falsy.
+
+```typescript
+import { signal } from "@deijose/nix-js";
+
+const isOpen = signal(false);
+
+html`
+  <button @click=${() => { isOpen.value = !isOpen.value; }}>
+    Toggle
+  </button>
+
+  <div show=${() => isOpen.value}>
+    This panel is shown/hidden without being destroyed.
+  </div>
+`
+```
+
+### `hide` attribute
+
+The inverse of `show` — the element is **hidden** when the value is truthy.
+Useful for "loading" states:
+
+```typescript
+const loading = signal(false);
+
+html`
+  <!-- visible while not loading -->
+  <form hide=${() => loading.value}>...</form>
+
+  <!-- visible only while loading -->
+  <div show=${() => loading.value}>⏳ Submitting…</div>
+`
+```
+
+Both attributes accept static values too:
+
+```typescript
+html`<div show=${false}>Never visible</div>`
+html`<div hide=${true}>Also never visible</div>`
+```
+
+### `showWhen()`
+
+Imperative helper for controlling visibility outside of a template:
+
+```typescript
+import { showWhen, effect } from "@deijose/nix-js";
+
+const panel = document.getElementById("panel") as HTMLElement;
+
+// One-time:
+showWhen(panel, false); // sets display:none
+showWhen(panel, true);  // restores display
+
+// Reactively:
+const visible = signal(true);
+effect(() => showWhen(panel, visible.value));
+```
+
+### show vs conditional rendering
+
+| | `show` / `hide` | Conditional (`() => cond ? html\`…\` : null`) |
+|---|---|---|
+| DOM node kept | ✅ always | ❌ destroyed when hidden |
+| Child state preserved | ✅ | ❌ reset on re-mount |
+| Event listeners | ✅ kept | ❌ re-attached on re-mount |
+| Lifecycle hooks (`onMount`) | not called on toggle | called every toggle |
+| Ideal for | frequent show/hide | mutually exclusive branches |
 
 ---
 
