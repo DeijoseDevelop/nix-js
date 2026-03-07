@@ -1,6 +1,6 @@
 export { Signal, signal, effect, computed, batch, watch, untrack, nextTick } from "./reactivity";
 export type { WatchOptions } from "./reactivity";
-export { html, repeat, ref } from "./template";
+export { html, repeat, ref, showWhen } from "./template";
 export type { NixTemplate, NixMountHandle, KeyedList, NixRef } from "./template";
 export { mount } from "./component";
 export { NixComponent } from "./lifecycle";

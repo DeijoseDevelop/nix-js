@@ -20,6 +20,7 @@ export {
     html,
     repeat,
     ref,
+    showWhen,
     // Components
     mount,
     NixComponent,

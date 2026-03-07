@@ -65,6 +65,49 @@ export function ref<T extends Element = Element>(): NixRef<T> {
     return { el: null };
 }
 
+// ─── show / hide directive ────────────────────────────────────────────────────
+
+/**
+ * Toggles the visibility of an element **without unmounting it** from the DOM
+ * (sets `style.display = "none"` when hidden, restores it when visible).
+ *
+ * Use the `show` or `hide` attribute bindings inside templates — or call
+ * this helper directly for imperative use outside of templates.
+ *
+ * ### Template usage
+ * ```html
+ * <!-- show: element is visible when condition is truthy -->
+ * <div show=${() => isVisible.value}>...</div>
+ *
+ * <!-- hide: element is hidden when condition is truthy (inverse of show) -->
+ * <div hide=${() => isLoading.value}>Submit</div>
+ * ```
+ *
+ * ### Difference from conditional rendering
+ * | | `show` / `hide` | conditional (`() => condition ? html\`…\` : null`) |
+ * |---|---|---|
+ * | DOM node kept | ✅ always | ❌ destroyed when hidden |
+ * | Lifecycle hooks | not called on toggle | called on every toggle |
+ * | Use when | hiding/showing frequently | rarely shown alternatives |
+ *
+ * ### Imperative usage (outside a template)
+ * ```typescript
+ * import { showWhen } from "@deijose/nix-js";
+ * import { effect } from "@deijose/nix-js";
+ *
+ * const el = document.getElementById("my-panel")!;
+ * // Reactively controlled:
+ * effect(() => showWhen(el, isVisible.value));
+ * ```
+ */
+export function showWhen(el: HTMLElement, condition: boolean): void {
+    if (!condition) {
+        if (el.style.display !== "none") el.style.display = "none";
+    } else {
+        if (el.style.display === "none") el.style.display = "";
+    }
+}
+
 /**
  * Resultado de `repeat()` — lista con keys para diffing eficiente.
  * El template engine lo reconoce y solo añade/mueve/elimina los nodos
@@ -369,6 +412,34 @@ function activateBindings(
             if (attrName === "ref") {
                 (value as NixRef<Element>).el = el as Element;
                 disposes.push(() => { (value as NixRef<Element>).el = null; });
+                continue;
+            }
+
+            // ── SHOW / HIDE — toggle visibility without unmounting the DOM ─────
+            // show=${() => condition}  → hides element when condition is falsy
+            // hide=${() => condition}  → hides element when condition is truthy
+            if (attrName === "show" || attrName === "hide") {
+                const htmlEl = el as HTMLElement;
+                // Preserve whatever `display` the element had before we touched it.
+                // We read it lazily on the first effect run.
+                let originalDisplay: string | null = null;
+
+                if (typeof value === "function") {
+                    const dispose = effect(() => {
+                        const visible = Boolean((value as () => unknown)());
+                        const shouldShow = attrName === "show" ? visible : !visible;
+                        if (originalDisplay === null) {
+                            // First run: capture current computed display
+                            originalDisplay = htmlEl.style.display || "";
+                        }
+                        htmlEl.style.display = shouldShow ? originalDisplay : "none";
+                    });
+                    disposes.push(dispose);
+                } else {
+                    // Static value: apply once immediately
+                    const shouldShow = attrName === "show" ? Boolean(value) : !Boolean(value);
+                    if (!shouldShow) (el as HTMLElement).style.display = "none";
+                }
                 continue;
             }
 

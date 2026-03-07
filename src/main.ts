@@ -4070,3 +4070,157 @@ import type { NixChildren } from "./nix";
     </div>
   `, demoEl);
 }
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 16: show / hide directive
+// ══════════════════════════════════════════════════════════════
+
+import { showWhen } from "./nix";
+
+{
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+  let passed16 = 0, failed16 = 0;
+  function assert16(cond: boolean, label: string) {
+    if (cond) {
+      passed16++;
+      console.log(`  ✅ ${label}`);
+    } else {
+      failed16++;
+      console.error(`  ❌ FAIL: ${label}`);
+    }
+  }
+
+  console.group("Fase 16 — show / hide directive");
+
+  // ─── show attribute ───────────────────────────────────────────────────────
+  const vis = signal(true);
+
+  // Test container
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+
+  mount(html`
+    <span id="t16-show" show=${() => vis.value}>A</span>
+    <span id="t16-hide" hide=${() => vis.value}>B</span>
+  `, host);
+
+  const elShow = host.querySelector<HTMLElement>("#t16-show")!;
+  const elHide = host.querySelector<HTMLElement>("#t16-hide")!;
+
+  assert16(elShow.style.display !== "none", "show=true → element visible");
+  assert16(elHide.style.display === "none",  "hide=true → element hidden");
+
+  vis.value = false;
+  assert16(elShow.style.display === "none",  "show=false → element hidden");
+  assert16(elHide.style.display !== "none",  "hide=false → element visible");
+
+  vis.value = true;
+  assert16(elShow.style.display !== "none",  "show restored to true → visible again");
+  assert16(elHide.style.display === "none",  "hide restored to true → hidden again");
+
+  // Static value (non-function)
+  const host2 = document.createElement("div");
+  document.body.appendChild(host2);
+  mount(html`
+    <span id="t16-static-show" show=${false}>C</span>
+    <span id="t16-static-hide" hide=${false}>D</span>
+  `, host2);
+  assert16(host2.querySelector<HTMLElement>("#t16-static-show")!.style.display === "none", "static show=false → hidden");
+  assert16(host2.querySelector<HTMLElement>("#t16-static-hide")!.style.display !== "none", "static hide=false → visible");
+
+  // DOM content is preserved (not unmounted)
+  const counter = signal(0);
+  const host3 = document.createElement("div");
+  document.body.appendChild(host3);
+  mount(html`<span id="t16-dom" show=${() => vis.value}>${() => counter.value}</span>`, host3);
+  counter.value = 42;
+  vis.value = false;
+  vis.value = true;
+  assert16(host3.querySelector<HTMLElement>("#t16-dom")!.textContent === "42", "DOM content preserved while hidden");
+
+  // showWhen imperativo
+  const imperativeEl = document.createElement("div");
+  showWhen(imperativeEl, false);
+  assert16(imperativeEl.style.display === "none", "showWhen(el, false) → display none");
+  showWhen(imperativeEl, true);
+  assert16(imperativeEl.style.display !== "none", "showWhen(el, true) → display restored");
+
+  console.groupEnd();
+
+  // ─── Summary ──────────────────────────────────────────────────────────────
+  const tests16El = document.getElementById("tests16");
+  const summary16El = document.getElementById("summary16");
+
+  if (tests16El) {
+    const items = [`show reactive toggle`, `hide reactive toggle`, `show restored`, `hide restored`, `static show=false`, `static hide=false`, `DOM preserved`, `showWhen false`, `showWhen true`];
+    tests16El.innerHTML = items.map((label, i) => {
+      const ok = i < passed16;
+      return `<div style="padding:4px 8px;border-left:3px solid ${ok ? "#22c55e" : "#ef4444"};margin:3px 0;font-size:13px">${ok ? "✅" : "❌"} ${label}</div>`;
+    }).join("");
+  }
+
+  if (summary16El) {
+    const total = passed16 + failed16;
+    summary16El.innerHTML = `<p style="font-weight:600;color:${failed16 === 0 ? "#22c55e" : "#ef4444"}">${passed16}/${total} tests pasados</p>`;
+  }
+
+  // ─── Demo ─────────────────────────────────────────────────────────────────
+  const demo16El = document.getElementById("demo16");
+  if (demo16El) {
+    const visible = signal(true);
+    const loading = signal(false);
+    const count = signal(0);
+
+    mount(html`
+      <div style="display:flex;flex-direction:column;gap:12px">
+
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button
+            style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => { visible.value = !visible.value; }}
+          >${() => visible.value ? "Ocultar panel" : "Mostrar panel"}</button>
+
+          <button
+            style="padding:6px 14px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => { loading.value = !loading.value; }}
+          >${() => loading.value ? "Quitar loading" : "Simular loading"}</button>
+
+          <button
+            style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => { count.value++; }}
+          >Incrementar (${() => count.value})</button>
+        </div>
+
+        <!-- show: visible cuando la señal es true -->
+        <div
+          show=${() => visible.value}
+          style="padding:16px;background:#1e293b;border-radius:8px;border:1px solid #334155"
+        >
+          <p style="margin:0 0 8px;color:#94a3b8;font-size:13px">
+            Este panel usa <code>show</code> — el DOM se mantiene aunque esté oculto.
+          </p>
+          <p style="margin:0;font-size:24px;font-weight:700;color:#f1f5f9">
+            Contador: ${() => count.value}
+          </p>
+        </div>
+
+        <!-- hide: oculto cuando loading es true, visible cuando es false -->
+        <div
+          hide=${() => loading.value}
+          style="padding:12px 16px;background:#0f172a;border-radius:8px;border:1px solid #1e293b;color:#94a3b8;font-size:13px"
+        >
+          Contenido normal (oculto mientras carga)
+        </div>
+
+        <!-- loading spinner usando hide inverso -->
+        <div
+          show=${() => loading.value}
+          style="padding:12px 16px;background:#1e293b;border-radius:8px;border:1px solid #334155;color:#60a5fa;font-size:13px"
+        >
+          ⏳ Cargando...
+        </div>
+
+      </div>
+    `, demo16El);
+  }
+}
