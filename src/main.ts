@@ -4145,6 +4145,11 @@ import { showWhen } from "./nix";
   showWhen(imperativeEl, true);
   assert16(imperativeEl.style.display !== "none", "showWhen(el, true) → display restored");
 
+  // Clean up test containers so they don't leak stray text into the page
+  host.remove();
+  host2.remove();
+  host3.remove();
+
   console.groupEnd();
 
   // ─── Summary ──────────────────────────────────────────────────────────────
@@ -4222,5 +4227,253 @@ import { showWhen } from "./nix";
 
       </div>
     `, demo16El);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 17: Portal
+// ══════════════════════════════════════════════════════════════
+
+import { portal } from "./nix";
+
+{
+  let passed17 = 0, failed17 = 0;
+  function assert17(cond: boolean, label: string) {
+    if (cond) { passed17++; console.log(`  ✅ ${label}`); }
+    else       { failed17++; console.error(`  ❌ FAIL: ${label}`); }
+  }
+
+  console.group("Fase 17 — Portal");
+
+  // ─── portal() renders into target, NOT into tree position ───────────────
+  const target = document.createElement("div");
+  target.id = "portal-target-17";
+  document.body.appendChild(target);
+
+  const host17 = document.createElement("div");
+  host17.id = "portal-host-17";
+  document.body.appendChild(host17);
+
+  // Mount a template that uses portal() — the portal content should appear in
+  // `target`, not inside `host17`
+  const handle17 = mount(
+    html`
+      <div id="host-inner">host content</div>
+      ${portal(html`<span id="portal-content">portal content</span>`, target)}
+    `,
+    host17
+  );
+
+  assert17(
+    host17.querySelector("#portal-content") === null,
+    "portal content is NOT in the host tree"
+  );
+  assert17(
+    target.querySelector("#portal-content") !== null,
+    "portal content IS in the target element"
+  );
+  assert17(
+    host17.querySelector("#host-inner") !== null,
+    "non-portal content remains in the host"
+  );
+  assert17(
+    target.querySelector("#portal-content")!.textContent === "portal content",
+    "portal content has correct text"
+  );
+
+  // ─── Reactive portal: mounted when signal is true, unmounted when false ───
+  const showPortal = signal(true);
+  const target2 = document.createElement("div");
+  document.body.appendChild(target2);
+
+  mount(
+    html`${() => showPortal.value
+      ? portal(html`<span id="reactive-portal">reactive</span>`, target2)
+      : null
+    }`,
+    document.createElement("div") // throwaway host (not attached — portals bypass it)
+  );
+
+  // Portal is mounted into target2 even when host is detached
+  assert17(
+    target2.querySelector("#reactive-portal") !== null,
+    "reactive portal renders into target when condition is true"
+  );
+
+  showPortal.value = false;
+  assert17(
+    target2.querySelector("#reactive-portal") === null,
+    "reactive portal is removed from target when condition becomes false"
+  );
+
+  showPortal.value = true;
+  assert17(
+    target2.querySelector("#reactive-portal") !== null,
+    "reactive portal re-mounts when condition becomes true again"
+  );
+
+  // ─── CSS selector string as target ────────────────────────────────────
+  const target3 = document.createElement("div");
+  target3.id = "portal-selector-target";
+  document.body.appendChild(target3);
+
+  mount(
+    html`${portal(html`<b id="selector-content">via selector</b>`, "#portal-selector-target")}`,
+    document.createElement("div")
+  );
+
+  assert17(
+    document.querySelector("#portal-selector-target #selector-content") !== null,
+    "portal() accepts a CSS selector string as target"
+  );
+
+  // ─── unmount() cleans up portal content ─────────────────────────────
+  const target4 = document.createElement("div");
+  document.body.appendChild(target4);
+  const handle4 = portal(
+    html`<span id="cleanup-portal">cleanup</span>`,
+    target4
+  ).mount(document.createElement("div"));
+
+  assert17(
+    target4.querySelector("#cleanup-portal") !== null,
+    "portal mounts content via .mount()"
+  );
+
+  handle4.unmount();
+  assert17(
+    target4.querySelector("#cleanup-portal") === null,
+    "portal content removed after unmount()"
+  );
+
+  // Clean up test nodes
+  handle17.unmount();
+  host17.remove();
+  target.remove();
+  target2.remove();
+  target3.remove();
+  target4.remove();
+
+  console.groupEnd();
+
+  // ─── Summary ──────────────────────────────────────────────────────────────────
+  const tests17El  = document.getElementById("tests17");
+  const summary17El = document.getElementById("summary17");
+
+  if (tests17El) {
+    const labels = [
+      "content NOT in host tree",
+      "content IS in target",
+      "host content stays in host",
+      "portal text correct",
+      "reactive: mounts when true",
+      "reactive: unmounts when false",
+      "reactive: re-mounts when true",
+      "CSS selector as target",
+      ".mount() works",
+      "unmount() cleans up",
+    ];
+    tests17El.innerHTML = labels.map((l, i) => {
+      const ok = i < passed17;
+      return `<div style="padding:4px 8px;border-left:3px solid ${ok ? "#22c55e" : "#ef4444"};margin:3px 0;font-size:13px">${ok ? "✅" : "❌"} ${l}</div>`;
+    }).join("");
+  }
+  if (summary17El) {
+    const total = passed17 + failed17;
+    summary17El.innerHTML = `<p style="font-weight:600;color:${failed17 === 0 ? "#22c55e" : "#ef4444"}">${passed17}/${total} tests pasados</p>`;
+  }
+
+  // ─── Demo ──────────────────────────────────────────────────────────────────
+  const demo17El = document.getElementById("demo17");
+  if (demo17El) {
+    const showModal = signal(false);
+    const showToast = signal(false);
+    const toastMsg  = signal("");
+    let toastTimer: ReturnType<typeof setTimeout>;
+
+    function triggerToast(msg: string) {
+      toastMsg.value  = msg;
+      showToast.value = true;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { showToast.value = false; }, 2500);
+    }
+
+    // The portal overlay/modal renders into document.body at top level,
+    // so z-index, overflow, and stacking contexts can't clip it.
+    mount(html`
+      <div style="display:flex;flex-direction:column;gap:12px">
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button
+            style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => { showModal.value = true; }}
+          >Abrir Modal</button>
+
+          <button
+            style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => triggerToast("Cambios guardados con éxito ✨")}
+          >Toast éxito</button>
+
+          <button
+            style="padding:6px 14px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            @click=${() => triggerToast("❌ Error al conectar con el servidor")}
+          >Toast error</button>
+        </div>
+
+        <p style="font-size:12px;color:#64748b;margin:0">
+          El modal y los toasts se renderizan en <code>document.body</code> mediante <code>portal()</code>.
+          No pueden ser recortados por ningún contenedor con <code>overflow:hidden</code>.
+        </p>
+
+        <!-- Modal portal: renders into document.body -->
+        ${() => showModal.value ? portal(html`
+          <div
+            id="demo17-overlay"
+            @click=${() => { showModal.value = false; }}
+            style="
+              position:fixed;inset:0;background:rgba(0,0,0,.65);
+              display:flex;align-items:center;justify-content:center;
+              z-index:9999
+            "
+          >
+            <div
+              @click.stop=${() => {}}
+              style="
+                background:#1e293b;border:1px solid #334155;border-radius:12px;
+                padding:28px 32px;min-width:320px;max-width:480px;
+                box-shadow:0 25px 50px rgba(0,0,0,.5)
+              "
+            >
+              <h2 style="margin:0 0 12px;color:#f1f5f9;font-size:20px">❄️ Portal Modal</h2>
+              <p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.6">
+                Este cuadro de diálogo vive en <code>document.body</code>, no dentro
+                del árbol del componente. Nunca será recortado por ningún contenedor.
+              </p>
+              <div style="display:flex;justify-content:flex-end">
+                <button
+                  @click=${() => { showModal.value = false; }}
+                  style="padding:8px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+                >Cerrar</button>
+              </div>
+            </div>
+          </div>
+        `) : null}
+
+        <!-- Toast portal: renders into document.body -->
+        ${() => showToast.value ? portal(html`
+          <div
+            style="
+              position:fixed;bottom:24px;right:24px;
+              background:#1e293b;border:1px solid #334155;
+              border-radius:8px;padding:12px 18px;
+              color:#f1f5f9;font-size:14px;
+              box-shadow:0 8px 24px rgba(0,0,0,.4);
+              z-index:9999;max-width:320px
+            "
+          >${() => toastMsg.value}</div>
+        `) : null}
+
+      </div>
+    `, demo17El);
   }
 }
