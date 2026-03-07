@@ -35,6 +35,10 @@
   - [Class components: NixComponent](#class-components-nixcomponent)
   - [Lifecycle hooks](#lifecycle-hooks)
   - [mount()](#mount)
+- [Children & Slots](#children--slots)
+  - [Default slot: children](#default-slot-children)
+  - [Named slots](#named-slots)
+  - [Children in function components](#children-in-function-components)
 - [Dependency Injection](#dependency-injection)
   - [provide / inject](#provide--inject)
   - [createInjectionKey](#createinjectionkey)
@@ -623,6 +627,123 @@ const handle = mount(new Timer(), document.getElementById("app")!);
 
 // Unmount later
 handle.unmount(); // runs onUnmount, disposes all effects, removes DOM
+```
+
+---
+
+## Children & Slots
+
+Nix.js lets you pass content **into** a component from the outside — just like `children` in React or `<slot>` in Vue — without any compiler magic.
+
+### Default slot: `children`
+
+Any class component exposes a `children` property. Set it with `setChildren()` and render it with `${this.children}` anywhere in the template.
+
+```typescript
+import { NixComponent, html, mount } from "@deijose/nix-js";
+
+class Card extends NixComponent {
+  render() {
+    return html`
+      <div class="card">
+        ${this.children}
+      </div>
+    `;
+  }
+}
+
+// Pass content from outside:
+const app = new Card().setChildren(
+  html`<p>Hola desde dentro del card 👋</p>`
+);
+
+mount(app, "#app");
+```
+
+`setChildren()` returns `this`, so you can chain it:
+
+```typescript
+html`${new Card().setChildren(html`<p>Contenido</p>`)}`
+```
+
+The child can be a template, another component, an array, or a reactive signal expression — anything you can interpolate in `html``:
+
+```typescript
+const label = signal("Hola");
+
+new Card().setChildren(
+  html`<strong>${() => label.value}</strong>` // reactive!
+);
+```
+
+### Named slots
+
+For components with multiple injection points (header, body, footer), use `setSlot(name, content)` and retrieve them inside `render()` with `this.slot(name)`:
+
+```typescript
+class PageLayout extends NixComponent {
+  render() {
+    return html`
+      <div class="layout">
+        <header class="layout-header">
+          ${this.slot("header")}
+        </header>
+
+        <main class="layout-body">
+          ${this.children}
+        </main>
+
+        <footer class="layout-footer">
+          ${this.slot("footer")}
+        </footer>
+      </div>
+    `;
+  }
+}
+
+// Fluent: chain setSlot() + setChildren()
+const page = new PageLayout()
+  .setSlot("header", html`<h1>Mi App</h1>`)
+  .setChildren(html`<p>Aquí va el contenido principal.</p>`)
+  .setSlot("footer", html`<small>© 2026</small>`);
+
+mount(page, "#app");
+```
+
+If a slot has no content assigned, `this.slot(name)` returns `undefined` and renders nothing — no error.
+You can provide a fallback with the `??` operator:
+
+```typescript
+${this.slot("header") ?? html`<h1>Título por defecto</h1>`}
+```
+
+### Children in function components
+
+For function components, pass children as a plain prop:
+
+```typescript
+import type { NixChildren } from "@deijose/nix-js";
+
+function Card({ children }: { children?: NixChildren }) {
+  return html`<div class="card">${children}</div>`;
+}
+
+const app = Card({
+  children: html`<p>Contenido del card</p>`,
+});
+
+mount(app, "#app");
+```
+
+### `NixChildren` type
+
+```typescript
+type NixChildren =
+  | NixTemplate                           // html`` result
+  | NixComponent                          // class component instance
+  | Array<NixTemplate | NixComponent>     // mix of both
+  | null
+  | undefined;
 ```
 
 ---
