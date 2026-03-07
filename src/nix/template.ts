@@ -14,7 +14,7 @@
 //    6. condicional      →  () => html`` | null
 //    7. lista            →  () => html``[]
 
-import { effect } from "./reactivity";
+import { effect, _pushErrorHandler, _popErrorHandler } from "./reactivity";
 import { isNixComponent } from "./lifecycle";
 import type { NixComponent } from "./lifecycle";
 import {
@@ -394,6 +394,181 @@ export function provideOutlet(outlet: PortalOutlet): void {
  */
 export function injectOutlet(): PortalOutlet | undefined {
     return inject(_OUTLET_KEY);
+}
+
+// ─── Error Boundary ─────────────────────────────────────────────────────────────────
+
+/**
+ * Fallback value for `createErrorBoundary()`:
+ * - A static `NixTemplate` or `NixComponent` — always render this on error.
+ * - A function `(err) => NixTemplate | NixComponent` — render based on the error.
+ */
+export type ErrorFallback =
+    | NixTemplate
+    | NixComponent
+    | ((err: unknown) => NixTemplate | NixComponent);
+
+/**
+ * Wraps `content` in an error boundary. If any error is thrown during the
+ * **initial render** or during a **reactive update** inside `content`, the
+ * boundary automatically:
+ * 1. Tears down the broken subtree (effects, event listeners, DOM).
+ * 2. Renders `fallback` in its place — without crashing the rest of the app.
+ *
+ * Errors caught:
+ * - `onInit()` / `render()` throws in any `NixComponent` inside `content`
+ * - Throws inside `html\`\`` binding expressions during initial render
+ * - Reactive re-renders: effects created inside `content` that throw when
+ *   a signal changes
+ *
+ * Not caught (same as React):
+ * - Event handler throws (wrap those with your own try/catch)
+ * - Async code (Promises, `setTimeout`, etc.)
+ * - Errors thrown inside `fallback` itself (propagate to the parent boundary)
+ *
+ * @example Basic usage
+ * ```typescript
+ * import { createErrorBoundary, html, signal } from "@deijose/nix-js";
+ *
+ * mount(
+ *   createErrorBoundary(
+ *     new MyWidget(),
+ *     (err) => html`<div class="error">Widget failed: ${String(err)}</div>`
+ *   ),
+ *   "#app"
+ * );
+ * ```
+ *
+ * @example Static fallback
+ * ```typescript
+ * createErrorBoundary(
+ *   html`${() => riskyValue.value}`,
+ *   html`<p>Something went wrong.</p>`
+ * )
+ * ```
+ *
+ * @example Nested boundaries (inner catches first)
+ * ```typescript
+ * createErrorBoundary(
+ *   html`
+ *     <header>...</header>
+ *     ${createErrorBoundary(new RiskyWidget(), html`<p>Widget error</p>`)}
+ *   `,
+ *   html`<p>App-level error</p>`
+ * )
+ * ```
+ */
+export function createErrorBoundary(
+    content: NixTemplate | NixComponent,
+    fallback: ErrorFallback
+): NixTemplate {
+    return {
+        __isNixTemplate: true as const,
+
+        mount(container: Element | string): NixMountHandle {
+            const el =
+                typeof container === "string"
+                    ? (document.querySelector(container) ?? document.body)
+                    : container;
+            const cleanup = this._render(el, null);
+            return { unmount: cleanup };
+        },
+
+        _render(parent: Node, before: Node | null): () => void {
+            const marker = document.createComment("nix-eb");
+            parent.insertBefore(marker, before);
+
+            let activeCleanup: (() => void) | null = null;
+            let errored = false;
+
+            // Renders the fallback outside the error handler window
+            const renderFallback = (err: unknown): void => {
+                const fb: NixTemplate | NixComponent =
+                    typeof fallback === "function" && !isNixComponent(fallback as object)
+                        ? (fallback as (err: unknown) => NixTemplate | NixComponent)(err)
+                        : (fallback as NixTemplate | NixComponent);
+
+                if (isNixComponent(fb)) {
+                    _pushComponentContext();
+                    let tmplCleanup!: () => void;
+                    try {
+                        try { fb.onInit?.(); } catch { /* ignore errors in fallback */ }
+                        tmplCleanup = fb.render()._render(parent, before);
+                    } finally {
+                        _popComponentContext();
+                    }
+                    let mountCleanup: (() => void) | undefined;
+                    try {
+                        const ret = fb.onMount?.();
+                        if (typeof ret === "function") mountCleanup = ret;
+                    } catch { /* ignore */ }
+                    activeCleanup = () => {
+                        try { fb.onUnmount?.(); } catch { /* ignore */ }
+                        mountCleanup?.();
+                        tmplCleanup();
+                    };
+                } else {
+                    activeCleanup = fb._render(parent, before);
+                }
+            };
+
+            // Called by effects inside `content` when they throw after mount
+            const handleReactiveError = (err: unknown): void => {
+                if (errored) return;
+                errored = true;
+                activeCleanup?.();
+                activeCleanup = null;
+                renderFallback(err);
+            };
+
+            // ── Render content inside the error boundary window ──────────────
+            _pushErrorHandler(handleReactiveError);
+            let capturedError: unknown = undefined;
+            try {
+                if (isNixComponent(content)) {
+                    _pushComponentContext();
+                    try {
+                        try { content.onInit?.(); } catch (e) {
+                            if (content.onError) content.onError(e); else throw e;
+                        }
+                        activeCleanup = content.render()._render(parent, before);
+                    } finally {
+                        _popComponentContext();
+                    }
+                    try {
+                        const ret = content.onMount?.();
+                        const prev = activeCleanup;
+                        activeCleanup = () => {
+                            try { content.onUnmount?.(); } catch { /* ignore */ }
+                            if (typeof ret === "function") try { ret(); } catch { /* ignore */ }
+                            prev?.();
+                        };
+                    } catch (e) {
+                        if (content.onError) content.onError(e); else throw e;
+                    }
+                } else {
+                    activeCleanup = content._render(parent, before);
+                }
+            } catch (err) {
+                errored = true;
+                activeCleanup?.();
+                activeCleanup = null;
+                capturedError = err;
+            } finally {
+                // Always pop: effects already captured handleReactiveError as closure
+                _popErrorHandler();
+            }
+
+            // Render fallback *after* popping the handler (effects in fallback
+            // should not be caught by this same boundary)
+            if (errored) renderFallback(capturedError);
+
+            return () => {
+                activeCleanup?.();
+                marker.remove();
+            };
+        },
+    };
 }
 
 // ─── Contexto de binding ──────────────────────────────────────────────────────

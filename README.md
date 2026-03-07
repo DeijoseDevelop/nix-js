@@ -81,6 +81,12 @@
     - [Option A: Outlet token](#option-a-outlet-token)
     - [Option B: Ref as target](#option-b-ref-as-target)
     - [Option C: Provide / inject](#option-c-provide--inject)
+  - [Error Boundaries](#error-boundaries)
+    - [Basic usage](#basic-usage-1)
+    - [NixComponent content](#nixcomponent-content)
+    - [Reactive errors](#reactive-errors)
+    - [Nested boundaries](#nested-boundaries)
+    - [What is and isn't caught](#what-is-and-isnt-caught)
   - [API Reference](#api-reference)
     - [Reactivity](#reactivity-1)
     - [Signal methods](#signal-methods)
@@ -1521,6 +1527,123 @@ class DeepButton extends NixComponent {
 | Works deeply nested | ✅ | ✅ | ✅ | ✅ best |
 | Typed outlet | — | ✅ | ✅ | ✅ |
 | Needs prop passing | — | optionally | optionally | ❌ never |
+
+---
+
+## Error Boundaries
+
+An error boundary wraps a subtree and catches errors thrown during rendering or
+reactive updates. When an error is caught, the broken subtree is torn down and a
+fallback UI is rendered in its place — without crashing the rest of the
+application.
+
+### Basic usage
+
+```typescript
+import { createErrorBoundary, html, mount } from "@deijose/nix-js";
+
+mount(
+  createErrorBoundary(
+    html`<div>${() => riskyComputation()}</div>`,
+    (err) => html`<div class="error">Failed: ${String(err)}</div>`
+  ),
+  "#app"
+);
+```
+
+The fallback can also be a static template or component:
+
+```typescript
+// Static fallback (no error info)
+createErrorBoundary(
+  new DataTable(),
+  html`<p>Table failed to load. Please refresh.</p>`
+)
+
+// Fallback receives the error object
+createErrorBoundary(
+  new DataTable(),
+  (err) => html`<pre>${err instanceof Error ? err.message : String(err)}</pre>`
+)
+```
+
+### NixComponent content
+
+When a `NixComponent` is passed as content, the boundary catches lifecycle errors:
+
+```typescript
+class DataWidget extends NixComponent {
+  onInit() {
+    // Throw here → boundary catches it, fallback renders instead
+    if (!backendAvailable) throw new Error("Backend offline");
+  }
+  render() {
+    return html`...`;
+  }
+}
+
+createErrorBoundary(
+  new DataWidget(),
+  html`<p class="offline">Service unavailable</p>`
+)
+```
+
+### Reactive errors
+
+Errors thrown inside reactive expressions (effects) are caught too. Once a
+boundary switches to fallback, all remaining effects from the failed subtree are
+automatically cleaned up:
+
+```typescript
+const isAdmin = signal(false);
+
+createErrorBoundary(
+  html`
+    <div>${() => {
+      if (!isAdmin.value) throw new Error("Access denied");
+      return html`<AdminPanel />`;
+    }}</div>
+  `,
+  (err) => html`<div class="denied">403 — ${(err as Error).message}</div>`
+)
+```
+
+When `isAdmin` changes to `false` after initial render, the boundary detects the
+throw in the reactive effect, tears down the subtree, and renders the fallback.
+
+### Nested boundaries
+
+Boundaries compose naturally. Inner boundaries catch first; errors that bubble
+past them reach the outer boundary:
+
+```typescript
+createErrorBoundary(
+  html`
+    <header>...</header>
+    ${
+      // Inner boundary: only wraps the widget
+      createErrorBoundary(
+        new RiskyWidget(),
+        html`<p>Widget failed</p>`
+      )
+    }
+  `,
+  html`<p>App-level error</p>` // only reached if header itself fails
+)
+```
+
+### What is and isn't caught
+
+| Scenario | Caught |
+|---|---|
+| Template expression throws during initial render | ✅ |
+| `onInit()` throws | ✅ |
+| `render()` throws | ✅ |
+| `onMount()` throws | ✅ |
+| Reactive effect throws after mount | ✅ |
+| Event handler throws | ❌ (use try/catch in the handler) |
+| `async` / `await` / Promises | ❌ (use try/catch with signals) |
+| Errors inside the `fallback` itself | ❌ (propagate to parent boundary) |
 
 ---
 

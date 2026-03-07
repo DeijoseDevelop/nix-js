@@ -27,6 +27,26 @@ const effectStack: ((() => void) | null)[] = [];
 let activeDeps: Set<Signal<any>> | null = null;
 const depsStack: (Set<Signal<any>> | null)[] = [];
 
+// ── Error boundary support ────────────────────────────────────────────────────
+
+let activeErrorHandler: ((err: unknown) => void) | null = null;
+const errorHandlerStack: (((err: unknown) => void) | null)[] = [];
+
+/**
+ * @internal — Register an error boundary handler. All `effect()` calls made
+ * synchronously while this handler is active will capture it. When those
+ * effects re-run and throw, the captured handler is invoked.
+ */
+export function _pushErrorHandler(h: (err: unknown) => void): void {
+    errorHandlerStack.push(activeErrorHandler);
+    activeErrorHandler = h;
+}
+
+/** @internal — Restore the previous error boundary handler. */
+export function _popErrorHandler(): void {
+    activeErrorHandler = errorHandlerStack.pop() ?? null;
+}
+
 // ── Batching: agrupar notificaciones ──
 
 let batchLevel = 0;
@@ -123,6 +143,7 @@ export function signal<T>(initialValue: T): Signal<T> {
 export function effect(fn: () => void | (() => void)): () => void {
     let cleanup: (() => void) | void;
     let deps = new Set<Signal<any>>();
+    const capturedErrorHandler = activeErrorHandler;
 
     const execute = () => {
         if (typeof cleanup === "function") cleanup();
@@ -137,6 +158,12 @@ export function effect(fn: () => void | (() => void)): () => void {
 
         try {
             cleanup = fn();
+        } catch (err) {
+            if (capturedErrorHandler) {
+                capturedErrorHandler(err);
+            } else {
+                throw err;
+            }
         } finally {
             activeEffect = effectStack.pop() || null;
             activeDeps = depsStack.pop() || null;
