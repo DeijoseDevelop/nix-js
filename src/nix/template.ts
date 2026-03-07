@@ -143,6 +143,103 @@ export function repeat<T>(
     return { __isKeyedList: true as const, items, keyFn, renderFn };
 }
 
+// ─── portal() ─────────────────────────────────────────────────────────────────
+
+/**
+ * Renders `content` into `target` instead of the current position in the tree.
+ * The portal is cleaned up automatically when the parent template is unmounted.
+ *
+ * Use this to render modals, tooltips, notifications, or dropdowns outside of
+ * your component tree — typically into `document.body` — so they are not clipped
+ * by `overflow: hidden` or buried under other stacking contexts.
+ *
+ * The portal returns a `NixTemplate`, so it works as a node value anywhere in
+ * a template, including inside reactive conditionals: the portal is
+ * mounted/unmounted together with whatever controls its condition.
+ *
+ * @param content  Template or component to render inside the portal.
+ * @param target   CSS selector or `Element` to render into. Defaults to `document.body`.
+ *
+ * @example Reactive modal
+ * ```typescript
+ * import { signal, portal, html } from "@deijose/nix-js";
+ *
+ * const isOpen = signal(false);
+ *
+ * html`
+ *   <button @click=${() => { isOpen.value = true; }}>Open</button>
+ *
+ *   ${() => isOpen.value
+ *     ? portal(html`
+ *         <div class="overlay" @click=${() => { isOpen.value = false; }}>
+ *           <div class="modal" @click.stop=${() => {}}>
+ *             <h2>Hello from a portal!</h2>
+ *             <button @click=${() => { isOpen.value = false; }}>Close</button>
+ *           </div>
+ *         </div>
+ *       `)
+ *     : null
+ *   }
+ * `
+ * ```
+ *
+ * @example Custom target
+ * ```typescript
+ * portal(html`<div class="toast">Saved!</div>`, "#toast-root")
+ * portal(html`<Tooltip />`, document.getElementById("tooltip-layer")!)
+ * ```
+ */
+export function portal(
+    content: NixTemplate | NixComponent,
+    target: Element | string = document.body
+): NixTemplate {
+    return {
+        __isNixTemplate: true as const,
+
+        mount(container: Element | string): NixMountHandle {
+            const el =
+                typeof container === "string"
+                    ? (document.querySelector(container) ?? document.body)
+                    : container;
+            const cleanup = this._render(el, null);
+            return { unmount: cleanup };
+        },
+
+        _render(_parent: Node, _before: Node | null): () => void {
+            const targetEl: Element =
+                typeof target === "string"
+                    ? (document.querySelector(target) ?? document.body)
+                    : target;
+
+            if (isNixComponent(content)) {
+                _pushComponentContext();
+                let templateCleanup!: () => void;
+                try {
+                    try { content.onInit?.(); } catch (e) { if (content.onError) content.onError(e); else throw e; }
+                    templateCleanup = content.render()._render(targetEl, null);
+                } finally {
+                    _popComponentContext();
+                }
+                let mountCleanup: (() => void) | undefined;
+                try {
+                    const ret = content.onMount?.();
+                    if (typeof ret === "function") mountCleanup = ret;
+                } catch (e) {
+                    if (content.onError) content.onError(e); else throw e;
+                }
+                return () => {
+                    try { content.onUnmount?.(); } catch { /* ignore */ }
+                    try { mountCleanup?.(); } catch { /* ignore */ }
+                    templateCleanup();
+                };
+            }
+
+            // NixTemplate: render into targetEl, ignoring the tree position
+            return content._render(targetEl, null);
+        },
+    };
+}
+
 // ─── Contexto de binding ──────────────────────────────────────────────────────
 
 type BindingContext =

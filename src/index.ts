@@ -21,6 +21,7 @@ export {
     repeat,
     ref,
     showWhen,
+    portal,
     // Components
     mount,
     NixComponent,

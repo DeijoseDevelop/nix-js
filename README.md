@@ -73,6 +73,10 @@
     - [`hide` attribute](#hide-attribute)
     - [`showWhen()`](#showwhen)
     - [show vs conditional rendering](#show-vs-conditional-rendering)
+  - [Portal](#portal)
+    - [Basic usage](#basic-usage)
+    - [Reactive portal](#reactive-portal)
+    - [Custom target](#custom-target)
   - [API Reference](#api-reference)
     - [Reactivity](#reactivity-1)
     - [Signal methods](#signal-methods)
@@ -1330,6 +1334,86 @@ effect(() => showWhen(panel, visible.value));
 | Event listeners | ✅ kept | ❌ re-attached on re-mount |
 | Lifecycle hooks (`onMount`) | not called on toggle | called every toggle |
 | Ideal for | frequent show/hide | mutually exclusive branches |
+
+---
+
+## Portal
+
+Render a template or component **outside of the current DOM tree** — typically
+into `document.body`. Portals are essential for modals, tooltips, dropdowns, and
+toast notifications that must not be clipped by `overflow: hidden` or buried by
+stacking contexts.
+
+The portal returns a `NixTemplate`, so it integrates naturally as a node value
+in any template, including inside reactive conditionals. Cleanup is automatic:
+when the parent template unmounts, the portal content is removed too.
+
+### Basic usage
+
+```typescript
+import { portal, html } from "@deijose/nix-js";
+
+// Render into document.body (default target)
+portal(html`<div class="modal">...</div>`)
+
+// Render into a specific element
+portal(html`<div class="toast">Saved!</div>`, document.getElementById("toasts")!)
+
+// Use a CSS selector as target
+portal(html`<nav>...</nav>`, "#sidebar")
+```
+
+### Reactive portal
+
+The portal is mounted and unmounted together with its controlling condition:
+
+```typescript
+import { signal, portal, html } from "@deijose/nix-js";
+
+const isOpen = signal(false);
+
+html`
+  <button @click=${() => { isOpen.value = true; }}>Open modal</button>
+
+  ${() => isOpen.value
+    ? portal(html`
+        <div class="overlay" @click=${() => { isOpen.value = false; }}>
+          <div class="modal" @click.stop=${() => {}}>
+            <h2>Modal title</h2>
+            <button @click=${() => { isOpen.value = false; }}>Close</button>
+          </div>
+        </div>
+      `)
+    : null
+  }
+`
+```
+
+The portal mounts when `isOpen` becomes `true` and unmounts when it becomes
+`false` — cleaning up event listeners and DOM nodes automatically.
+
+### Custom target
+
+```typescript
+// Portal into a named outlet element
+const sidebarRoot = document.getElementById("sidebar-root")!;
+
+html`
+  ${() => drawerOpen.value
+    ? portal(html`<aside class="drawer">...</aside>`, sidebarRoot)
+    : null
+  }
+`
+
+// Modal pattern with component
+class MyModal extends NixComponent {
+  render() {
+    return html`<div class="modal-inner">...</div>`;
+  }
+}
+
+html`${() => showModal.value ? portal(new MyModal()) : null}`
+```
 
 ---
 
