@@ -4477,3 +4477,197 @@ import { portal } from "./nix";
     `, demo17El);
   }
 }
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 17b: Portal Ergonomics
+//  Option A: createPortalOutlet + portalOutlet
+//  Option B: portal() con NixRef
+//  Option C: provideOutlet + injectOutlet
+//  Tests → #tests17b | Summary → #summary17b | Demo → #demo17b
+// ══════════════════════════════════════════════════════════════
+import { createPortalOutlet, portalOutlet, provideOutlet, injectOutlet } from "./nix";
+import type { PortalOutlet } from "./nix";
+
+{
+  let passed17b = 0, failed17b = 0;
+  const labels17b: string[] = [];
+  function assert17b(cond: boolean, label: string) {
+    labels17b.push(label);
+    if (cond) { passed17b++; console.log(`  ✅ ${label}`); }
+    else       { failed17b++; console.error(`  ❌ FAIL: ${label}`); }
+  }
+
+  console.group("Fase 17b — Portal Ergonomics");
+
+  // ─── Option A: createPortalOutlet + portalOutlet ───────────────────────────
+
+  // Test 1: token shape
+  const outletA = createPortalOutlet();
+  assert17b(outletA.__isPortalOutlet === true,  "A — createPortalOutlet() devuelve token con __isPortalOutlet");
+  assert17b(outletA._container === null,         "A — _container es null antes de montar");
+
+  // Test 2: portalOutlet() creates the anchor div
+  const hostA = document.createElement("div");
+  document.body.appendChild(hostA);
+  portalOutlet(outletA).mount(hostA);
+  assert17b(hostA.querySelector("[data-nix-outlet]") !== null, "A — portalOutlet() crea div[data-nix-outlet] en el host");
+  assert17b(outletA._container !== null,                        "A — _container queda asignado tras montar el outlet");
+
+  // Test 3: portal(content, outlet) renders into the outlet div
+  mount(html`${portal(html`<span id="acc-outlet-content">en outlet</span>`, outletA)}`, document.createElement("div"));
+  assert17b(
+    outletA._container!.querySelector("#acc-outlet-content") !== null,
+    "A — portal(content, outlet) renderiza dentro del outlet container"
+  );
+  assert17b(
+    hostA.querySelector("#acc-outlet-content") !== null,
+    "A — contenido del portal es accesible desde el host (via outlet div)"
+  );
+
+  // Test 4: unmount clears _container
+  const outletClean = createPortalOutlet();
+  const hostClean = document.createElement("div");
+  document.body.appendChild(hostClean);
+  const handleClean = portalOutlet(outletClean).mount(hostClean);
+  handleClean.unmount();
+  assert17b(outletClean._container === null, "A — _container vuelve a null tras unmount del outlet");
+
+  hostA.remove();
+  hostClean.remove();
+
+  // ─── Option B: portal() con NixRef ────────────────────────────────────────
+
+  // Test 5: portal renders into ref.el
+  const refTarget = ref<HTMLElement>();
+  const hostRef = document.createElement("div");
+  document.body.appendChild(hostRef);
+  mount(html`<div ref=${refTarget} id="ref-target-b"></div>`, hostRef);
+  // ref.el is now populated
+
+  const hostRef2 = document.createElement("div");
+  document.body.appendChild(hostRef2);
+  mount(html`${portal(html`<span id="ref-portal-content">via ref</span>`, refTarget)}`, hostRef2);
+  assert17b(
+    refTarget.el!.querySelector("#ref-portal-content") !== null,
+    "B — portal(content, ref) renderiza dentro de ref.el"
+  );
+  assert17b(
+    hostRef2.querySelector("#ref-portal-content") === null,
+    "B — portal(content, ref) NO aparece en el árbol del host"
+  );
+
+  hostRef.remove();
+  hostRef2.remove();
+
+  // ─── Option C: provideOutlet + injectOutlet ────────────────────────────────
+
+  let injectedOutlet: PortalOutlet | undefined;
+  const outletC = createPortalOutlet();
+
+  class ProviderC extends NixComponent {
+    onInit()  { provideOutlet(outletC); }
+    render()  { return html`<div>${new ConsumerC()}</div>`; }
+  }
+  class ConsumerC extends NixComponent {
+    onInit()  { injectedOutlet = injectOutlet(); }
+    render()  { return html`<span></span>`; }
+  }
+
+  const hostC = document.createElement("div");
+  document.body.appendChild(hostC);
+  mount(html`${new ProviderC()}`, hostC);
+  assert17b(injectedOutlet === outletC, "C — injectOutlet() devuelve el outlet provisto por el ancestro");
+
+  hostC.remove();
+
+  console.groupEnd();
+
+  // ─── Summary ──────────────────────────────────────────────────────────────
+  const tests17bEl   = document.getElementById("tests17b");
+  const summary17bEl = document.getElementById("summary17b");
+
+  if (tests17bEl) {
+    tests17bEl.innerHTML = labels17b.map((l, i) => {
+      const ok = i < passed17b;
+      return `<div style="padding:4px 8px;border-left:3px solid ${ok ? "#22c55e" : "#ef4444"};margin:3px 0;font-size:13px">${ok ? "✅" : "❌"} ${l}</div>`;
+    }).join("");
+  }
+  if (summary17bEl) {
+    const total = passed17b + failed17b;
+    summary17bEl.innerHTML = `<p style="font-weight:600;color:${failed17b === 0 ? "#22c55e" : "#ef4444"}">${passed17b}/${total} tests pasados</p>`;
+  }
+
+  // ─── Demo ─────────────────────────────────────────────────────────────────
+  const demo17bEl = document.getElementById("demo17b");
+  if (demo17bEl) {
+    // AppLayout provides a PortalOutlet; ModalButton injects it.
+    // No CSS selectors. No direct DOM references. No prop drilling.
+    const mainOutlet = createPortalOutlet();
+
+    class AppLayout extends NixComponent {
+      private inner: NixTemplate;
+      constructor(inner: NixTemplate) { super(); this.inner = inner; }
+      onInit() { provideOutlet(mainOutlet); }
+      render() {
+        return html`
+          <div style="border:1px solid #334155;border-radius:8px;padding:16px;overflow:hidden;position:relative">
+            <p style="font-size:11px;color:#64748b;margin:0 0 10px">
+              📦 <strong>AppLayout</strong> — <code>overflow:hidden</code> · el modal escapa gracias al portal
+            </p>
+            ${this.inner}
+            ${portalOutlet(mainOutlet)}
+          </div>
+        `;
+      }
+    }
+
+    class ModalButton extends NixComponent {
+      private outlet: PortalOutlet | undefined;
+      private open   = signal(false);
+      onInit() { this.outlet = injectOutlet(); }
+      render() {
+        return html`
+          <div style="display:flex;flex-direction:column;gap:10px">
+            <button
+              style="padding:6px 14px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer;align-self:flex-start"
+              @click=${() => { this.open.value = true; }}
+            >Abrir Modal (via injectOutlet)</button>
+
+            ${() => this.open.value ? portal(html`
+              <div
+                style="
+                  position:fixed;inset:0;background:rgba(0,0,0,.6);
+                  display:flex;align-items:center;justify-content:center;z-index:9999
+                "
+                @click=${() => { this.open.value = false; }}
+              >
+                <div
+                  style="background:#1e293b;border:1px solid #334155;border-radius:12px;
+                         padding:28px 32px;max-width:400px"
+                  @click.stop=${() => {}}
+                >
+                  <h3 style="margin:0 0 10px;color:#f1f5f9">Modal via injectOutlet()</h3>
+                  <p style="color:#94a3b8;font-size:14px;margin:0 0 18px;line-height:1.6">
+                    Renderizado en el outlet inyectado.<br>
+                    Sin prop drilling · Sin selectores CSS · Sin DOM manual.
+                  </p>
+                  <button
+                    style="padding:7px 16px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+                    @click=${() => { this.open.value = false; }}
+                  >Cerrar</button>
+                </div>
+              </div>
+            `, this.outlet ?? document.body) : null}
+          </div>
+        `;
+      }
+    }
+
+    mount(
+      new AppLayout(
+        html`${new ModalButton()}`
+      ).render(),
+      demo17bEl
+    );
+  }
+}

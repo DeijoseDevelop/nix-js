@@ -77,6 +77,10 @@
     - [Basic usage](#basic-usage)
     - [Reactive portal](#reactive-portal)
     - [Custom target](#custom-target)
+  - [Portal Ergonomics](#portal-ergonomics)
+    - [Option A: Outlet token](#option-a-outlet-token)
+    - [Option B: Ref as target](#option-b-ref-as-target)
+    - [Option C: Provide / inject](#option-c-provide--inject)
   - [API Reference](#api-reference)
     - [Reactivity](#reactivity-1)
     - [Signal methods](#signal-methods)
@@ -1414,6 +1418,109 @@ class MyModal extends NixComponent {
 
 html`${() => showModal.value ? portal(new MyModal()) : null}`
 ```
+
+---
+
+## Portal Ergonomics
+
+Passing raw DOM elements or CSS selectors to `portal()` works, but couples
+your component logic to the DOM structure. Nix provides three cleaner
+alternatives.
+
+### Option A: Outlet token
+
+Create a typed anchor point with `createPortalOutlet()`. Place the anchor in
+your layout with `portalOutlet()`. Any child can then portal into it by passing
+the token — no DOM, no selectors.
+
+```typescript
+import { createPortalOutlet, portalOutlet, portal, html, mount } from "@deijose/nix-js";
+
+const modalOutlet = createPortalOutlet();
+
+// Layout — declares where portals targeting this outlet will appear
+mount(html`
+  <div class="app">
+    <main>${mainContent}</main>
+    ${portalOutlet(modalOutlet)}   // ← anchor lives here
+  </div>
+`, document.body);
+
+// Child (any depth) — renders into the outlet, no DOM access
+html`${() => isOpen.value ? portal(html`<Modal />`, modalOutlet) : null}`
+```
+
+The outlet div is cleaned up when its parent template unmounts.
+
+### Option B: Ref as target
+
+`portal()` accepts a `NixRef<Element>` directly. Mount the ref on any element
+in your template, then pass that ref as the portal target.
+
+```typescript
+import { ref, portal, html } from "@deijose/nix-js";
+
+const toastRoot = ref<HTMLElement>();
+
+html`
+  <div ref=${toastRoot} id="toast-container"></div>
+
+  ${() => hasToast.value
+    ? portal(html`<div class="toast">${() => message.value}</div>`, toastRoot)
+    : null
+  }
+`
+```
+
+The portal renders into `toastRoot.el` which is populated after the host
+template mounts.
+
+### Option C: Provide / inject
+
+For deep trees, use `provideOutlet()` in an ancestor and `injectOutlet()` in
+any descendant. No prop drilling required.
+
+```typescript
+import {
+  createPortalOutlet, portalOutlet,
+  provideOutlet, injectOutlet,
+  portal, html, signal, NixComponent
+} from "@deijose/nix-js";
+
+class AppLayout extends NixComponent {
+  private outlet = createPortalOutlet();
+  onInit() { provideOutlet(this.outlet); }    // ← provides to all descendants
+  render() {
+    return html`
+      <main>${children}</main>
+      ${portalOutlet(this.outlet)}            // ← anchor in the DOM
+    `;
+  }
+}
+
+class DeepButton extends NixComponent {
+  private outlet: PortalOutlet | undefined;
+  private open = signal(false);
+  onInit() { this.outlet = injectOutlet(); }  // ← no prop needed
+  render() {
+    return html`
+      <button @click=${() => { this.open.value = true; }}>Open</button>
+      ${() => this.open.value
+        ? portal(html`<div class="modal">...</div>`, this.outlet)
+        : null
+      }
+    `;
+  }
+}
+```
+
+| | `portal(el)` | Option A (outlet) | Option B (ref) | Option C (inject) |
+|---|---|---|---|---|
+| Requires DOM access | DOM element | ❌ no | ❌ no | ❌ no |
+| CSS selector | optional | ❌ no | ❌ no | ❌ no |
+| Works deeply nested | ✅ | ✅ | ✅ | ✅ best |
+| Typed outlet | — | ✅ | ✅ | ✅ |
+| Needs prop passing | — | optionally | optionally | ❌ never |
 
 ---
 

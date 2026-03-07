@@ -22,6 +22,9 @@ import {
     _pushComponentContext,
     _popComponentContext,
     _withComponentContext,
+    provide,
+    inject,
+    createInjectionKey,
 } from "./context";
 
 // ─── Tipos públicos ───────────────────────────────────────────────────────────
@@ -189,9 +192,96 @@ export function repeat<T>(
  * portal(html`<Tooltip />`, document.getElementById("tooltip-layer")!)
  * ```
  */
+// ─── PortalOutlet ────────────────────────────────────────────────────────────
+
+/**
+ * Opaque token created by `createPortalOutlet()`.
+ *
+ * Pass it to `portalOutlet()` to declare the DOM anchor where portals targeting
+ * this outlet will render, and to `portal(content, outlet)` as the target.
+ *
+ * @see createPortalOutlet
+ * @see portalOutlet
+ */
+export interface PortalOutlet {
+    readonly __isPortalOutlet: true;
+    /** @internal — resolved DOM container; set when `portalOutlet()` is mounted */
+    _container: Element | null;
+}
+
+/**
+ * Creates a `PortalOutlet` token — a lightweight, typed anchor point that
+ * decouples *where* a portal renders from direct DOM access.
+ * No CSS selectors, no `document.querySelector`, no manual element references.
+ *
+ * ### Workflow
+ * 1. Create the token at module or component scope.
+ * 2. Place `${portalOutlet(outlet)}` in your layout template to declare the anchor.
+ * 3. From any child: `portal(content, outlet)` renders into that anchor.
+ *
+ * @example
+ * ```typescript
+ * const modalOutlet = createPortalOutlet();
+ *
+ * // Layout:
+ * html`
+ *   <main>${mainContent}</main>
+ *   ${portalOutlet(modalOutlet)}
+ * `
+ *
+ * // Child (any depth):
+ * html`${() => show.value ? portal(html\`<Modal />\`, modalOutlet) : null}`
+ * ```
+ */
+export function createPortalOutlet(): PortalOutlet {
+    return { __isPortalOutlet: true as const, _container: null };
+}
+
+/**
+ * Declares the DOM anchor for a `PortalOutlet` inside a template.
+ * Creates a `<div data-nix-outlet>` at this position; portals targeting
+ * `outlet` will render their content as children of that div.
+ *
+ * The anchor's lifecycle follows its parent template — when the parent
+ * unmounts, the outlet div and any portals inside it are cleaned up.
+ *
+ * @example
+ * ```typescript
+ * mount(html`
+ *   <div class="app">
+ *     <main>${mainContent}</main>
+ *     ${portalOutlet(modalOutlet)}
+ *   </div>
+ * `, document.body);
+ * ```
+ */
+export function portalOutlet(outlet: PortalOutlet): NixTemplate {
+    return {
+        __isNixTemplate: true as const,
+        mount(container: Element | string): NixMountHandle {
+            const el =
+                typeof container === "string"
+                    ? (document.querySelector(container) ?? document.body)
+                    : container;
+            const cleanup = this._render(el, null);
+            return { unmount: cleanup };
+        },
+        _render(parent: Node, before: Node | null): () => void {
+            const el = document.createElement("div");
+            el.setAttribute("data-nix-outlet", "");
+            outlet._container = el;
+            parent.insertBefore(el, before);
+            return () => {
+                outlet._container = null;
+                el.remove();
+            };
+        },
+    };
+}
+
 export function portal(
     content: NixTemplate | NixComponent,
-    target: Element | string = document.body
+    target: Element | string | PortalOutlet | NixRef<Element> = document.body
 ): NixTemplate {
     return {
         __isNixTemplate: true as const,
@@ -206,10 +296,18 @@ export function portal(
         },
 
         _render(_parent: Node, _before: Node | null): () => void {
-            const targetEl: Element =
-                typeof target === "string"
-                    ? (document.querySelector(target) ?? document.body)
-                    : target;
+            let targetEl: Element;
+            if (typeof target === "string") {
+                targetEl = document.querySelector(target) ?? document.body;
+            } else if (target instanceof Element) {
+                targetEl = target;
+            } else if ("__isPortalOutlet" in target) {
+                // Option A: PortalOutlet token — render into the outlet's div
+                targetEl = (target as PortalOutlet)._container ?? document.body;
+            } else {
+                // Option B: NixRef<Element> — portal into the referenced element
+                targetEl = (target as NixRef<Element>).el ?? document.body;
+            }
 
             if (isNixComponent(content)) {
                 _pushComponentContext();
@@ -238,6 +336,64 @@ export function portal(
             return content._render(targetEl, null);
         },
     };
+}
+
+// ─── Portal outlet — provide / inject shortcut (Option C) ────────────────────
+
+const _OUTLET_KEY = createInjectionKey<PortalOutlet>("nix:portal-outlet");
+
+/**
+ * Provides a `PortalOutlet` to descendant components via the inject system.
+ * Must be called inside `onInit()` of a `NixComponent`.
+ *
+ * Eliminates prop drilling: any descendant can call `injectOutlet()` to
+ * obtain the outlet without it being passed through every layer.
+ *
+ * @example
+ * ```typescript
+ * class AppLayout extends NixComponent {
+ *   private outlet = createPortalOutlet();
+ *   onInit() { provideOutlet(this.outlet); }
+ *   render() {
+ *     return html`
+ *       <main>...</main>
+ *       ${portalOutlet(this.outlet)}
+ *     `;
+ *   }
+ * }
+ * ```
+ */
+export function provideOutlet(outlet: PortalOutlet): void {
+    provide(_OUTLET_KEY, outlet);
+}
+
+/**
+ * Injects the nearest `PortalOutlet` provided by an ancestor component.
+ * Returns `undefined` if no ancestor has called `provideOutlet()`.
+ *
+ * Use `portal(content, injectOutlet())` to render into the ancestor's outlet
+ * with no CSS selectors, no `document.querySelector`, and no prop drilling.
+ *
+ * @example
+ * ```typescript
+ * class ToastButton extends NixComponent {
+ *   private outlet: PortalOutlet | undefined;
+ *   private active  = signal(false);
+ *   onInit() { this.outlet = injectOutlet(); }
+ *   render() {
+ *     return html`
+ *       <button @click=${() => { this.active.value = true; }}>Notify</button>
+ *       ${() => this.active.value
+ *         ? portal(html\`<div class="toast">Done!</div>\`, this.outlet)
+ *         : null
+ *       }
+ *     `;
+ *   }
+ * }
+ * ```
+ */
+export function injectOutlet(): PortalOutlet | undefined {
+    return inject(_OUTLET_KEY);
 }
 
 // ─── Contexto de binding ──────────────────────────────────────────────────────

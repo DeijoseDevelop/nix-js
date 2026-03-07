@@ -22,6 +22,10 @@ export {
     ref,
     showWhen,
     portal,
+    createPortalOutlet,
+    portalOutlet,
+    provideOutlet,
+    injectOutlet,
     // Components
     mount,
     NixComponent,
@@ -63,6 +67,7 @@ export type {
     NixMountHandle,
     KeyedList,
     NixRef,
+    PortalOutlet,
     // Store
     Store,
     StoreSignals,
