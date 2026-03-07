@@ -4,6 +4,7 @@ export { html, repeat, ref } from "./template";
 export type { NixTemplate, NixMountHandle, KeyedList, NixRef } from "./template";
 export { mount } from "./component";
 export { NixComponent } from "./lifecycle";
+export type { NixChildren } from "./lifecycle";
 export { createStore } from "./store";
 export type { Store, StoreSignals } from "./store";
 export { createRouter, RouterView, Link, useRouter } from "./router";

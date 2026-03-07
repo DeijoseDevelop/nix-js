@@ -25,6 +25,19 @@
 
 import type { NixTemplate } from "./template";
 
+// ─── NixChildren ──────────────────────────────────────────────────────────────
+
+/**
+ * Tipos válidos para pasar como children a un componente.
+ * Acepta un template, un componente, arrays de ellos, o nada.
+ */
+export type NixChildren =
+    | NixTemplate
+    | NixComponent
+    | Array<NixTemplate | NixComponent>
+    | null
+    | undefined;
+
 // ─── NixComponent ─────────────────────────────────────────────────────────────
 
 /**
@@ -51,6 +64,68 @@ import type { NixTemplate } from "./template";
 export abstract class NixComponent {
     /** @internal – marca que identifica instancias NixComponent en el engine. */
     readonly __isNixComponent = true as const;
+
+    /**
+     * Slot por defecto — contenido hijo que el componente padre inyecta.
+     *
+     * Úsalo en `render()` como cualquier valor interpolado:
+     * ```typescript
+     * render() {
+     *   return html`<div class="card">${this.children}</div>`;
+     * }
+     * ```
+     * Se puede asignar directamente o con el método fluido `setChildren()`.
+     */
+    children?: NixChildren;
+
+    /** @internal */
+    private _slots = new Map<string, NixChildren>();
+
+    /**
+     * Asigna el slot por defecto. Versión fluida de `this.children = content`.
+     * @returns `this` para encadenar con `setSlot()`.
+     *
+     * @example
+     *   html`${new Card().setChildren(html`<p>Body</p>`)}`
+     */
+    setChildren(content: NixChildren): this {
+        this.children = content;
+        return this;
+    }
+
+    /**
+     * Asigna un slot con nombre. El componente lo lee con `this.slot(name)`.
+     * @returns `this` para encadenar.
+     *
+     * @example
+     *   new Card()
+     *     .setSlot("header", html`<h1>Título</h1>`)
+     *     .setSlot("footer", html`<small>Footer</small>`)
+     *     .setChildren(html`<p>Cuerpo</p>`)
+     */
+    setSlot(name: string, content: NixChildren): this {
+        this._slots.set(name, content);
+        return this;
+    }
+
+    /**
+     * Obtiene el contenido de un slot con nombre.
+     * Úsalo dentro de `render()`:
+     * ```typescript
+     * render() {
+     *   return html`
+     *     <div>
+     *       <header>${this.slot("header")}</header>
+     *       <main>${this.children}</main>
+     *       <footer>${this.slot("footer")}</footer>
+     *     </div>
+     *   `;
+     * }
+     * ```
+     */
+    slot(name: string): NixChildren {
+        return this._slots.get(name);
+    }
 
     /**
      * Debe implementarse: retorna el template del componente.
