@@ -1,0 +1,22 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        // Override bundler-mode settings that are incompatible with emission
+        "noEmit": false,
+        "allowImportingTsExtensions": false,
+        // Emit only declaration files — Vite handles the JS bundle
+        "declaration": true,
+        "declarationDir": "dist/lib",
+        "emitDeclarationOnly": true,
+        // Resolve relative to source so generated paths are clean
+        "rootDir": "src"
+    },
+    "include": [
+        "src/index.ts",
+        "src/nix"
+    ],
+    // Exclude the demo/app entry — it is not part of the library
+    "exclude": [
+        "src/main.ts"
+    ]
+}

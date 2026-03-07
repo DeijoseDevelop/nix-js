@@ -1,0 +1,446 @@
+<!-- index.html -->
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Nix.js ❄️ — Fase 2: Template Engine</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #0a0a0a;
+      color: #e5e5e5;
+    }
+
+    h1 {
+      margin-bottom: 4px;
+    }
+
+    h2 {
+      margin: 24px 0 12px;
+      color: #38bdf8;
+    }
+
+    .subtitle {
+      color: #a3a3a3;
+      margin-bottom: 20px;
+    }
+
+    .section {
+      background: #171717;
+      border: 1px solid #262626;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 16px 0;
+    }
+
+    .test-line {
+      padding: 3px 0;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+    }
+
+    .test-line.pass {
+      color: #4ade80;
+    }
+
+    .test-line.fail {
+      color: #f87171;
+      font-weight: bold;
+    }
+
+    .test-group {
+      color: #38bdf8;
+      font-weight: bold;
+      margin-top: 12px;
+      font-size: 14px;
+    }
+
+    .summary {
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin: 16px 0;
+      font-weight: bold;
+      font-size: 15px;
+    }
+
+    .summary.all-pass {
+      background: #052e16;
+      color: #4ade80;
+      border: 1px solid #16a34a;
+    }
+
+    .summary.has-fail {
+      background: #450a0a;
+      color: #f87171;
+      border: 1px solid #dc2626;
+    }
+
+    button {
+      background: #38bdf8;
+      color: #0a0a0a;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 600;
+      margin: 4px;
+      transition: background 0.15s;
+    }
+
+    button:hover {
+      background: #0ea5e9;
+    }
+
+    button:active {
+      transform: scale(0.97);
+    }
+
+    input[type="text"] {
+      background: #262626;
+      color: #e5e5e5;
+      border: 1px solid #404040;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 15px;
+      outline: none;
+      width: 200px;
+    }
+
+    input[type="text"]:focus {
+      border-color: #38bdf8;
+    }
+
+    .demo-value {
+      font-size: 28px;
+      font-weight: bold;
+      color: #38bdf8;
+      margin: 8px 0;
+      font-family: 'SF Mono', monospace;
+    }
+
+    .demo-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 12px 0;
+      flex-wrap: wrap;
+    }
+
+    .effect-log {
+      color: #a3a3a3;
+      font-size: 13px;
+      font-family: monospace;
+      margin-top: 8px;
+    }
+
+    /* ── Fase 2: Demo widgets ── */
+    .demo-app {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .demo-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+    }
+
+    .widget {
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
+      border-radius: 10px;
+      padding: 16px;
+    }
+
+    .widget-label {
+      font-size: 13px;
+      color: #71717a;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .badge-count {
+      background: #38bdf8;
+      color: #0a0a0a;
+      border-radius: 9999px;
+      padding: 1px 8px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .counter-value {
+      font-size: 48px;
+      font-weight: 800;
+      color: #38bdf8;
+      font-family: 'SF Mono', monospace;
+      line-height: 1.1;
+    }
+
+    .counter-meta {
+      font-size: 13px;
+      color: #52525b;
+      margin-bottom: 10px;
+      font-family: monospace;
+    }
+
+    /* Todo */
+    .todo-list {
+      list-style: none;
+      margin-top: 8px;
+    }
+
+    .todo-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid #262626;
+      font-size: 14px;
+    }
+
+    .btn-remove {
+      background: #450a0a;
+      color: #f87171;
+      padding: 2px 8px;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+
+    .btn-remove:hover {
+      background: #7f1d1d;
+    }
+
+    .empty-msg {
+      color: #52525b;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+
+    /* Tabs */
+    .tab-content {
+      margin-top: 8px;
+      padding: 12px;
+      background: #262626;
+      border-radius: 6px;
+      font-size: 15px;
+    }
+
+    /* ── Separador de fases ── */
+    .phase-sep {
+      border: none;
+      border-top: 2px solid #262626;
+      margin: 40px 0 8px;
+    }
+
+    .phase-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: #e5e5e5;
+      margin: 0 0 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>❄️ Nix.js — Fase 2</h1>
+  <p class="subtitle">Template Engine: html&grave;&grave; · bindings · events · conditionals · lists</p>
+
+  <h2>Tests</h2>
+  <div id="tests" class="section"></div>
+  <div id="summary"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo" class="section"></div>
+
+  <script type="module" src="/src/main.ts"></script>
+
+  <!-- ══════════════════════════════════════════
+       Fase 2: Template Engine
+  ══════════════════════════════════════════ -->
+  <hr class="phase-sep" />
+  <h1 class="phase-title">❄️ Nix.js — Fase 2</h1>
+  <p class="subtitle">Template Engine: html&grave;&grave; · text · events · attrs · conditionals · lists</p>
+
+  <h2>Tests</h2>
+  <div id="tests2" class="section"></div>
+  <div id="summary2"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo2" class="section"></div>
+
+  <!-- ══════════════════════════════════════════
+       Fase 3: Componentes + mount()
+  ══════════════════════════════════════════ -->
+  <hr class="phase-sep" />
+  <h1 class="phase-title">❄️ Nix.js — Fase 3</h1>
+  <p class="subtitle">Componentes · Composición · Props reactivos · mount()</p>
+
+  <h2>Tests</h2>
+  <div id="tests3" class="section"></div>
+  <div id="summary3"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo3" class="section"></div>
+
+  <!-- ════════════════════════════════════════════
+       Fase 4: Lifecycle Hooks
+  ══════════════════════════════════════════ -->
+  <hr class="phase-sep" />
+  <h1 class="phase-title">❄️ Nix.js — Fase 4</h1>
+  <p class="subtitle">Lifecycle: onMount · onUnmount · onError · defineComponent</p>
+
+  <h2>Tests</h2>
+  <div id="tests4" class="section"></div>
+  <div id="summary4"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo4" class="section"></div>
+
+  <!-- ════════════════════════════════════════════
+       Fase 5: Global Stores
+  ══════════════════════════════════════════ -->
+  <hr class="phase-sep" />
+  <h1 class="phase-title">❄️ Nix.js — Fase 5</h1>
+  <p class="subtitle">Global Stores: createStore · signals reactivos · acciones · $reset</p>
+
+  <h2>Tests</h2>
+  <div id="tests5" class="section"></div>
+  <div id="summary5"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo5" class="section"></div>
+
+  <!-- ════════════════════════════════════════════
+       Fase 6: Router
+  ══════════════════════════════════════════ -->
+  <hr class="phase-sep" />
+  <h1 class="phase-title">❄️ Nix.js — Fase 6</h1>
+  <p class="subtitle">Router: createRouter · RouterView · Link · rutas hash</p>
+
+  <h2>Tests</h2>
+  <div id="tests6" class="section"></div>
+  <div id="summary6"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo6" class="section"></div>
+
+  <!-- ══ Fase 7: repeat() keyed diffing ══════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 7</h1>
+    <p class="phase-sub">Keyed lists: <code>repeat(items, keyFn, renderFn)</code> · diffing sin destruir DOM</p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests7" class="section"></div>
+  <div id="summary7"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo7" class="section"></div>
+
+  <!-- ══ Fase 8: lazy() + suspend() ══════════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 8</h1>
+    <p class="phase-sub">Async UI: <code>suspend(asyncFn, renderFn, opts?)</code> ·
+      <code>lazy(importFn, fallback?)</code>
+    </p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests8" class="section"></div>
+  <div id="summary8"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo8" class="section"></div>
+
+  <!-- ══ Fase 9: ref() ════════════════════════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 9</h1>
+    <p class="phase-sub">Referencias DOM: <code>ref&lt;T&gt;()</code> · <code>ref=${"{myRef}"}</code></p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests9" class="section"></div>
+  <div id="summary9"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo9" class="section"></div>
+
+  <!-- ══ Fase 10: Event Modifiers ════════════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 10</h1>
+    <p class="phase-sub">Event Modifiers: <code>@click.prevent</code> ·
+      <code>@click.stop</code> · <code>@keydown.enter</code> · <code>@click.once</code> · <code>@click.self</code>
+    </p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests10" class="section"></div>
+  <div id="summary10"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo10" class="section"></div>
+
+  <!-- ══ Fase 11: watch() ════════════════════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 11</h1>
+    <p class="phase-sub">Observadores: <code>watch(source, callback, opts?)</code> ·
+      <code>{ immediate, once }</code>
+    </p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests11" class="section"></div>
+  <div id="summary11"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo11" class="section"></div>
+
+  <!-- ══ Fase 12: nextTick() ══════════════════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 12</h1>
+    <p class="phase-sub">Microtask hook: <code>await nextTick()</code> · <code>nextTick(fn)</code></p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests12" class="section"></div>
+  <div id="summary12"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo12" class="section"></div>
+
+  <!-- ══ Fase 13: provide / inject ══════════════════════════════════ -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 13</h1>
+    <p class="phase-sub">Inyección de dependencias: <code>provide(key, value)</code> ·
+      <code>inject(key)</code> · <code>createInjectionKey&lt;T&gt;()</code>
+    </p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests13" class="section"></div>
+  <div id="summary13"></div>
+
+  <h2>Demo Interactivo</h2>
+  <div id="demo13" class="section"></div>
+
+</body>
+
+</html>
