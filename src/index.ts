@@ -37,6 +37,19 @@ export {
     provide,
     inject,
     createInjectionKey,
+    // Forms
+    useField,
+    createForm,
+    required,
+    minLength,
+    maxLength,
+    email,
+    pattern,
+    min,
+    max,
+    createValidator,
+    validators,
+    extendValidators,
 } from "./nix";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -58,4 +71,12 @@ export type {
     SuspenseOptions,
     // Dependency Injection
     InjectionKey,
+    // Forms
+    Validator,
+    FieldState,
+    FieldErrors,
+    FormState,
+    FormOptions,
+    ValidatorsBase,
+    NixChildren,
 } from "./nix";

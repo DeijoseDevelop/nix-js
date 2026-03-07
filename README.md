@@ -10,52 +10,75 @@
 
 ## Table of Contents
 
-- [Overview](#overview)
-- [Installation & Setup](#installation--setup)
-- [Core Concepts](#core-concepts)
-- [Reactivity](#reactivity)
-  - [signal](#signal)
-  - [computed](#computed)
-  - [effect](#effect)
-  - [batch](#batch)
-  - [watch](#watch)
-  - [untrack](#untrack)
-  - [nextTick](#nexttick)
-- [Templates](#templates)
-  - [html tag](#html-tag)
-  - [Text bindings](#text-bindings)
-  - [Attribute bindings](#attribute-bindings)
-  - [Event bindings & modifiers](#event-bindings--modifiers)
-  - [Conditional rendering](#conditional-rendering)
-  - [List rendering](#list-rendering)
-  - [Keyed lists: repeat()](#keyed-lists-repeat)
-  - [DOM refs: ref()](#dom-refs-ref)
-- [Components](#components)
-  - [Function components](#function-components)
-  - [Class components: NixComponent](#class-components-nixcomponent)
-  - [Lifecycle hooks](#lifecycle-hooks)
-  - [mount()](#mount)
-- [Children & Slots](#children--slots)
-  - [Default slot: children](#default-slot-children)
-  - [Named slots](#named-slots)
-  - [Children in function components](#children-in-function-components)
-- [Dependency Injection](#dependency-injection)
-  - [provide / inject](#provide--inject)
-  - [createInjectionKey](#createinjectionkey)
-- [Global Stores](#global-stores)
-  - [createStore](#createstore)
-- [Router](#router)
-  - [createRouter](#createrouter)
-  - [RouterView](#routerview)
-  - [Link](#link)
-  - [useRouter](#userouter)
-  - [Nested routes](#nested-routes)
-  - [Query parameters](#query-parameters)
-- [Async & Lazy Loading](#async--lazy-loading)
-  - [suspend()](#suspend)
-  - [lazy()](#lazy)
-- [API Reference](#api-reference)
-- [Known Limitations](#known-limitations)
+- [❄️ Nix.js](#️-nixjs)
+  - [Table of Contents](#table-of-contents)
+  - [Overview](#overview)
+    - [Architecture at a glance](#architecture-at-a-glance)
+  - [Installation \& Setup](#installation--setup)
+    - [Development (from source)](#development-from-source)
+- [Start development server](#start-development-server)
+- [Type check](#type-check)
+- [Production build](#production-build)
+  - [Core Concepts](#core-concepts)
+  - [Reactivity](#reactivity)
+    - [`signal`](#signal)
+    - [`computed`](#computed)
+    - [`effect`](#effect)
+    - [`batch`](#batch)
+    - [`watch`](#watch)
+    - [`untrack`](#untrack)
+    - [`nextTick`](#nexttick)
+  - [Templates](#templates)
+    - [`html` tag](#html-tag)
+    - [Text bindings](#text-bindings)
+    - [Attribute bindings](#attribute-bindings)
+    - [Event bindings \& modifiers](#event-bindings--modifiers)
+    - [Conditional rendering](#conditional-rendering)
+    - [List rendering](#list-rendering)
+    - [Keyed lists: `repeat()`](#keyed-lists-repeat)
+    - [DOM refs: `ref()`](#dom-refs-ref)
+  - [Components](#components)
+    - [Function components](#function-components)
+    - [Class components: `NixComponent`](#class-components-nixcomponent)
+    - [Lifecycle hooks](#lifecycle-hooks)
+    - [`mount()`](#mount)
+  - [Children \& Slots](#children--slots)
+    - [Default slot: `children`](#default-slot-children)
+    - [Named slots](#named-slots)
+    - [Children in function components](#children-in-function-components)
+    - [`NixChildren` type](#nixchildren-type)
+  - [Dependency Injection](#dependency-injection)
+    - [`provide` / `inject`](#provide--inject)
+    - [`createInjectionKey`](#createinjectionkey)
+  - [Global Stores](#global-stores)
+    - [`createStore`](#createstore)
+  - [Router](#router)
+    - [`createRouter`](#createrouter)
+    - [`RouterView`](#routerview)
+    - [`Link`](#link)
+    - [`useRouter`](#userouter)
+    - [Nested routes](#nested-routes)
+    - [Query parameters](#query-parameters)
+  - [Async \& Lazy Loading](#async--lazy-loading)
+    - [`suspend()`](#suspend)
+    - [`lazy()`](#lazy)
+  - [Forms](#forms)
+    - [`useField()`](#usefield)
+    - [`createForm()`](#createform)
+    - [Built-in validators](#built-in-validators)
+    - [Zod / Valibot interop](#zod--valibot-interop)
+    - [Server-side errors](#server-side-errors)
+  - [API Reference](#api-reference)
+    - [Reactivity](#reactivity-1)
+    - [Signal methods](#signal-methods)
+    - [Templates](#templates-1)
+    - [Components](#components-1)
+    - [Dependency Injection](#dependency-injection-1)
+    - [Stores](#stores)
+    - [Router](#router-1)
+    - [Async](#async)
+  - [Known Limitations](#known-limitations)
+  - [License](#license)
 
 ---
 
@@ -1049,6 +1072,177 @@ export default class HomePage extends NixComponent {
   render() {
     return html`<h1>Home</h1>`;
   }
+}
+```
+
+---
+
+## Forms
+
+Nix.js includes a built-in form management system inspired by react-hook-form.
+It works entirely via signals — no magic, no decorators, and zero extra dependencies.
+Validation libraries like Zod, Valibot, or Yup are supported as optional add-ons.
+
+### `useField()`
+
+For managing a **single field** independently:
+
+```typescript
+import { useField, required, minLength } from "@deijose/nix-js";
+
+const name = useField("", [required(), minLength(2)]);
+
+// In a template:
+html`
+  <input
+    value=${() => name.value.value}
+    @input=${name.onInput}
+    @blur=${name.onBlur}
+  />
+  ${() => name.error.value
+    ? html`<p style="color:red">${name.error.value}</p>`
+    : null}
+`
+```
+
+| Property | Type | Description |
+|---|---|---|
+| `value` | `Signal<T>` | Current value — read/write |
+| `error` | `Signal<string\|null>` | Validator error, hidden until touched/dirty |
+| `touched` | `Signal<boolean>` | True after first `blur` |
+| `dirty` | `Signal<boolean>` | True after first `input` |
+| `onInput` | `(e: Event) => void` | Attach to `@input` |
+| `onBlur` | `() => void` | Attach to `@blur` |
+| `reset()` | `() => void` | Restore initial state |
+
+### `createForm()`
+
+For managing a **full form** with submit handling:
+
+```typescript
+import { createForm, required, email, min } from "@deijose/nix-js";
+
+const form = createForm(
+  { name: "", email: "", age: 0 },
+  {
+    validators: {
+      name:  [required(), minLength(2)],
+      email: [required(), email()],
+      age:   [required(), min(18)],
+    },
+  }
+);
+
+function onSubmit(values: typeof form.values.value) {
+  console.log("Submitted:", values);
+}
+
+html`
+  <form @submit=${form.handleSubmit(onSubmit)}>
+    <input
+      value=${() => form.fields.name.value.value}
+      @input=${form.fields.name.onInput}
+      @blur=${form.fields.name.onBlur}
+    />
+    ${() => form.fields.name.error.value
+      ? html`<p class="err">${form.fields.name.error.value}</p>`
+      : null}
+
+    <button type="submit">Submit</button>
+    <button type="button" @click=${() => form.reset()}>Reset</button>
+  </form>
+`
+```
+
+`handleSubmit(fn)` automatically:
+1. Calls `e.preventDefault()`
+2. Touches all fields so errors become visible
+3. Runs `options.validate` if provided
+4. Only calls `fn(values)` if all validations pass
+
+### Built-in validators
+
+| Validator | Signature | Description |
+|---|---|---|
+| `required()` | `(msg?)` | Non-empty value |
+| `minLength(n)` | `(n, msg?)` | String length ≥ n |
+| `maxLength(n)` | `(n, msg?)` | String length ≤ n |
+| `email()` | `(msg?)` | Valid email format |
+| `pattern(re)` | `(regex, msg?)` | Matches regex |
+| `min(n)` | `(n, msg?)` | Number ≥ n |
+| `max(n)` | `(n, msg?)` | Number ≤ n |
+
+All validators accept an optional custom message as their last argument.
+You can write your own: a validator is just `(value: T) => string | null`.
+
+```typescript
+// Custom validator
+const noSpaces = (v: string) => /\s/.test(v) ? "No spaces allowed" : null;
+
+const username = useField("", [required(), noSpaces]);
+```
+
+### Zod / Valibot interop
+
+Use the `validate` option in `createForm` to plug in any schema library.
+The function receives the full form values and returns a field→error map or null.
+
+```typescript
+import { z } from "zod";
+
+const schema = z.object({
+  name:  z.string().min(2, "Min 2 characters"),
+  email: z.string().email("Invalid email"),
+});
+
+const form = createForm(
+  { name: "", email: "" },
+  {
+    validate(values) {
+      const result = schema.safeParse(values);
+      if (result.success) return null;
+      // Flatten Zod errors into { field: firstErrorMessage }
+      return Object.fromEntries(
+        Object.entries(result.error.flatten().fieldErrors)
+              .map(([k, v]) => [k, v?.[0] ?? null])
+      );
+    },
+  }
+);
+```
+
+Same pattern works for Valibot, Yup, Arktype, or any custom validator:
+
+```typescript
+// Valibot
+import { safeParse } from "valibot";
+
+validate(values) {
+  const r = safeParse(schema, values);
+  if (r.success) return null;
+  const errs: Record<string, string> = {};
+  for (const issue of r.issues)
+    if (issue.path?.[0]?.key)
+      errs[String(issue.path[0].key)] = issue.message;
+  return errs;
+}
+```
+
+### Server-side errors
+
+After a failed API call, inject server errors directly into the form fields.
+Each field's error disappears automatically when the user edits that field.
+
+```typescript
+async function onSubmit(values) {
+  const res = await api.register(values);
+  if (!res.ok) {
+    const { errors } = await res.json();
+    // errors: { email: "Email already in use", name: "Name taken" }
+    form.setErrors(errors);
+    return;
+  }
+  router.push("/dashboard");
 }
 ```
 
