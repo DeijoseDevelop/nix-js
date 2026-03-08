@@ -267,3 +267,42 @@ describe("RouterView", () => {
         document.body.removeChild(el);
     });
 });
+
+// ── Security fixes ────────────────────────────────────────────────────────────
+
+describe("security: malformed URI params", () => {
+    it("does not crash on malformed percent-encoding in route params", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/user/:id", component: () => html`<p>user</p>` },
+        ]);
+        // "%ZZ" is invalid percent-encoding — should not throw
+        expect(() => r.navigate("/user/%ZZ")).not.toThrow();
+        expect(r.params.value.id).toBe("%ZZ"); // falls back to raw segment
+    });
+});
+
+describe("security: async guard race condition", () => {
+    it("abandons stale async guard when a new navigation starts", async () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+            { path: "/b", component: () => html`<p>b</p>` },
+        ]);
+        r.navigate("/");
+
+        // Slow async guard that allows after 50ms
+        r.beforeEach(() => new Promise<void>((res) => setTimeout(res, 50)));
+
+        // Start navigation to /a (async guard pending)
+        r.navigate("/a");
+        // Immediately start navigation to /b (should cancel /a's chain)
+        r.navigate("/b");
+
+        // Wait for all guards to resolve
+        await new Promise((res) => setTimeout(res, 150));
+
+        // Only the LAST navigation (/b) should have committed
+        expect(r.current.value).toBe("/b");
+    });
+});

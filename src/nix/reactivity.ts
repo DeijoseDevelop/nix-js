@@ -52,6 +52,11 @@ export function _popErrorHandler(): void {
 let batchLevel = 0;
 const pendingEffects = new Set<() => void>();
 
+// ── Effect recursion guard ──
+
+const MAX_EFFECT_DEPTH = 100;
+let effectDepth = 0;
+
 // ── Signal ──
 
 export class Signal<T> {
@@ -156,6 +161,16 @@ export function effect(fn: () => void | (() => void)): () => void {
         activeEffect = execute;
         activeDeps = deps;
 
+        effectDepth++;
+        if (effectDepth > MAX_EFFECT_DEPTH) {
+            effectDepth = 0;
+            activeEffect = effectStack.pop() || null;
+            activeDeps = depsStack.pop() || null;
+            throw new Error(
+                "[Nix] Maximum effect re-execution depth exceeded (possible infinite loop)."
+            );
+        }
+
         try {
             cleanup = fn();
         } catch (err) {
@@ -165,6 +180,7 @@ export function effect(fn: () => void | (() => void)): () => void {
                 throw err;
             }
         } finally {
+            effectDepth--;
             activeEffect = effectStack.pop() || null;
             activeDeps = depsStack.pop() || null;
         }
