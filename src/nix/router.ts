@@ -75,6 +75,23 @@ export interface RouteRecord {
     beforeEnter?: NavigationGuard;
 }
 
+/**
+ * Callback for `afterEach` hooks — receives the committed `to` and `from` paths.
+ */
+export type AfterEachHook = (to: string, from: string) => void;
+
+/**
+ * Result of `router.resolve(path)` — inspect what would match without navigating.
+ */
+export interface ResolvedRoute {
+    /** Whether the path matched any registered route. */
+    matched: boolean;
+    /** Extracted route params (empty object if no match). */
+    params: Record<string, string>;
+    /** The matched route record, or `undefined` if no match. */
+    route: RouteRecord | undefined;
+}
+
 export interface Router {
     /** Señal con la ruta activa actual (pathname, p.ej. "/users/42") */
     readonly current: Signal<string>;
@@ -109,6 +126,65 @@ export interface Router {
      *                 Un valor `null`/`undefined` elimina el parámetro.
      */
     navigate(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
+    /**
+     * Navigate without adding an entry to the browser history.
+     * Uses `history.replaceState` instead of `pushState`.
+     * Guards still run normally.
+     *
+     * @param path   Destination path. May include query string.
+     * @param query  Query params as an object.
+     *
+     * @example
+     * // After login — pressing "back" won't return to /login
+     * router.replace("/home");
+     */
+    replace(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
+    /**
+     * Go back one entry in the browser history.
+     * Equivalent to `history.back()`.
+     *
+     * @example
+     * router.back();
+     */
+    back(): void;
+    /**
+     * Go forward one entry in the browser history.
+     * Equivalent to `history.forward()`.
+     *
+     * @example
+     * router.forward();
+     */
+    forward(): void;
+    /**
+     * Move `delta` entries in the browser history.
+     * Negative values go back, positive go forward.
+     *
+     * @example
+     * router.go(-2); // two pages back
+     * router.go(1);  // same as forward()
+     */
+    go(delta: number): void;
+    /**
+     * Check if a path is currently active.
+     * By default performs an exact match.
+     *
+     * @param path   The path to test.
+     * @param exact  If `false`, matches when `current` starts with `path`.
+     *               Default: `true`.
+     *
+     * @example
+     * router.isActive("/admin");         // exact match
+     * router.isActive("/admin", false);  // prefix: /admin/users → true
+     */
+    isActive(path: string, exact?: boolean): boolean;
+    /**
+     * Inspect what route would match a given path without actually navigating.
+     *
+     * @example
+     * const info = router.resolve("/user/42");
+     * // { matched: true, params: { id: "42" }, route: { path: "/user/:id", ... } }
+     */
+    resolve(path: string): ResolvedRoute;
     /** Árbol de rutas original (tal como se pasó a createRouter) */
     readonly routes: RouteRecord[];
     /**
@@ -124,6 +200,19 @@ export interface Router {
      * stop(); // elimina el guard
      */
     beforeEach(guard: NavigationGuard): () => void;
+    /**
+     * Register a hook that runs after every successful navigation.
+     * Useful for analytics, scroll reset, etc.
+     *
+     * Returns a function to remove the hook.
+     *
+     * @example
+     * const stop = router.afterEach((to, from) => {
+     *   window.scrollTo(0, 0);
+     * });
+     * stop();
+     */
+    afterEach(hook: AfterEachHook): () => void;
 }
 
 // ── Internos ──────────────────────────────────────────────────────────────────
@@ -318,8 +407,9 @@ export function createRouter(routes: RouteRecord[]): Router {
     const params = signal<Record<string, string>>(initialMatch?.params ?? {});
     const query = signal<Record<string, string>>(parseQuery(window.location.search));
 
-    // ── Guards ────────────────────────────────────────────────────────────────
+    // ── Guards & afterEach hooks ────────────────────────────────────────────
     const _guards: NavigationGuard[] = [];
+    const _afterHooks: AfterEachHook[] = [];
     /** Monotonically increasing counter to cancel stale async guard chains. */
     let _navGeneration = 0;
 
@@ -406,6 +496,10 @@ export function createRouter(routes: RouteRecord[]): Router {
                 params.value = m?.params ?? {};
                 query.value = newQuery;
                 current.value = p;
+                // Fire afterEach hooks for popstate navigations
+                for (const hook of _afterHooks) {
+                    try { hook(p, from); } catch { /* ignore */ }
+                }
             },
             () => {
                 // Guard canceló el popstate: restaurar URL anterior sin disparar otro popstate
@@ -416,6 +510,29 @@ export function createRouter(routes: RouteRecord[]): Router {
 
     window.addEventListener("popstate", onPopstate);
     _currentPopstateCleanup = () => window.removeEventListener("popstate", onPopstate);
+
+    // ── Internal: commit navigation + fire afterEach hooks ─────────────────
+    function _commit(
+        pathname: string,
+        stringQuery: Record<string, string>,
+        from: string,
+        m: ReturnType<typeof matchFlat>,
+        useReplace: boolean,
+    ): void {
+        params.value = m?.params ?? {};
+        query.value = stringQuery;
+        current.value = pathname;
+        const url = pathname + buildQueryString(stringQuery);
+        if (useReplace) {
+            history.replaceState(null, "", url);
+        } else {
+            history.pushState(null, "", url);
+        }
+        // Fire afterEach hooks
+        for (const hook of _afterHooks) {
+            try { hook(pathname, from); } catch { /* ignore */ }
+        }
+    }
 
     // ── navigate ──────────────────────────────────────────────────────────────
     function navigate(
@@ -431,13 +548,57 @@ export function createRouter(routes: RouteRecord[]): Router {
             pathname,
             from,
             m?.route.beforeEnter,
-            () => {
-                params.value = m?.params ?? {};
-                query.value = stringQuery;
-                current.value = pathname;
-                history.pushState(null, "", pathname + buildQueryString(stringQuery));
-            },
+            () => _commit(pathname, stringQuery, from, m, false),
         );
+    }
+
+    // ── replace ───────────────────────────────────────────────────────────────
+    function replace(
+        path: string,
+        queryObj?: Record<string, string | number | boolean | null | undefined>,
+    ): void {
+        _hasNavigated = true;
+        const { pathname, stringQuery } = _parsePath(path, queryObj);
+        const from = current.value;
+        const m = matchFlat(pathname, flat);
+
+        _runGuards(
+            pathname,
+            from,
+            m?.route.beforeEnter,
+            () => _commit(pathname, stringQuery, from, m, true),
+        );
+    }
+
+    // ── back / forward / go ───────────────────────────────────────────────────
+    function back(): void { history.back(); }
+    function forward(): void { history.forward(); }
+    function go(delta: number): void { history.go(delta); }
+
+    // ── isActive ──────────────────────────────────────────────────────────────
+    function isActive(path: string, exact = true): boolean {
+        const cur = current.value;
+        if (exact) return cur === path;
+        return cur === path || cur.startsWith(path.endsWith("/") ? path : path + "/");
+    }
+
+    // ── resolve ───────────────────────────────────────────────────────────────
+    function resolve(path: string): ResolvedRoute {
+        const m = matchFlat(path, flat);
+        if (!m) return { matched: false, params: {}, route: undefined };
+        // Find the original RouteRecord that corresponds to this match
+        const leafComponent = m.route.chain[m.route.chain.length - 1];
+        function findRecord(records: RouteRecord[]): RouteRecord | undefined {
+            for (const r of records) {
+                if (r.component === leafComponent) return r;
+                if (r.children) {
+                    const found = findRecord(r.children);
+                    if (found) return found;
+                }
+            }
+            return undefined;
+        }
+        return { matched: true, params: m.params, route: findRecord(routes) };
     }
 
     // ── beforeEach ────────────────────────────────────────────────────────────
@@ -449,7 +610,20 @@ export function createRouter(routes: RouteRecord[]): Router {
         };
     }
 
-    const router: RouterInternal = { current, params, query, navigate, beforeEach, routes, _flat: flat, _guards };
+    // ── afterEach ─────────────────────────────────────────────────────────────
+    function afterEach(hook: AfterEachHook): () => void {
+        _afterHooks.push(hook);
+        return () => {
+            const idx = _afterHooks.indexOf(hook);
+            if (idx !== -1) _afterHooks.splice(idx, 1);
+        };
+    }
+
+    const router: RouterInternal = {
+        current, params, query, navigate, replace,
+        back, forward, go, isActive, resolve,
+        beforeEach, afterEach, routes, _flat: flat, _guards,
+    };
 
     if (_currentRouter) {
         console.warn(
