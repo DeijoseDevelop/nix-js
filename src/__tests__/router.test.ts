@@ -326,3 +326,243 @@ describe("security: router replacement warning", () => {
         warnSpy.mockRestore();
     });
 });
+
+// ── replace() ─────────────────────────────────────────────────────────────────
+
+describe("replace()", () => {
+    it("updates current signal without pushState", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/login", component: () => html`<p>login</p>` },
+            { path: "/home", component: () => html`<p>home2</p>` },
+        ]);
+        r.navigate("/login");
+        const lenAfterNav = history.length;
+        r.replace("/home");
+        expect(r.current.value).toBe("/home");
+        // replaceState does not increase history length
+        expect(history.length).toBe(lenAfterNav);
+    });
+
+    it("runs guards before replacing", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+        ]);
+        r.beforeEach(() => false);
+        const before = r.current.value;
+        r.replace("/a");
+        expect(r.current.value).toBe(before);
+    });
+
+    it("parses query params", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/search", component: () => html`<p>search</p>` },
+        ]);
+        r.replace("/search", { q: "hello" });
+        expect(r.query.value).toEqual({ q: "hello" });
+    });
+
+    it("extracts dynamic params", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/user/:id", component: () => html`<p>user</p>` },
+        ]);
+        r.replace("/user/99");
+        expect(r.params.value).toEqual({ id: "99" });
+    });
+});
+
+// ── back() / forward() / go() ────────────────────────────────────────────────
+
+describe("back() / forward() / go()", () => {
+    it("back() calls history.back", () => {
+        const spy = vi.spyOn(history, "back").mockImplementation(() => { });
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        r.back();
+        expect(spy).toHaveBeenCalledOnce();
+        spy.mockRestore();
+    });
+
+    it("forward() calls history.forward", () => {
+        const spy = vi.spyOn(history, "forward").mockImplementation(() => { });
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        r.forward();
+        expect(spy).toHaveBeenCalledOnce();
+        spy.mockRestore();
+    });
+
+    it("go(n) calls history.go with the correct delta", () => {
+        const spy = vi.spyOn(history, "go").mockImplementation(() => { });
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        r.go(-2);
+        expect(spy).toHaveBeenCalledWith(-2);
+        r.go(3);
+        expect(spy).toHaveBeenCalledWith(3);
+        spy.mockRestore();
+    });
+});
+
+// ── isActive() ────────────────────────────────────────────────────────────────
+
+describe("isActive()", () => {
+    it("returns true for exact match (default)", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        r.navigate("/about");
+        expect(r.isActive("/about")).toBe(true);
+        expect(r.isActive("/")).toBe(false);
+    });
+
+    it("exact match is strict (no prefix)", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/admin/users", component: () => html`<p>users</p>` },
+        ]);
+        r.navigate("/admin/users");
+        expect(r.isActive("/admin")).toBe(false);
+        expect(r.isActive("/admin/users")).toBe(true);
+    });
+
+    it("prefix match with exact=false", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/admin/users", component: () => html`<p>users</p>` },
+        ]);
+        r.navigate("/admin/users");
+        expect(r.isActive("/admin", false)).toBe(true);
+        expect(r.isActive("/admin/users", false)).toBe(true);
+        expect(r.isActive("/other", false)).toBe(false);
+    });
+});
+
+// ── resolve() ─────────────────────────────────────────────────────────────────
+
+describe("resolve()", () => {
+    it("returns matched=true with params for known routes", () => {
+        const userComp = () => html`<p>user</p>`;
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/user/:id", component: userComp },
+        ]);
+        const info = r.resolve("/user/7");
+        expect(info.matched).toBe(true);
+        expect(info.params).toEqual({ id: "7" });
+        expect(info.route).toBeDefined();
+        expect(info.route!.path).toBe("/user/:id");
+    });
+
+    it("returns matched=false for unknown paths", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        const info = r.resolve("/nonexistent");
+        expect(info.matched).toBe(false);
+        expect(info.params).toEqual({});
+        expect(info.route).toBeUndefined();
+    });
+
+    it("does not change current route", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        r.navigate("/");
+        const before = r.current.value;
+        r.resolve("/about");
+        expect(r.current.value).toBe(before);
+    });
+});
+
+// ── afterEach() ───────────────────────────────────────────────────────────────
+
+describe("afterEach()", () => {
+    it("fires after navigate()", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        r.navigate("/");
+        const calls: [string, string][] = [];
+        r.afterEach((to, from) => calls.push([to, from]));
+        r.navigate("/about");
+        expect(calls).toEqual([["/about", "/"]]);
+    });
+
+    it("fires after replace()", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+        ]);
+        r.navigate("/");
+        const calls: [string, string][] = [];
+        r.afterEach((to, from) => calls.push([to, from]));
+        r.replace("/a");
+        expect(calls).toEqual([["/a", "/"]]);
+    });
+
+    it("does NOT fire when guard cancels navigation", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+        ]);
+        r.navigate("/");
+        r.beforeEach(() => false);
+        let fired = false;
+        r.afterEach(() => { fired = true; });
+        r.navigate("/a");
+        expect(fired).toBe(false);
+    });
+
+    it("unsubscribe removes the hook", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+            { path: "/b", component: () => html`<p>b</p>` },
+        ]);
+        r.navigate("/");
+        let count = 0;
+        const stop = r.afterEach(() => { count++; });
+        r.navigate("/a");
+        expect(count).toBe(1);
+        stop();
+        r.navigate("/b");
+        expect(count).toBe(1);
+    });
+
+    it("multiple afterEach hooks run in order", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+        ]);
+        r.navigate("/");
+        const order: number[] = [];
+        r.afterEach(() => order.push(1));
+        r.afterEach(() => order.push(2));
+        r.afterEach(() => order.push(3));
+        r.navigate("/a");
+        expect(order).toEqual([1, 2, 3]);
+    });
+
+    it("afterEach exceptions are swallowed", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+        ]);
+        r.navigate("/");
+        let secondCalled = false;
+        r.afterEach(() => { throw new Error("boom"); });
+        r.afterEach(() => { secondCalled = true; });
+        expect(() => r.navigate("/a")).not.toThrow();
+        expect(secondCalled).toBe(true);
+    });
+});
