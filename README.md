@@ -121,6 +121,7 @@
   - [Known Limitations](#known-limitations)
   - [Contributing](#contributing)
   - [Changelog](#changelog)
+    - [v1.0.8](#v108)
     - [v1.0.7](#v107)
     - [v1.0.6](#v106)
     - [v1.0.5](#v105)
@@ -160,7 +161,8 @@ Nix.js is a signal-based reactive micro-framework. Its design goals are:
   └───────────────────────────┬───────────────────────────────────────────────┘
                               │
   ┌─── Component Layer ───────┼───────────────────────────────────────────────┐
-  │  NixComponent  ──  mount()  ──  lifecycle hooks  ──  children / slots    │
+  │  NixTemplate (fn components)  ──  NixComponent (lifecycle)  ──  mount()  │
+  │  lifecycle hooks  ──  children / slots                                   │
   └───────────────────────────┬───────────────────────────────────────────────┘
                               │
   ┌─── Application Layer ─────┼───────────────────────────────────────────────┐
@@ -238,7 +240,7 @@ import {
 
 ## Quick Start
 
-A complete mini-app with reactive state, components, and routing in under 40 lines:
+A complete mini-app showing both component styles — function components (`NixTemplate`) for pages, class components (`NixComponent`) when lifecycle hooks are needed:
 
 ```typescript
 import {
@@ -246,55 +248,72 @@ import {
   createRouter, RouterView, Link, useRouter,
 } from "@deijose/nix-js";
 
-// --- Pages ---
+// --- Pages as function components (NixTemplate) ---
+// A plain function that returns html`` is all you need for pages
+// and purely display components — no class, no lifecycle boilerplate.
 
-class HomePage extends NixComponent {
-  render() {
-    const count = signal(0);
-    return html`
-      <h1>Home</h1>
-      <p>Count: ${() => count.value}</p>
-      <button @click=${() => count.value++}>Increment</button>
-    `;
-  }
+function HomePage(): NixTemplate {
+  const count = signal(0);
+  return html`
+    <h1>Home</h1>
+    <p>Count: ${() => count.value}</p>
+    <button @click=${() => count.value++}>Increment</button>
+  `;
 }
 
-class UserPage extends NixComponent {
+function UserPage(): NixTemplate {
+  const router = useRouter();
+  return html`<h1>User: ${() => router.params.value.id}</h1>`;
+}
+
+// --- Stateful component as class component (NixComponent) ---
+// Use a class when you need onInit / onMount / onUnmount / onError hooks.
+
+class Clock extends NixComponent {
+  private time = signal(new Date().toLocaleTimeString());
+  private _id = 0;
+
+  onMount() {
+    this._id = setInterval(() => {
+      this.time.value = new Date().toLocaleTimeString();
+    }, 1000);
+    return () => clearInterval(this._id); // auto-cleanup on unmount
+  }
+
   render() {
-    const router = useRouter();
-    return html`<h1>User: ${() => router.params.value.id}</h1>`;
+    return html`<p>Clock: ${() => this.time.value}</p>`;
   }
 }
 
 // --- Router ---
+// Both NixTemplate (function call) and NixComponent (new) work as route components.
 
 createRouter([
-  { path: "/",          component: () => new HomePage() },
-  { path: "/user/:id",  component: () => new UserPage() },
+  { path: "/",          component: () => HomePage() },
+  { path: "/user/:id",  component: () => UserPage() },
 ]);
 
-// --- App shell ---
+// --- App shell (function component) ---
 
-class App extends NixComponent {
-  render() {
-    return html`
-      <nav>
-        ${new Link("/", "Home")}
-        ${new Link("/user/42", "User 42")}
-      </nav>
-      ${new RouterView()}
-    `;
-  }
+function App(): NixTemplate {
+  return html`
+    <nav>
+      ${new Link("/", "Home")}
+      ${new Link("/user/42", "User 42")}
+    </nav>
+    ${new Clock()}
+    ${new RouterView()}
+  `;
 }
 
-mount(new App(), "#app");
+mount(App(), "#app");
 ```
 
 This gives you:
-- **Reactive counter** on the home page (signal-driven, no re-render of the full tree)
-- **Dynamic route params** on `/user/:id`
+- **`NixTemplate`** (function components) for pages — minimal boilerplate, signals close over the function scope
+- **`NixComponent`** (class components) for the `Clock` — `onMount` starts the interval and returns its cleanup
+- **Dynamic route params** on `/user/:id` via `useRouter()`
 - **Client-side navigation** via `Link` with `pushState` (no page reloads)
-- **Active link styling** automatically applied by `Link`
 
 ---
 
@@ -660,12 +679,12 @@ interface NixRef<T extends Element = Element> {
 
 ### Function components
 
-The simplest form: a plain function that returns a `NixTemplate`. Signals inside close over the component's scope.
+The simplest and most common form: a plain function that calls `html\`\`` and returns a `NixTemplate`. This is the **recommended pattern for pages and purely display components** — signals close over the function's scope and update the DOM directly, with no class boilerplate.
 
 ```typescript
 import { html, signal, mount } from "./nix";
 
-function Counter() {
+function Counter(): NixTemplate {
   const count = signal(0);
   return html`
     <div>
@@ -676,11 +695,14 @@ function Counter() {
 }
 
 mount(Counter(), "#app");
+
+// Function components integrate seamlessly with the router:
+// createRouter([{ path: "/counter", component: () => Counter() }]);
 ```
 
 ### Class components: `NixComponent`
 
-For components that need lifecycle hooks, extend `NixComponent`:
+Extend `NixComponent` **only when you need lifecycle hooks** (`onInit`, `onMount`, `onUnmount`, `onError`). Common cases: timers, data fetching, external subscriptions, cleanup.
 
 ```typescript
 import { NixComponent, html, signal } from "./nix";
@@ -1996,8 +2018,9 @@ transition(content, {
 
 | Export | Description |
 |--------|-------------|
-| `NixComponent` | Abstract base class with lifecycle hooks |
-| `mount(component, container)` | Mount template or component → `{ unmount() }` |
+| `NixTemplate` | Interface returned by `html\`\`` — the building block for function components and pages |
+| `NixComponent` | Abstract base class — use when lifecycle hooks are needed (`onInit`, `onMount`, `onUnmount`, `onError`) |
+| `mount(component, container)` | Mount a `NixTemplate` or `NixComponent` → `{ unmount() }` |
 
 ### Dependency Injection
 
@@ -2166,6 +2189,10 @@ npm run build:lib    # production build
 ---
 
 ## Changelog
+
+### v1.0.8
+- Added `NixTemplate` return type annotation to all function component examples in README and `.readme-npm.md`
+- Documented `NixTemplate` as the recommended pattern for pages and display components alongside `NixComponent`
 
 ### v1.0.7
 - All source comments and JSDoc translated to concise English
