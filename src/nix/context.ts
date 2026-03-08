@@ -1,76 +1,36 @@
-// ═══════════════════════════════════════════════
-//  Nix.js ❄️ — Provide / Inject  (Fase 13)
-// ═══════════════════════════════════════════════
-//
-//  Inyección de dependencias sin prop drilling:
-//
-//    Proveedor:
-//      class ThemeProvider extends NixComponent {
-//        theme = signal("dark");
-//        onInit() { provide(THEME_KEY, this.theme); }
-//        render()  { return html`...`; }
-//      }
-//
-//    Consumidor (cualquier nivel de profundidad):
-//      class Button extends NixComponent {
-//        theme = inject(THEME_KEY);   // Signal<string> | undefined
-//        render() {
-//          return html`<button class=${() => this.theme?.value}>OK</button>`;
-//        }
-//      }
-//
-//  Cómo funciona:
-//    Cada componente tiene su propio mapa de valores provistos.
-//    Al renderizar, el motor apila los mapas padre → hijo.
-//    inject() busca desde el tope de la pila hacia la raíz.
+// --- Public types ---
 
-// ─── Tipos públicos ───────────────────────────────────────────────────────────
-
-/**
- * Clave tipada para provide/inject.
- * El parámetro genérico T garantiza coherencia entre proveedor y consumidor.
- *
- * @example
- *   const THEME_KEY = createInjectionKey<Signal<string>>("theme");
- */
+/** Typed key for provide/inject. Generic `T` enforces type safety between provider and consumer. */
 export type InjectionKey<T> = symbol & { readonly __nixType?: T };
 
-/**
- * Crea una InjectionKey única y tipada.
- * Cada llamada produce un símbolo distinto, evitando colisiones.
- *
- * @param description Nombre descriptivo (aparece en Symbol.toString())
- */
+/** Creates a unique typed InjectionKey. */
 export function createInjectionKey<T>(description?: string): InjectionKey<T> {
     return Symbol(description) as InjectionKey<T>;
 }
 
-// ─── Stack interno ────────────────────────────────────────────────────────────
+// --- Internal stack ---
 
-/** Pila de mapas provide, uno por componente activo en el árbol de render. */
+/** Stack of provide maps, one per active component in the render tree. */
 const _stack: Map<unknown, unknown>[] = [];
 
-/** @internal — devuelve copia del stack (para capturar en closures de efectos). */
+/** @internal — returns a copy of the stack for capturing in effect closures. */
 export function _captureContextSnapshot(): Map<unknown, unknown>[] {
     return [..._stack];
 }
 
-/** @internal — push de un contexto vacío para un nuevo componente (render estático). */
+/** @internal — pushes an empty context for a new component (static render). */
 export function _pushComponentContext(): void {
     _stack.push(new Map());
 }
 
-/** @internal — pop del contexto del componente actual (render estático). */
+/** @internal — pops the current component context (static render). */
 export function _popComponentContext(): void {
     _stack.pop();
 }
 
 /**
- * @internal — ejecuta `fn` con `parentSnapshot` como ancestros y un nuevo
- * contexto vacío en el tope, luego restaura el stack previo.
- *
- * Usado por efectos reactivos que pueden re-ejecutarse fuera del árbol de
- * rendering original (p.ej. NixComponents dentro de `() => new MyComp()`).
+ * @internal — executes `fn` with `parentSnapshot` as ancestors and a fresh
+ * empty context on top, then restores the previous stack.
  */
 export function _withComponentContext<T>(
     parentSnapshot: Map<unknown, unknown>[],
@@ -78,7 +38,7 @@ export function _withComponentContext<T>(
 ): T {
     const saved = _stack.splice(0);
     parentSnapshot.forEach(m => _stack.push(m));
-    _stack.push(new Map()); // contexto propio, vacío al principio
+    _stack.push(new Map());
     try {
         return fn();
     } finally {
@@ -87,21 +47,11 @@ export function _withComponentContext<T>(
     }
 }
 
-// ─── API pública ──────────────────────────────────────────────────────────────
+// --- Public API ---
 
 /**
- * Registra un valor para que los componentes descendientes puedan obtenerlo
- * con `inject()`.
- *
- * Debe llamarse en `onInit()` o en el constructor de un `NixComponent`.
- * Si se llama fuera del contexto de render de un componente, lanza un error.
- *
- * @example
- *   class ThemeProvider extends NixComponent {
- *     theme = signal("dark");
- *     onInit() { provide(THEME_KEY, this.theme); }   // ← aquí
- *     render()  { return html`${new ThemedButton()}`; }
- *   }
+ * Registers a value so descendant components can retrieve it via `inject()`.
+ * Must be called inside `onInit()` of a NixComponent.
  */
 export function provide<T>(
     key: InjectionKey<T> | string | symbol,
@@ -110,25 +60,15 @@ export function provide<T>(
     const top = _stack[_stack.length - 1];
     if (!top) {
         throw new Error(
-            "[Nix] provide() debe llamarse dentro de onInit() de un NixComponent."
+            "[Nix] provide() must be called inside onInit() of a NixComponent."
         );
     }
     top.set(key, value);
 }
 
 /**
- * Obtiene un valor provisto por un componente ancestro.
- * Busca de hijo a padre; retorna `undefined` si la clave no fue provista.
- *
- * Úsalo como propiedad de clase o dentro de `onInit()`.
- *
- * @example
- *   class ThemedButton extends NixComponent {
- *     theme = inject(THEME_KEY);   // Signal<string> | undefined
- *     render() {
- *       return html`<button class=${() => this.theme?.value ?? "light"}>OK</button>`;
- *     }
- *   }
+ * Retrieves a value provided by an ancestor component.
+ * Searches child-to-parent; returns `undefined` if the key was not provided.
  */
 export function inject<T>(
     key: InjectionKey<T> | string | symbol

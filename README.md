@@ -1,24 +1,26 @@
-# ❄️ Nix.js
+# Nix.js
+
+[![npm version](https://img.shields.io/npm/v/@deijose/nix-js.svg)](https://www.npmjs.com/package/@deijose/nix-js)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen.svg)]()
+[![Bundle size](https://img.shields.io/badge/min%2Bgzip-~8%20KB-orange.svg)]()
+[![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
+[![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)]()
 
 > A lightweight, fully reactive micro-framework for building modern web UIs — no virtual DOM, no compiler, no build-time magic. Just signals, tagged templates, and pure TypeScript.
-
-```
-~28 KB source · zero dependencies · TypeScript-first · ES2022
-```
 
 ---
 
 ## Table of Contents
 
-- [❄️ Nix.js](#️-nixjs)
+- [Nix.js](#nixjs)
   - [Table of Contents](#table-of-contents)
   - [Overview](#overview)
     - [Architecture at a glance](#architecture-at-a-glance)
   - [Installation \& Setup](#installation--setup)
     - [Development (from source)](#development-from-source)
-- [Start development server](#start-development-server)
-- [Type check](#type-check)
-- [Production build](#production-build)
+    - [Project structure](#project-structure)
+  - [Quick Start](#quick-start)
   - [Core Concepts](#core-concepts)
   - [Reactivity](#reactivity)
     - [`signal`](#signal)
@@ -62,6 +64,11 @@
   - [Async \& Lazy Loading](#async--lazy-loading)
     - [`suspend()`](#suspend)
     - [`lazy()`](#lazy)
+    - [Route Guards](#route-guards)
+      - [`router.beforeEach(guard)` — global guard](#routerbeforeeachguard--global-guard)
+      - [`beforeEnter` — per-route guard](#beforeenter--per-route-guard)
+      - [Async guards](#async-guards)
+      - [Type](#type)
   - [Forms](#forms)
     - [`useField()`](#usefield)
     - [`createForm()`](#createform)
@@ -103,7 +110,22 @@
     - [Stores](#stores)
     - [Router](#router-1)
     - [Async](#async)
+    - [Forms](#forms-1)
+    - [show / hide](#show--hide)
+    - [Portal](#portal-1)
+    - [Error Boundaries](#error-boundaries-1)
+    - [Transitions](#transitions-1)
+  - [Comparison with Other Frameworks](#comparison-with-other-frameworks)
+    - [Runtime \& Architecture](#runtime--architecture)
+    - [Built-in Features](#built-in-features)
   - [Known Limitations](#known-limitations)
+  - [Contributing](#contributing)
+  - [Changelog](#changelog)
+    - [v1.0.7](#v107)
+    - [v1.0.6](#v106)
+    - [v1.0.5](#v105)
+    - [v1.0.4](#v104)
+    - [v1.0.3](#v103)
   - [License](#license)
 
 ---
@@ -115,18 +137,37 @@ Nix.js is a signal-based reactive micro-framework. Its design goals are:
 - **No virtual DOM.** Bindings update individual DOM nodes directly via `effect()`.
 - **No compiler.** Templates are standard JavaScript tagged template literals.
 - **Fine-grained reactivity.** Only the exact text nodes and attributes that depend on a changed signal are updated — no diffing of full component trees.
-- **Zero runtime dependencies.** The entire framework is ~28 KB of TypeScript source with no `node_modules` at runtime.
+- **Zero runtime dependencies.** The minified bundle is ~24 KB (~8 KB gzipped) with no `node_modules` at runtime.
 - **TypeScript-first.** Every public API is fully typed, including typed injection keys and typed store signals.
 
 ### Architecture at a glance
 
 ```
-signal() ──── effect() ──────────────────────────────────┐
-                │                                         │
-              html``                                      │
-                │               ┌─ text node              │
-                └── binding ────┤─ attribute  (reactive) ─┘
-                                └─ child node
+                           ┌─────────────────────────────────────────┐
+                           │            Nix.js Architecture          │
+                           └─────────────────────────────────────────┘
+
+  ┌─── Reactivity Layer ──────────────────────────────────────────────────────┐
+  │  signal()  ──  computed()  ──  effect()  ──  batch()  ──  watch()        │
+  └───────────────────────────┬───────────────────────────────────────────────┘
+                              │
+  ┌─── Rendering Layer ───────┼───────────────────────────────────────────────┐
+  │  html``  ──  repeat()  ── ref()  ──  portal()  ──  transition()          │
+  │                           │                                              │
+  │              binding ─────┤─ text node                                   │
+  │                           ├─ attribute     (reactive via effect)          │
+  │                           └─ child node                                  │
+  └───────────────────────────┬───────────────────────────────────────────────┘
+                              │
+  ┌─── Component Layer ───────┼───────────────────────────────────────────────┐
+  │  NixComponent  ──  mount()  ──  lifecycle hooks  ──  children / slots    │
+  └───────────────────────────┬───────────────────────────────────────────────┘
+                              │
+  ┌─── Application Layer ─────┼───────────────────────────────────────────────┐
+  │  createRouter()     createStore()     provide() / inject()               │
+  │  useField()         createForm()      suspend() / lazy()                 │
+  │  createErrorBoundary()                showWhen()                         │
+  └───────────────────────────────────────────────────────────────────────────┘
 ```
 
 Each interpolation inside `html`` creates at most one `effect()`. When a signal changes, only the DOM nodes bound to that signal are updated.
@@ -150,6 +191,7 @@ import { signal, html, NixComponent, mount } from "@deijose/nix-js";
 
 ### Development (from source)
 
+```bash
 # Start development server
 npm run dev   # or: bun dev
 
@@ -191,6 +233,68 @@ import {
   provide, inject, createInjectionKey,
 } from "./nix";
 ```
+
+---
+
+## Quick Start
+
+A complete mini-app with reactive state, components, and routing in under 40 lines:
+
+```typescript
+import {
+  signal, html, NixComponent, mount,
+  createRouter, RouterView, Link, useRouter,
+} from "@deijose/nix-js";
+
+// --- Pages ---
+
+class HomePage extends NixComponent {
+  render() {
+    const count = signal(0);
+    return html`
+      <h1>Home</h1>
+      <p>Count: ${() => count.value}</p>
+      <button @click=${() => count.value++}>Increment</button>
+    `;
+  }
+}
+
+class UserPage extends NixComponent {
+  render() {
+    const router = useRouter();
+    return html`<h1>User: ${() => router.params.value.id}</h1>`;
+  }
+}
+
+// --- Router ---
+
+createRouter([
+  { path: "/",          component: () => new HomePage() },
+  { path: "/user/:id",  component: () => new UserPage() },
+]);
+
+// --- App shell ---
+
+class App extends NixComponent {
+  render() {
+    return html`
+      <nav>
+        ${new Link("/", "Home")}
+        ${new Link("/user/42", "User 42")}
+      </nav>
+      ${new RouterView()}
+    `;
+  }
+}
+
+mount(new App(), "#app");
+```
+
+This gives you:
+- **Reactive counter** on the home page (signal-driven, no re-render of the full tree)
+- **Dynamic route params** on `/user/:id`
+- **Client-side navigation** via `Link` with `pushState` (no page reloads)
+- **Active link styling** automatically applied by `Link`
 
 ---
 
@@ -703,7 +807,7 @@ class Card extends NixComponent {
 
 // Pass content from outside:
 const app = new Card().setChildren(
-  html`<p>Hola desde dentro del card 👋</p>`
+  html`<p>Hello from inside the card</p>`
 );
 
 mount(app, "#app");
@@ -712,13 +816,13 @@ mount(app, "#app");
 `setChildren()` returns `this`, so you can chain it:
 
 ```typescript
-html`${new Card().setChildren(html`<p>Contenido</p>`)}`
+html`${new Card().setChildren(html`<p>Card content here</p>`)}`
 ```
 
 The child can be a template, another component, an array, or a reactive signal expression — anything you can interpolate in `html``:
 
 ```typescript
-const label = signal("Hola");
+const label = signal("Hello");
 
 new Card().setChildren(
   html`<strong>${() => label.value}</strong>` // reactive!
@@ -752,8 +856,8 @@ class PageLayout extends NixComponent {
 
 // Fluent: chain setSlot() + setChildren()
 const page = new PageLayout()
-  .setSlot("header", html`<h1>Mi App</h1>`)
-  .setChildren(html`<p>Aquí va el contenido principal.</p>`)
+  .setSlot("header", html`<h1>My App</h1>`)
+  .setChildren(html`<p>Main content goes here.</p>`)
   .setSlot("footer", html`<small>© 2026</small>`);
 
 mount(page, "#app");
@@ -763,7 +867,7 @@ If a slot has no content assigned, `this.slot(name)` returns `undefined` and ren
 You can provide a fallback with the `??` operator:
 
 ```typescript
-${this.slot("header") ?? html`<h1>Título por defecto</h1>`}
+${this.slot("header") ?? html`<h1>Default Title</h1>`}
 ```
 
 ### Children in function components
@@ -778,7 +882,7 @@ function Card({ children }: { children?: NixChildren }) {
 }
 
 const app = Card({
-  children: html`<p>Contenido del card</p>`,
+  children: html`<p>Card content</p>`,
 });
 
 mount(app, "#app");
@@ -925,12 +1029,20 @@ const router = createRouter([
 
 The `Router` interface exposes:
 
-| Property | Type | Description |
-|----------|------|-------------|
+| Property / Method | Type | Description |
+|-------------------|------|-------------|
 | `current` | `Signal<string>` | Active pathname (`/users/42`) |
 | `params` | `Signal<Record<string, string>>` | Dynamic route params (`{ id: "42" }`) |
 | `query` | `Signal<Record<string, string>>` | Query string params (`{ page: "2" }`) |
-| `navigate(path, query?)` | `void` | Navigate programmatically |
+| `navigate(path, query?)` | `void` | Navigate via `pushState` |
+| `replace(path, query?)` | `void` | Navigate via `replaceState` (no new history entry) |
+| `back()` | `void` | Go back one entry (`history.back()`) |
+| `forward()` | `void` | Go forward one entry (`history.forward()`) |
+| `go(delta)` | `void` | Move `delta` entries in history |
+| `isActive(path, exact?)` | `boolean` | Check if a path is currently active |
+| `resolve(path)` | `ResolvedRoute` | Inspect what would match without navigating |
+| `beforeEach(guard)` | `() => void` | Register a global guard; returns removal fn |
+| `afterEach(hook)` | `() => void` | Register a post-navigation hook; returns removal fn |
 | `routes` | `RouteRecord[]` | Original route tree |
 
 ### `RouterView`
@@ -1910,10 +2022,13 @@ transition(content, {
 |--------|-------------|
 | `createRouter(routes)` | Initialize the router singleton |
 | `useRouter()` | Access the active router from anywhere |
-| `RouterView` | Component that renders the matched route |
-| `Link` | Reactive anchor component |
+| `RouterView` | Component that renders the matched route at a given depth |
+| `Link` | Reactive anchor component with active styling |
 | `Router` | Router instance interface |
 | `RouteRecord` | Route definition type |
+| `NavigationGuard` | Guard function type |
+| `AfterEachHook` | Post-navigation hook type |
+| `ResolvedRoute` | Return type of `router.resolve()` |
 
 ### Async
 
@@ -1922,6 +2037,90 @@ transition(content, {
 | `suspend(asyncFn, renderFn, opts?)` | Async data fetching with Suspense |
 | `lazy(importFn, fallback?)` | Dynamic import with caching |
 | `SuspenseOptions` | Options type for `suspend()` |
+
+### Forms
+
+| Export | Description |
+|--------|-------------|
+| `useField(initial, validators?)` | Manage a single form field with validation |
+| `createForm(state, options?)` | Manage a full form with submit handling |
+| `required(msg?)` | Non-empty value validator |
+| `minLength(n, msg?)` | Minimum string length validator |
+| `maxLength(n, msg?)` | Maximum string length validator |
+| `email(msg?)` | Email format validator |
+| `pattern(regex, msg?)` | Regex match validator |
+| `min(n, msg?)` | Minimum number validator |
+| `max(n, msg?)` | Maximum number validator |
+| `extendValidators(map)` | Register custom named validators |
+| `createValidator(name, fn)` | Create a reusable named validator |
+
+### show / hide
+
+| Export | Description |
+|--------|-------------|
+| `show` attribute | Show element when truthy (via `style.display`) |
+| `hide` attribute | Hide element when truthy (via `style.display`) |
+| `showWhen(el, condition)` | Imperative show/hide helper |
+
+### Portal
+
+| Export | Description |
+|--------|-------------|
+| `portal(content, target?)` | Render content outside the current DOM tree |
+| `createPortalOutlet()` | Create a typed anchor token |
+| `portalOutlet(outlet)` | Place an outlet anchor in the DOM |
+| `provideOutlet(outlet)` | Provide an outlet via DI to descendants |
+| `injectOutlet()` | Inject the nearest provided outlet |
+| `PortalOutlet` | Outlet token type |
+
+### Error Boundaries
+
+| Export | Description |
+|--------|-------------|
+| `createErrorBoundary(content, fallback)` | Wrap content with an error-catching boundary |
+| `ErrorFallback` | Fallback type: template or `(err) => template` |
+
+### Transitions
+
+| Export | Description |
+|--------|-------------|
+| `transition(content, options?)` | Wrap content with CSS enter/leave animations |
+| `TransitionOptions` | Configuration type for `transition()` |
+
+---
+
+## Comparison with Other Frameworks
+
+### Runtime & Architecture
+
+| | Nix.js | React 19 | Vue 3 | Solid.js | Svelte 5 |
+|---|---|---|---|---|---|
+| **Reactivity** | Signals | State + VDOM diff | Refs + VDOM diff | Signals | Runes (signals) |
+| **Virtual DOM** | No | Yes | Yes | No | No |
+| **Compiler required** | No | JSX transform | SFC compiler | JSX transform | Svelte compiler |
+| **Template system** | Tagged templates | JSX | SFC / JSX | JSX | Svelte syntax |
+| **Min + gzip** | ~8 KB | ~45 KB | ~33 KB | ~8 KB | ~18 KB |
+| **TypeScript-first** | Native | Via JSX types | Via SFC tooling | Native | Via compiler |
+
+### Built-in Features
+
+What ships out of the box vs. requires a third-party package:
+
+| Feature | Nix.js | React | Vue | Solid | Svelte |
+|---|---|---|---|---|---|
+| Router | Built-in | react-router | vue-router | @solidjs/router | svelte-kit |
+| Form validation | Built-in | react-hook-form | vee-validate | — | — |
+| Global stores | Built-in | zustand / redux | pinia | built-in | svelte/store |
+| Dependency injection | Built-in | React Context | provide/inject | createContext | getContext |
+| Portals | Built-in | createPortal | Teleport | Portal | — |
+| Error boundaries | Built-in | ErrorBoundary | errorHandler | ErrorBoundary | — |
+| Transitions | Built-in | — | Transition | — | transition: |
+
+**When to choose Nix.js:**
+- You want a single-import framework with routing, forms, stores, and DI built in
+- You prefer tagged templates over JSX or SFC compilers
+- You want fine-grained reactivity without a virtual DOM
+- You need a lightweight solution for small-to-medium apps or embedded widgets
 
 ---
 
@@ -1943,6 +2142,54 @@ Workaround: compute the full string outside the template and bind the result.
 
 ---
 
+## Contributing
+
+Contributions are welcome. Please follow these guidelines:
+
+1. **Fork** the repository and create a feature branch from `main`.
+2. **Install dependencies:** `npm install`
+3. **Run tests** before submitting: `npx vitest run` (all 152 tests must pass).
+4. **Follow existing code style** — no linter overrides, no unnecessary abstractions.
+5. **One concern per PR** — bug fixes, features, and refactors should be separate.
+6. **Write tests** for new functionality.
+
+```bash
+# Development workflow
+npm install
+npm run dev          # start dev server
+npx vitest           # run tests in watch mode
+npx vitest run       # run tests once
+npx tsc --noEmit     # type-check
+npm run build:lib    # production build
+```
+
+---
+
+## Changelog
+
+### v1.0.7
+- All source comments and JSDoc translated to concise English
+- README rewritten: professional badges, expanded architecture diagram, Quick Start section, complete API Reference, accurate bundle sizes (~24 KB min / ~8 KB gzip), framework comparison (two tables), Contributing guide, Changelog
+
+### v1.0.6
+- Implemented all router methods: `replace`, `back`, `forward`, `go`, `isActive`, `resolve`, `afterEach`
+- Fixed `.d.ts` type declarations for npm consumers
+
+### v1.0.5
+- Security audit: hardened `template.ts` against XSS via `textContent` for user-provided strings
+- Encoded URI components in router to prevent path injection
+- Added `decodeURIComponent` with fallback for malformed percent-encoding
+
+### v1.0.4
+- Added route guards (`beforeEach`, `beforeEnter`) with async support
+- Added `afterEach` navigation hooks
+- Added `router.resolve()` for route inspection without navigation
+
+### v1.0.3
+- Initial public API with reactivity, templates, components, router, forms, stores, DI, portals, error boundaries, and transitions
+
+---
+
 ## License
 
-MIT
+[MIT](https://opensource.org/licenses/MIT) — see [LICENSE](LICENSE) for details.

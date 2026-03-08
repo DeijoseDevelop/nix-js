@@ -1,13 +1,10 @@
-// src/nix/router.ts — Fase 6: Router History API (pushState)
-//                     Fase 20: Route Guards (beforeEach / beforeEnter)
-
 import { signal } from "./reactivity";
 import type { Signal } from "./reactivity";
 import { NixComponent } from "./lifecycle";
 import type { NixTemplate } from "./template";
 import { html } from "./template";
 
-// ── Tipos públicos ────────────────────────────────────────────────────────────
+// --- Public types ---
 
 /**
  * Value returned (or resolved) by a navigation guard.
@@ -17,61 +14,20 @@ import { html } from "./template";
  */
 export type NavigationGuardResult = void | undefined | false | string;
 
-/**
- * A navigation guard function.
- *
- * @param to   Destination pathname (e.g. `"/admin"`).
- * @param from Current pathname before the navigation.
- * @returns `false` to cancel, a path string to redirect, or nothing to allow.
- *          May return a Promise for async guard logic.
- *
- * @example
- * router.beforeEach((to, from) => {
- *   if (!auth.isLoggedIn && to !== "/login") return "/login";
- * });
- */
+/** Guard function invoked before navigation commits. */
 export type NavigationGuard = (
     to: string,
     from: string,
 ) => NavigationGuardResult | Promise<NavigationGuardResult>;
 
 export interface RouteRecord {
-    /**
-     * Segmento de ruta. Soporta:
-     *  - Literal:   "/about", "/users"
-     *  - Parámetro: "/users/:id", "/posts/:slug/comments/:cid"
-     *  - Wildcard:  "*"  (fallback global o de prefijo con children)
-     *
-     * Los paths de children se concatenan con el del padre.
-     *
-     * @example
-     * { path: "/users/:id", component: UserDetail }
-     * // Navegar a "/users/42" → params.value = { id: "42" }
-     *
-     * @example
-     * { path: "/dash", component: DashLayout, children: [
-     *   { path: "/users",   component: UsersPage },
-     * ]}
-     * // Genera las rutas planas: /dash, /dash/users
-     */
+    /** Route path segment. Supports literals, params (`:id`), and wildcards (`*`). */
     path: string;
-    /** Factory que devuelve la vista a renderizar en este nivel */
+    /** Factory returning the view for this route level. */
     component: () => NixTemplate | NixComponent;
-    /**
-     * Rutas hijas. Sus paths se unen con el del padre.
-     * El componente padre debe incluir `new RouterView(1)` para renderizarlas.
-     */
+    /** Child routes. Paths are joined with the parent. */
     children?: RouteRecord[];
-    /**
-     * Guard de nivel de ruta. Se ejecuta solo al entrar en esta ruta concreta.
-     * Misma semántica de retorno que `beforeEach`.
-     *
-     * @example
-     * { path: "/admin", component: () => new AdminPage(),
-     *   beforeEnter: (to, from) => {
-     *     if (!isAdmin) return "/";
-     *   }}
-     */
+    /** Route-level guard. Runs only when entering this specific route. */
     beforeEnter?: NavigationGuard;
 }
 
@@ -93,131 +49,36 @@ export interface ResolvedRoute {
 }
 
 export interface Router {
-    /** Señal con la ruta activa actual (pathname, p.ej. "/users/42") */
+    /** Signal with the current active pathname. */
     readonly current: Signal<string>;
-    /**
-     * Señal con los parámetros dinámicos de la ruta activa (:id, :slug…).
-     * Se actualiza síncronamente con cada `navigate()`.
-     *
-     * @example
-     * // Ruta: "/users/:id"  →  navigate("/users/42")
-     * router.params.value  // { id: "42" }
-     */
+    /** Signal with the extracted dynamic route params. */
     readonly params: Signal<Record<string, string>>;
-    /**
-     * Señal con los query params de la URL (?clave=valor…).
-     * Se actualiza síncronamente con cada `navigate()`.
-     *
-     * @example
-     * router.navigate("/users?page=2&sort=name")
-     * router.query.value  // { page: "2", sort: "name" }
-     *
-     * @example
-     * router.navigate("/users", { page: 2, sort: "name" })
-     * router.query.value  // { page: "2", sort: "name" }
-     */
+    /** Signal with the URL query params. */
     readonly query: Signal<Record<string, string>>;
-    /**
-     * Navegar a una ruta nueva (pushState + actualiza señales).
-     * Si hay guards registrados, la navegación espera a que todos pasen.
-     *
-     * @param path     Ruta destino. Puede incluir query string: "/users?page=2"
-     * @param query    Query params como objeto. Se mezclan con los del path.
-     *                 Un valor `null`/`undefined` elimina el parámetro.
-     */
+    /** Navigate to a new path via `pushState`. Guards run before committing. */
     navigate(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
-    /**
-     * Navigate without adding an entry to the browser history.
-     * Uses `history.replaceState` instead of `pushState`.
-     * Guards still run normally.
-     *
-     * @param path   Destination path. May include query string.
-     * @param query  Query params as an object.
-     *
-     * @example
-     * // After login — pressing "back" won't return to /login
-     * router.replace("/home");
-     */
+    /** Navigate via `replaceState` (no new history entry). Guards still run. */
     replace(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
-    /**
-     * Go back one entry in the browser history.
-     * Equivalent to `history.back()`.
-     *
-     * @example
-     * router.back();
-     */
+    /** Go back one entry in the browser history. */
     back(): void;
-    /**
-     * Go forward one entry in the browser history.
-     * Equivalent to `history.forward()`.
-     *
-     * @example
-     * router.forward();
-     */
+    /** Go forward one entry in the browser history. */
     forward(): void;
-    /**
-     * Move `delta` entries in the browser history.
-     * Negative values go back, positive go forward.
-     *
-     * @example
-     * router.go(-2); // two pages back
-     * router.go(1);  // same as forward()
-     */
+    /** Move `delta` entries in the browser history. */
     go(delta: number): void;
-    /**
-     * Check if a path is currently active.
-     * By default performs an exact match.
-     *
-     * @param path   The path to test.
-     * @param exact  If `false`, matches when `current` starts with `path`.
-     *               Default: `true`.
-     *
-     * @example
-     * router.isActive("/admin");         // exact match
-     * router.isActive("/admin", false);  // prefix: /admin/users → true
-     */
+    /** Check if `path` is currently active. `exact=false` enables prefix matching. */
     isActive(path: string, exact?: boolean): boolean;
-    /**
-     * Inspect what route would match a given path without actually navigating.
-     *
-     * @example
-     * const info = router.resolve("/user/42");
-     * // { matched: true, params: { id: "42" }, route: { path: "/user/:id", ... } }
-     */
+    /** Inspect what route would match `path` without navigating. */
     resolve(path: string): ResolvedRoute;
-    /** Árbol de rutas original (tal como se pasó a createRouter) */
+    /** Original route tree passed to `createRouter`. */
     readonly routes: RouteRecord[];
-    /**
-     * Registra un guard de navegación global.
-     * Se ejecuta (en orden de registro) antes de cada navegación.
-     *
-     * Retorna una función para eliminar el guard.
-     *
-     * @example
-     * const stop = router.beforeEach((to, from) => {
-     *   if (!auth && to !== "/login") return "/login";
-     * });
-     * stop(); // elimina el guard
-     */
+    /** Register a global navigation guard. Returns a removal function. */
     beforeEach(guard: NavigationGuard): () => void;
-    /**
-     * Register a hook that runs after every successful navigation.
-     * Useful for analytics, scroll reset, etc.
-     *
-     * Returns a function to remove the hook.
-     *
-     * @example
-     * const stop = router.afterEach((to, from) => {
-     *   window.scrollTo(0, 0);
-     * });
-     * stop();
-     */
+    /** Register a hook that runs after every successful navigation. Returns a removal function. */
     afterEach(hook: AfterEachHook): () => void;
 }
 
-// ── Internos ──────────────────────────────────────────────────────────────────
+// --- Internals ---
 
-/** Un segmento de la ruta parseado */
 type Segment =
     | { kind: "literal"; value: string }
     | { kind: "param"; name: string }
@@ -226,9 +87,7 @@ type Segment =
 interface FlatRoute {
     fullPath: string;
     segments: Segment[];
-    /** [componentePadre, componenteHijo, …] */
     chain: Array<() => NixTemplate | NixComponent>;
-    /** Guard de entrada de esta ruta concreta (del RouteRecord hoja) */
     beforeEnter?: NavigationGuard;
 }
 
@@ -237,20 +96,21 @@ interface RouterInternal extends Router {
     _guards: NavigationGuard[];
 }
 
-/** Singleton de módulo — la última instancia creada con createRouter() */
+/** Module-level singleton — the last router created with `createRouter()`. */
 let _currentRouter: RouterInternal | null = null;
 /** Cleanup function for the current router's popstate listener. */
 let _currentPopstateCleanup: (() => void) | null = null;
 
 function getRouter(): RouterInternal {
     if (!_currentRouter) {
-        throw new Error("[Nix] No hay router activo. Llama a createRouter() antes.");
+        throw new Error("[Nix] No active router. Call createRouter() first.");
     }
     return _currentRouter;
 }
 
-// ── Helpers internos ──────────────────────────────────────────────────────────
-/** Convierte `window.location.search` (o cualquier string `?k=v`) en objeto */
+// --- Internal helpers ---
+
+/** Parses a query string into a plain object. */
 function parseQuery(search: string): Record<string, string> {
     const result: Record<string, string> = {};
     new URLSearchParams(search).forEach((v, k) => { result[k] = v; });
@@ -258,9 +118,8 @@ function parseQuery(search: string): Record<string, string> {
 }
 
 /**
- * Construye un query string a partir de un objeto.
- * Valores `null`/`undefined`/`false` se omiten.
- * Devuelve `""` si no hay claves, `"?k=v&..."` en caso contrario.
+ * Builds a query string from an object.
+ * Omits `null`/`undefined`/`false` values.
  */
 function buildQueryString(
     q: Record<string, string | number | boolean | null | undefined>
@@ -272,7 +131,7 @@ function buildQueryString(
     const s = p.toString();
     return s ? "?" + s : "";
 }
-/** Parsea un fullPath ya unido en sus segmentos */
+/** Parses a full path into its segments. */
 function parseSegments(fullPath: string): Segment[] {
     if (fullPath === "*") return [{ kind: "wildcard" }];
     return fullPath
@@ -285,14 +144,14 @@ function parseSegments(fullPath: string): Segment[] {
         });
 }
 
-/** Une un path padre con un segmento hijo normalizando barras dobles */
+/** Joins a parent path with a child segment, normalizing double slashes. */
 function joinPaths(parent: string, child: string): string {
     if (child === "*") return parent === "" ? "*" : parent + "/*";
     const segment = child.startsWith("/") ? child : "/" + child;
     return (parent + segment).replace(/\/+/g, "/") || "/";
 }
 
-/** Convierte el árbol de RouteRecord en una lista plana con cadena de componentes */
+/** Flattens the route tree into a list with component chains. */
 function flattenRoutes(
     routes: RouteRecord[],
     parentPath = "",
@@ -311,18 +170,15 @@ function flattenRoutes(
     return result;
 }
 
-/**
- * Intenta hacer match de `path` contra una `FlatRoute`.
- * Devuelve los params extraídos si hay coincidencia, o `null` si no.
- */
+/** Attempts to match `path` against a `FlatRoute`. Returns extracted params or `null`. */
 function tryMatch(path: string, route: FlatRoute): Record<string, string> | null {
     const parts = path.split("/").filter(Boolean);
     const segs = route.segments;
 
-    // Wildcard global ("*") — coincide con todo
+    // Global wildcard — matches everything
     if (segs.length === 1 && segs[0].kind === "wildcard") return {};
 
-    // Wildcard de prefijo — el último segmento es "/*"
+    // Prefix wildcard — last segment is "/*"
     const lastIsWild = segs.length > 0 && segs[segs.length - 1].kind === "wildcard";
     const fixedSegs = lastIsWild ? segs.slice(0, -1) : segs;
 
@@ -349,10 +205,7 @@ function tryMatch(path: string, route: FlatRoute): Record<string, string> | null
     return params;
 }
 
-/**
- * Especificidad de una ruta: más literales = más específica.
- * literal=2, param=1, wildcard=0 — mayor puntaje gana.
- */
+/** Route specificity score: literal=2, param=1, wildcard=0. Higher wins. */
 function specificity(route: FlatRoute): number {
     return route.segments.reduce((acc, seg) => {
         if (seg.kind === "literal") return acc + 2;
@@ -361,7 +214,7 @@ function specificity(route: FlatRoute): number {
     }, 0);
 }
 
-/** Encuentra la mejor ruta para el path dado junto con los params extraídos */
+/** Finds the best matching route for `path` along with extracted params. */
 function matchFlat(
     path: string,
     flat: FlatRoute[]
@@ -384,15 +237,11 @@ function matchFlat(
     return best ? { route: best, params: bestParams } : undefined;
 }
 
-// ── createRouter ──────────────────────────────────────────────────────────────
+// --- createRouter ---
 
 /**
- * Crea el router History API y lo establece como singleton activo del módulo.
- * Usa `history.pushState` — URLs limpias sin `#`.
- * `RouterView` y `Link` lo consumen automáticamente — no necesitan que se los pases.
- *
- * @note En producción el servidor debe responder con `index.html` para cualquier
- * ruta no-archivo. Vite dev y `vite preview` lo hacen automáticamente.
+ * Creates the History API router and sets it as the active singleton.
+ * In production the server must serve `index.html` for all non-file routes.
  */
 export function createRouter(routes: RouteRecord[]): Router {
     function getPathname(): string {
@@ -407,7 +256,7 @@ export function createRouter(routes: RouteRecord[]): Router {
     const params = signal<Record<string, string>>(initialMatch?.params ?? {});
     const query = signal<Record<string, string>>(parseQuery(window.location.search));
 
-    // ── Guards & afterEach hooks ────────────────────────────────────────────
+    // --- Guards & afterEach hooks ---
     const _guards: NavigationGuard[] = [];
     const _afterHooks: AfterEachHook[] = [];
     /** Monotonically increasing counter to cancel stale async guard chains. */
@@ -454,7 +303,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         runNext(undefined);
     }
 
-    // ── Helpers internos de navegación ────────────────────────────────────────
+    // --- Navigation helpers ---
     /** Tracks whether navigate() has been called — used to skip the initial
      *  microtask guard check if the app already programmatically navigated. */
     let _hasNavigated = false;
@@ -474,7 +323,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         return { pathname, stringQuery };
     }
 
-    // ── Botón atrás/adelante del navegador ────────────────────────────────────
+    // --- Popstate handler ---
     // Clean up any previous router's popstate listener
     if (_currentPopstateCleanup) {
         _currentPopstateCleanup();
@@ -484,7 +333,7 @@ export function createRouter(routes: RouteRecord[]): Router {
     const onPopstate = () => {
         const p = getPathname();
         const from = current.value;
-        const fromQuery = query.value;   // para restaurar la URL si se cancela
+        const fromQuery = query.value;   // used to restore URL if guard cancels
         const m = matchFlat(p, flat);
         const newQuery = parseQuery(window.location.search);
 
@@ -502,7 +351,7 @@ export function createRouter(routes: RouteRecord[]): Router {
                 }
             },
             () => {
-                // Guard canceló el popstate: restaurar URL anterior sin disparar otro popstate
+                // Guard cancelled popstate: restore previous URL without triggering another popstate
                 history.pushState(null, "", from + buildQueryString(fromQuery));
             },
         );
@@ -511,7 +360,7 @@ export function createRouter(routes: RouteRecord[]): Router {
     window.addEventListener("popstate", onPopstate);
     _currentPopstateCleanup = () => window.removeEventListener("popstate", onPopstate);
 
-    // ── Internal: commit navigation + fire afterEach hooks ─────────────────
+    // --- Internal: commit navigation + fire afterEach hooks ---
     function _commit(
         pathname: string,
         stringQuery: Record<string, string>,
@@ -534,7 +383,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         }
     }
 
-    // ── navigate ──────────────────────────────────────────────────────────────
+    // --- navigate ---
     function navigate(
         path: string,
         queryObj?: Record<string, string | number | boolean | null | undefined>,
@@ -552,7 +401,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         );
     }
 
-    // ── replace ───────────────────────────────────────────────────────────────
+    // --- replace ---
     function replace(
         path: string,
         queryObj?: Record<string, string | number | boolean | null | undefined>,
@@ -570,19 +419,19 @@ export function createRouter(routes: RouteRecord[]): Router {
         );
     }
 
-    // ── back / forward / go ───────────────────────────────────────────────────
+    // --- back / forward / go ---
     function back(): void { history.back(); }
     function forward(): void { history.forward(); }
     function go(delta: number): void { history.go(delta); }
 
-    // ── isActive ──────────────────────────────────────────────────────────────
+    // --- isActive ---
     function isActive(path: string, exact = true): boolean {
         const cur = current.value;
         if (exact) return cur === path;
         return cur === path || cur.startsWith(path.endsWith("/") ? path : path + "/");
     }
 
-    // ── resolve ───────────────────────────────────────────────────────────────
+    // --- resolve ---
     function resolve(path: string): ResolvedRoute {
         const m = matchFlat(path, flat);
         if (!m) return { matched: false, params: {}, route: undefined };
@@ -601,7 +450,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         return { matched: true, params: m.params, route: findRecord(routes) };
     }
 
-    // ── beforeEach ────────────────────────────────────────────────────────────
+    // --- beforeEach ---
     function beforeEach(guard: NavigationGuard): () => void {
         _guards.push(guard);
         return () => {
@@ -610,7 +459,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         };
     }
 
-    // ── afterEach ─────────────────────────────────────────────────────────────
+    // --- afterEach ---
     function afterEach(hook: AfterEachHook): () => void {
         _afterHooks.push(hook);
         return () => {
@@ -633,10 +482,8 @@ export function createRouter(routes: RouteRecord[]): Router {
     }
     _currentRouter = router;
 
-    // ── Initial navigation guard check ────────────────────────────────────────
-    // Guards are registered with beforeEach() / beforeEnter after createRouter()
-    // returns, so we defer the initial check to a microtask — by then all guards
-    // are in place and the initial path is validated exactly like any navigation.
+    // --- Initial navigation guard check ---
+    // Guards are registered after createRouter() returns, so defer to a microtask.
     queueMicrotask(() => {
         // Skip if the app already navigated programmatically — the navigate()
         // call already ran guards on the new destination.
@@ -663,17 +510,7 @@ export function createRouter(routes: RouteRecord[]): Router {
     return router;
 }
 
-/**
- * Devuelve el router activo (singleton).
- * Útil dentro de componentes para acceder a `params` y `current` sin prop-drilling.
- *
- * @example
- * class UserDetail extends NixComponent {
- *   render() {
- *     return html`<div>User: ${() => useRouter().params.value.id}</div>`;
- *   }
- * }
- */
+/** Returns the active router singleton. */
 export function useRouter(): Router {
     return getRouter();
 }
@@ -690,17 +527,9 @@ export function _resetRouter(): void {
     _currentRouter = null;
 }
 
-// ── RouterView ────────────────────────────────────────────────────────────────
+// --- RouterView ---
 
-/**
- * Renderiza el componente de la ruta activa en el nivel `depth`.
- *
- * - `new RouterView()`  → nivel raíz (depth 0).
- * - `new RouterView(1)` → primer nivel de rutas anidadas. Úsalo dentro del
- *   componente padre para que renderice el hijo correspondiente.
- *
- * Consume el router singleton — no requiere que se le pase el router.
- */
+/** Renders the matched route component at the given nesting `depth`. */
 export class RouterView extends NixComponent {
     private _depth: number;
 
@@ -717,12 +546,12 @@ export class RouterView extends NixComponent {
 
             if (!matched) {
                 return html`<div style="color:#f87171;padding:16px 0">
-          404 — Ruta no encontrada: <strong>${router.current.value}</strong>
+          404 — Route not found: <strong>${router.current.value}</strong>
         </div>`;
             }
 
             if (depth >= matched.route.chain.length) {
-                // No hay componente registrado en este nivel de anidamiento
+                // No component registered at this nesting level
                 return html`<span></span>`;
             }
 
@@ -731,15 +560,9 @@ export class RouterView extends NixComponent {
     }
 }
 
-// ── Link ──────────────────────────────────────────────────────────────────────
+// --- Link ---
 
-/**
- * Enlace de navegación reactivo que se estiliza como activo/inactivo según la
- * ruta actual. Consume el router singleton — no requiere que se le pase.
- *
- * @example
- * new Link("/about", "About")
- */
+/** Reactive navigation link styled as active/inactive based on the current route. */
 export class Link extends NixComponent {
     private _to: string;
     private _label: string;
@@ -753,7 +576,7 @@ export class Link extends NixComponent {
     render(): NixTemplate {
         const to = this._to;
         const label = this._label;
-        const href = to; // History API — sin prefijo "#"
+        const href = to;
         return html`<a
       href=${href}
       style=${() => {
