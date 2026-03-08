@@ -1,35 +1,16 @@
-// ═══════════════════════════════════════════════
-//  Nix.js ❄️ — Componentes  (Fase 3)
-// ═══════════════════════════════════════════════
-//
-//  Un componente en Nix.js es una función simple:
-//
-//    function MyComponent(props) {
-//      const count = signal(0);
-//      return html`<button @click=${() => count.update(n => n+1)}>
-//                    ${() => count.value}
-//                  </button>`;
-//    }
-//
-//  No hay clases, no hay decoradores, no hay registro.
-//  Las actualizaciones ocurren via signals — la función
-//  se ejecuta UNA sola vez.
-//
-//  mount(template, container) — monta la app raíz en el DOM.
-
 import type { NixTemplate, NixMountHandle } from "./template";
 import { isNixComponent, type NixComponent } from "./lifecycle";
 import { _pushComponentContext, _popComponentContext } from "./context";
 
 /**
- * Monta un NixTemplate o NixComponent en el DOM.
+ * Mounts a NixTemplate or NixComponent into the DOM.
  *
- *   mount(App(), "#app");           // NixTemplate (función componente)
- *   mount(new Timer(), "#app");     // NixComponent (clase con lifecycle)
+ *   mount(Counter(), "#app");   // NixTemplate (function component)
+ *   mount(new Timer(), "#app"); // NixComponent (class with lifecycle)
  *
- * @param component NixTemplate (resultado de html``) o instancia de NixComponent.
- * @param container Selector CSS o HTMLElement donde se insertará.
- * @returns         { unmount() } para limpiar effects y remover el DOM.
+ * @param component NixTemplate (result of html``) or a NixComponent instance.
+ * @param container CSS selector or HTMLElement to mount into.
+ * @returns         { unmount() } — disposes effects and removes DOM.
  */
 export function mount(
     component: NixTemplate | NixComponent,
@@ -41,7 +22,7 @@ export function mount(
                 ? (document.querySelector(container) as Element)
                 : container;
         if (!el) {
-            throw new Error(`[Nix] mount: contenedor no encontrado: ${container}`);
+            throw new Error(`[Nix] mount: container not found: ${container}`);
         }
 
         _pushComponentContext();
