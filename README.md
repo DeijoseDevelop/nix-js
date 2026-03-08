@@ -123,7 +123,7 @@
   - [Known Limitations](#known-limitations)
   - [Contributing](#contributing)
   - [Changelog](#changelog)
-    - [v1.0.9](#v109)
+    - [v1.1.0](#v110)
     - [v1.0.8](#v108)
     - [v1.0.7](#v107)
     - [v1.0.6](#v106)
@@ -2307,7 +2307,7 @@ npm run build:lib    # production build
 
 ## Changelog
 
-### v1.0.9
+### v1.1.0
 - Added `invalidate` option to `suspend()` — re-fetch data without destroying/recreating the DOM
 - Added `createQuery(key, asyncFn, renderFn, opts)` — key-based async data fetching
 - Added `invalidateQueries(key)` — global invalidation of active queries by key
