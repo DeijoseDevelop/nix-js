@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { effect } from "../nix/reactivity";
 import { createStore } from "../nix/store";
 
@@ -59,5 +59,21 @@ describe("createStore", () => {
         expect(store.x.value).toBe(0);
         expect(store.y.value).toBe(0);
         expect(store.z.value).toBe(0);
+    });
+
+    it("ignores action named $reset and warns", () => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const store = createStore(
+            { count: 0 },
+            (s) => ({ $reset: () => { s.count.value = 999; } })
+        );
+        // The built-in $reset should still work, not the user's override
+        store.count.value = 42;
+        store.$reset();
+        expect(store.count.value).toBe(0);
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('"$reset" is reserved')
+        );
+        warnSpy.mockRestore();
     });
 });
