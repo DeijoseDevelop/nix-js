@@ -5192,9 +5192,10 @@ import type { NavigationGuard } from "./nix";
   // ─── Test 2: beforeEach returning false cancels navigation ────────────────
   {
     const r = createRouter(makeRoutes());
+    const beforePath = r.current.value;
     r.beforeEach(() => false);
     r.navigate("/about");
-    assert20(r.current.value === "/", "T2 — beforeEach false cancels navigation");
+    assert20(r.current.value === beforePath, "T2 — beforeEach false cancels navigation");
   }
 
   // ─── Test 3: beforeEach returning a string redirects ─────────────────────
@@ -5244,8 +5245,9 @@ import type { NavigationGuard } from "./nix";
       },
     ];
     const r = createRouter(routes);
+    const beforePath = r.current.value;
     r.navigate("/secret");
-    assert20(r.current.value === "/", "T6 — beforeEnter false blocks /secret");
+    assert20(r.current.value === beforePath, "T6 — beforeEnter false blocks /secret");
   }
 
   // ─── Test 7: multiple beforeEach guards run in registration order ─────────
