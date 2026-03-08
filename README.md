@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js.svg)](https://www.npmjs.com/package/@deijose/nix-js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-152%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-158%20passing-brightgreen.svg)]()
 [![Bundle size](https://img.shields.io/badge/min%2Bgzip-~8%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)]()
@@ -63,6 +63,8 @@
     - [Query parameters](#query-parameters)
   - [Async \& Lazy Loading](#async--lazy-loading)
     - [`suspend()`](#suspend)
+      - [Re-fetching with `invalidate`](#re-fetching-with-invalidate)
+    - [`createQuery()` / `invalidateQueries()`](#createquery--invalidatequeries)
     - [`lazy()`](#lazy)
     - [Route Guards](#route-guards)
       - [`router.beforeEach(guard)` — global guard](#routerbeforeeachguard--global-guard)
@@ -121,6 +123,7 @@
   - [Known Limitations](#known-limitations)
   - [Contributing](#contributing)
   - [Changelog](#changelog)
+    - [v1.0.9](#v109)
     - [v1.0.8](#v108)
     - [v1.0.7](#v107)
     - [v1.0.6](#v106)
@@ -1198,9 +1201,120 @@ suspend(
     // If true, shows the fallback on every re-fetch.
     // If false (default), keeps the previous content visible during refresh.
     resetOnRefresh: false,
+
+    // Signal that triggers re-fetch when its value changes.
+    // DOM is reused — no destroy/recreate cycle.
+    invalidate: mySignal,
   }
 )
 ```
+
+#### Re-fetching with `invalidate`
+
+When your data comes from an external source (API, database) and you need to refresh after mutations, pass an `invalidate` signal. When the signal value changes, `suspend()` re-runs `asyncFn` **without destroying and recreating the DOM** — only the reactive content updates.
+
+```typescript
+import { signal, html, suspend, mount } from "@deijose/nix-js";
+import type { NixTemplate } from "@deijose/nix-js";
+
+const refresh = signal(0);
+
+function UsersPage(): NixTemplate {
+  return html`
+    <div>
+      ${suspend(
+        () => fetch("/api/users").then(r => r.json()),
+        (users) => html`
+          <ul>${users.map((u: any) => html`<li>${u.name}</li>`)}</ul>
+        `,
+        { invalidate: refresh }
+      )}
+      <button @click=${async () => {
+        await fetch("/api/users", { method: "POST", body: JSON.stringify({ name: "New" }) });
+        refresh.update(n => n + 1);  // re-fetch — DOM stays, content updates
+      }}>Add user</button>
+    </div>
+  `;
+}
+```
+
+**Before `invalidate`** (the old workaround):
+```typescript
+// ❌ Wrapping suspend() in a reactive block destroys and recreates
+// the entire DOM tree on every refresh — loading spinner flashes each time.
+${() => {
+  refreshKey.value;  // dummy read to force re-create
+  return suspend(() => api.getAll(), renderFn);
+}}
+```
+
+**With `invalidate`:**
+```typescript
+// ✅ DOM is reused. Only the resolved content updates when data arrives.
+${suspend(() => api.getAll(), renderFn, { invalidate: refreshKey })}
+```
+
+### `createQuery()` / `invalidateQueries()`
+
+For apps with multiple components sharing the same data source, **key-based queries** eliminate prop drilling entirely. Any component can invalidate any query by its key — no need to pass signals around.
+
+```typescript
+import { createQuery, invalidateQueries, html, mount } from "@deijose/nix-js";
+import type { NixTemplate } from "@deijose/nix-js";
+
+// --- In any view ---
+
+function ReservationsTable(): NixTemplate {
+  return html`
+    ${createQuery(
+      "reservations",                                  // unique query key
+      () => fetch("/api/reservations").then(r => r.json()),
+      (rows) => html`
+        <table>
+          ${rows.map((r: any) => html`<tr><td>${r.title}</td></tr>`)}
+        </table>
+      `,
+      { fallback: html`<p>Loading…</p>` }
+    )}
+  `;
+}
+
+// --- After a mutation, anywhere in the app ---
+
+async function confirmLoan(id: number) {
+  await fetch(`/api/reservations/${id}/confirm`, { method: "POST" });
+  invalidateQueries("reservations");  // all components using this key re-fetch
+}
+```
+
+**Signature:**
+
+```typescript
+function createQuery<T>(
+  key: string,
+  asyncFn: () => Promise<T>,
+  renderFn: (data: T) => NixTemplate | NixComponent,
+  options?: QueryOptions
+): NixComponent;
+
+function invalidateQueries(key: string): void;
+```
+
+**`QueryOptions`** — same as `SuspenseOptions` without `invalidate`:
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `fallback` | `NixTemplate` | spinner | Template shown while pending |
+| `errorFallback` | `(err) => NixTemplate` | red text | Error template factory |
+| `resetOnRefresh` | `boolean` | `false` | Show fallback during re-fetches |
+
+**When to use which:**
+
+| Scenario | Use |
+|----------|-----|
+| Single component owns the data + refresh trigger | `suspend()` + `invalidate` |
+| Multiple components share the same data source | `createQuery()` + `invalidateQueries()` |
+| One-shot data (no refresh needed) | `suspend()` without options |
 
 ### `lazy()`
 
@@ -2057,9 +2171,12 @@ transition(content, {
 
 | Export | Description |
 |--------|-------------|
-| `suspend(asyncFn, renderFn, opts?)` | Async data fetching with Suspense |
+| `suspend(asyncFn, renderFn, opts?)` | Async data fetching with Suspense. Supports `invalidate` signal for re-fetching without DOM rebuild |
+| `createQuery(key, asyncFn, renderFn, opts?)` | Key-based async fetching with global invalidation |
+| `invalidateQueries(key)` | Force all active `createQuery` instances with that key to re-fetch |
 | `lazy(importFn, fallback?)` | Dynamic import with caching |
-| `SuspenseOptions` | Options type for `suspend()` |
+| `SuspenseOptions` | Options type for `suspend()` (includes `invalidate`) |
+| `QueryOptions` | Options type for `createQuery()` |
 
 ### Forms
 
@@ -2189,6 +2306,13 @@ npm run build:lib    # production build
 ---
 
 ## Changelog
+
+### v1.0.9
+- Added `invalidate` option to `suspend()` — re-fetch data without destroying/recreating the DOM
+- Added `createQuery(key, asyncFn, renderFn, opts)` — key-based async data fetching
+- Added `invalidateQueries(key)` — global invalidation of active queries by key
+- New exports: `createQuery`, `invalidateQueries`, `QueryOptions`
+- 6 new tests (158 total)
 
 ### v1.0.8
 - Added `NixTemplate` return type annotation to all function component examples in README and `.readme-npm.md`

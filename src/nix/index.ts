@@ -9,8 +9,8 @@ export { createStore } from "./store";
 export type { Store, StoreSignals } from "./store";
 export { createRouter, RouterView, Link, useRouter } from "./router";
 export type { Router, RouteRecord, NavigationGuard, NavigationGuardResult, AfterEachHook, ResolvedRoute } from "./router";
-export { suspend, lazy } from "./async";
-export type { SuspenseOptions } from "./async";
+export { suspend, lazy, createQuery, invalidateQueries } from "./async";
+export type { SuspenseOptions, QueryOptions } from "./async";
 export { provide, inject, createInjectionKey } from "./context";
 export type { InjectionKey } from "./context";
 export {
