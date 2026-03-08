@@ -5154,3 +5154,203 @@ import { transition } from "./nix";
     `.mount(demo19El as Element);
   }
 }
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 20: Route Guards
+//  Tests → #tests20 | Summary → #summary20 | Demo → #demo20
+// ══════════════════════════════════════════════════════════════
+import type { NavigationGuard } from "./nix";
+
+{
+  let passed20 = 0, failed20 = 0;
+  const labels20: string[] = [];
+  const results20: boolean[] = [];
+  function assert20(cond: boolean, label: string) {
+    labels20.push(label);
+    results20.push(cond);
+    if (cond) { passed20++; console.log(`  ✅ ${label}`); }
+    else { failed20++; console.error(`  ❌ FAIL: ${label}`); }
+  }
+
+  console.group("Fase 20 — Route Guards");
+
+  const makeRoutes = () => [
+    { path: "/", component: () => html`<span>home</span>` },
+    { path: "/about", component: () => html`<span>about</span>` },
+    { path: "/admin", component: () => html`<span>admin</span>` },
+  ];
+
+  // ─── Test 1: beforeEach fires on navigate ─────────────────────────────────
+  {
+    const r = createRouter(makeRoutes());
+    let fired = false;
+    r.beforeEach(() => { fired = true; });
+    r.navigate("/about");
+    assert20(fired, "T1 — beforeEach fires on navigate");
+  }
+
+  // ─── Test 2: beforeEach returning false cancels navigation ────────────────
+  {
+    const r = createRouter(makeRoutes());
+    r.beforeEach(() => false);
+    r.navigate("/about");
+    assert20(r.current.value === "/", "T2 — beforeEach false cancels navigation");
+  }
+
+  // ─── Test 3: beforeEach returning a string redirects ─────────────────────
+  {
+    const r = createRouter(makeRoutes());
+    r.beforeEach((to) => {
+      if (to === "/admin") return "/";
+    });
+    r.navigate("/admin");
+    assert20(r.current.value === "/", "T3 — beforeEach redirect: /admin → /");
+  }
+
+  // ─── Test 4: beforeEach receives correct to/from arguments ───────────────
+  {
+    const r = createRouter(makeRoutes());
+    let capturedTo = "", capturedFrom = "";
+    r.beforeEach((to, from) => { capturedTo = to; capturedFrom = from; });
+    r.navigate("/about");
+    assert20(capturedTo === "/about" && capturedFrom === "/", "T4 — guard receives correct to/from");
+  }
+
+  // ─── Test 5: per-route beforeEnter fires only for that route ─────────────
+  {
+    let adminGuardFired = false;
+    const routes = [
+      { path: "/", component: () => html`<span>home</span>` },
+      { path: "/about", component: () => html`<span>about</span>` },
+      {
+        path: "/admin", component: () => html`<span>admin</span>`,
+        beforeEnter: (() => { adminGuardFired = true; }) as NavigationGuard
+      },
+    ];
+    const r = createRouter(routes);
+    r.navigate("/about");
+    const notFiredYet = !adminGuardFired;
+    r.navigate("/admin");
+    assert20(notFiredYet && adminGuardFired, "T5 — beforeEnter fires only for /admin");
+  }
+
+  // ─── Test 6: per-route beforeEnter returning false blocks navigation ──────
+  {
+    const routes = [
+      { path: "/", component: () => html`<span>home</span>` },
+      {
+        path: "/secret", component: () => html`<span>secret</span>`,
+        beforeEnter: (() => false) as NavigationGuard
+      },
+    ];
+    const r = createRouter(routes);
+    r.navigate("/secret");
+    assert20(r.current.value === "/", "T6 — beforeEnter false blocks /secret");
+  }
+
+  // ─── Test 7: multiple beforeEach guards run in registration order ─────────
+  {
+    const r = createRouter(makeRoutes());
+    const order: number[] = [];
+    r.beforeEach(() => { order.push(1); });
+    r.beforeEach(() => { order.push(2); });
+    r.beforeEach(() => { order.push(3); });
+    r.navigate("/about");
+    assert20(order[0] === 1 && order[1] === 2 && order[2] === 3, "T7 — guards run in order [1,2,3]");
+  }
+
+  // ─── Test 8: beforeEach unsubscribe removes the guard ────────────────────
+  {
+    const r = createRouter(makeRoutes());
+    let count = 0;
+    const stop = r.beforeEach(() => { count++; });
+    r.navigate("/about");
+    stop();
+    r.navigate("/admin");
+    assert20(count === 1, "T8 — unsubscribed guard does not fire after stop()");
+  }
+
+  // ─── Test 9: first guard returning false short-circuits remaining guards ──
+  {
+    const r = createRouter(makeRoutes());
+    let secondFired = false;
+    r.beforeEach(() => false);
+    r.beforeEach(() => { secondFired = true; });
+    r.navigate("/about");
+    assert20(!secondFired, "T9 — second guard skipped when first returns false");
+  }
+
+  // ─── Summary ────────────────────────────────────────────────────────────
+  console.groupEnd();
+
+  const tests20El = document.getElementById("tests20");
+  const summary20El = document.getElementById("summary20");
+
+  if (tests20El) {
+    tests20El.innerHTML = labels20.map((l, i) => {
+      const ok = results20[i];
+      return `<div style="padding:4px 8px;border-left:3px solid ${ok ? "#22c55e" : "#ef4444"};margin:3px 0;font-size:13px">${ok ? "✅" : "❌"} ${l}</div>`;
+    }).join("");
+  }
+  if (summary20El) {
+    const total = passed20 + failed20;
+    summary20El.innerHTML = `<p style="font-weight:600;color:${failed20 === 0 ? "#22c55e" : "#ef4444"}">${passed20}/${total} tests pasados</p>`;
+  }
+
+  // ─── Demo ────────────────────────────────────────────────────────────────
+  const demo20El = document.querySelector("#demo20");
+  if (demo20El) {
+    const isLoggedIn = signal(false);
+
+    const demoRouter = createRouter([
+      { path: "/", component: () => html`<div style="color:#e2e8f0"><h3 style="margin:0 0 6px">🏠 Inicio</h3><p style="color:#94a3b8;font-size:13px;margin:0">Página pública</p></div>` },
+      { path: "/perfil", component: () => html`<div style="color:#e2e8f0"><h3 style="margin:0 0 6px">👤 Perfil</h3><p style="color:#94a3b8;font-size:13px;margin:0">Solo usuarios autenticados</p></div>` },
+      { path: "/ajustes", component: () => html`<div style="color:#e2e8f0"><h3 style="margin:0 0 6px">⚙️ Ajustes</h3><p style="color:#94a3b8;font-size:13px;margin:0">Solo usuarios autenticados</p></div>` },
+      { path: "/login", component: () => html`<div style="color:#fbbf24"><h3 style="margin:0 0 6px">🔒 Login</h3><p style="color:#94a3b8;font-size:13px;margin:0">Inicia sesión para acceder a rutas protegidas</p></div>` },
+    ]);
+
+    const PROTECTED = ["/perfil", "/ajustes"];
+
+    demoRouter.beforeEach((to) => {
+      if (PROTECTED.includes(to) && !isLoggedIn.value) return "/login";
+    });
+
+    const btn = (color: string, label: string, onClick: () => void) =>
+      html`<button style=${"padding:6px 14px;background:" + color + ";color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px"}
+        @click=${onClick}>${label}</button>`;
+
+    html`
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;background:#0f172a;border:1px solid #1e293b">
+          <span style="font-size:13px;color:#94a3b8">Estado:</span>
+          <span style="${() => "font-weight:600;font-size:13px;color:" + (isLoggedIn.value ? "#22c55e" : "#ef4444")}">
+            ${() => isLoggedIn.value ? "✅ Autenticado" : "❌ No autenticado"}
+          </span>
+          ${() => btn(isLoggedIn.value ? "#ef4444" : "#22c55e",
+      isLoggedIn.value ? "Cerrar sesión" : "Iniciar sesión",
+      () => { isLoggedIn.value = !isLoggedIn.value; })}
+        </div>
+        <nav style="display:flex;gap:8px;flex-wrap:wrap">
+          ${btn("#3b82f6", "🏠 Inicio", () => demoRouter.navigate("/"))}
+          ${btn("#8b5cf6", "👤 Perfil", () => demoRouter.navigate("/perfil"))}
+          ${btn("#8b5cf6", "⚙️ Ajustes", () => demoRouter.navigate("/ajustes"))}
+          ${btn("#f59e0b", "🔒 Login", () => demoRouter.navigate("/login"))}
+        </nav>
+        <div style="font-size:12px;color:#64748b">
+          Ruta activa: <code style="color:#38bdf8">${() => demoRouter.current.value}</code>
+          ${() => PROTECTED.includes(demoRouter.current.value) && !isLoggedIn.value
+        ? html`<span style="color:#ef4444;margin-left:8px">⛔ Redirigido por guard</span>`
+        : null}
+        </div>
+        <div style="padding:16px;border-radius:8px;border:1px solid #1e293b;background:#0f172a;min-height:70px">
+          ${new RouterView()}
+        </div>
+        <p style="font-size:11px;color:#475569;margin:0">
+          El guard <code>beforeEach</code> redirige a <code>/login</code> cuando se navega a
+          una ruta protegida sin autenticación. Inicia sesión y vuelve a pulsar los botones.
+        </p>
+      </div>
+    `.mount(demo20El as Element);
+  }
+}
+
