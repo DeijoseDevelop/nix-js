@@ -97,7 +97,7 @@ export function suspend<T>(
         }
 
         private _run(): void {
-            if (resetOnRefresh || this._state.value.status === "pending") {
+            if (resetOnRefresh || this._state.peek().status === "pending") {
                 this._state.value = { status: "pending" };
             }
             asyncFn().then(
