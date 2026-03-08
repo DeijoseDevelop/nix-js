@@ -240,10 +240,10 @@ export function useField<T>(
     initialValue: T,
     validators: Validator<T>[] = []
 ): FieldState<T> {
-    const value   = signal(initialValue);
+    const value = signal(initialValue);
     const touched = signal(false);
-    const dirty   = signal(false);
-    const _ext    = signal<string | null>(null);
+    const dirty = signal(false);
+    const _ext = signal<string | null>(null);
 
     // Computed error: external override takes priority, then built-in validators.
     // Errors are hidden until the field is touched or dirty.
@@ -257,25 +257,27 @@ export function useField<T>(
         return null;
     });
 
-    function coerce(t: HTMLInputElement): T {
-        if (typeof initialValue === "boolean") return t.checked       as unknown as T;
-        if (typeof initialValue === "number")  return Number(t.value) as unknown as T;
+    function coerce(target: EventTarget | null): T {
+        if (!target || !("value" in target)) return initialValue;
+        const t = target as HTMLInputElement;
+        if (typeof initialValue === "boolean") return t.checked as unknown as T;
+        if (typeof initialValue === "number") return Number(t.value) as unknown as T;
         return t.value as unknown as T;
     }
 
     const onInput = (e: Event): void => {
-        value.value = coerce(e.target as HTMLInputElement);
+        value.value = coerce(e.target);
         dirty.value = true;
-        _ext.value  = null; // clear server-side error when user re-types
+        _ext.value = null; // clear server-side error when user re-types
     };
 
     const onBlur = (): void => { touched.value = true; };
 
     function reset(): void {
-        value.value   = initialValue;
+        value.value = initialValue;
         touched.value = false;
-        dirty.value   = false;
-        _ext.value    = null;
+        dirty.value = false;
+        _ext.value = null;
     }
 
     function _setExternalError(msg: string | null): void {

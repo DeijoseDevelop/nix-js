@@ -110,7 +110,13 @@ export function createStore<
     // 4. Si hay acciones, crearlas y mezclarlas en el store
     if (actionsFactory) {
         const actions = actionsFactory(typedSignals);
-        Object.assign(store, actions);
+        for (const key of Object.keys(actions)) {
+            if (key === "$reset") {
+                console.warn(`[Nix] Store action name "$reset" is reserved and will be ignored.`);
+                continue;
+            }
+            (store as Record<string, unknown>)[key] = (actions as Record<string, unknown>)[key];
+        }
     }
 
     return store;

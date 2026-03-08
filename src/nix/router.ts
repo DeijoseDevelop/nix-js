@@ -450,6 +450,13 @@ export function createRouter(routes: RouteRecord[]): Router {
     }
 
     const router: RouterInternal = { current, params, query, navigate, beforeEach, routes, _flat: flat, _guards };
+
+    if (_currentRouter) {
+        console.warn(
+            "[Nix] A router already exists. The previous router is being replaced. " +
+            "Only one router instance should be active at a time."
+        );
+    }
     _currentRouter = router;
 
     // ── Initial navigation guard check ────────────────────────────────────────
@@ -495,6 +502,18 @@ export function createRouter(routes: RouteRecord[]): Router {
  */
 export function useRouter(): Router {
     return getRouter();
+}
+
+/**
+ * @internal — Resets the router singleton. Used by tests to avoid
+ * "A router already exists" warnings between test cases.
+ */
+export function _resetRouter(): void {
+    if (_currentPopstateCleanup) {
+        _currentPopstateCleanup();
+        _currentPopstateCleanup = null;
+    }
+    _currentRouter = null;
 }
 
 // ── RouterView ────────────────────────────────────────────────────────────────

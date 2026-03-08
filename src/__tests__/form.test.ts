@@ -271,4 +271,20 @@ describe("createForm", () => {
         expect(errs.a).toBeTruthy();
         expect(errs.b).toBeTruthy();
     });
+
+    it("coerce handles non-input event targets gracefully", () => {
+        const field = useField("default");
+        // Simulate an event with a target that has no 'value' property
+        const fakeEvent = { target: document.createElement("div") } as unknown as Event;
+        field.onInput(fakeEvent);
+        // Should fall back to initialValue instead of crashing
+        expect(field.value.value).toBe("default");
+    });
+
+    it("coerce handles null event target gracefully", () => {
+        const field = useField("fallback");
+        const fakeEvent = { target: null } as unknown as Event;
+        field.onInput(fakeEvent);
+        expect(field.value.value).toBe("fallback");
+    });
 });

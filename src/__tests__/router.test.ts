@@ -1,7 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { html } from "../nix/template";
-import { createRouter, useRouter, RouterView } from "../nix/router";
+import { createRouter, useRouter, RouterView, _resetRouter } from "../nix/router";
 import type { NavigationGuard } from "../nix/router";
+
+// Reset router singleton before each test to avoid warnings
+beforeEach(() => { _resetRouter(); });
 
 // ── createRouter ──────────────────────────────────────────────────────────────
 
@@ -304,5 +307,22 @@ describe("security: async guard race condition", () => {
 
         // Only the LAST navigation (/b) should have committed
         expect(r.current.value).toBe("/b");
+    });
+});
+
+describe("security: router replacement warning", () => {
+    it("warns when creating a second router", () => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        createRouter([
+            { path: "/", component: () => html`<p>first</p>` },
+        ]);
+        // Second router should trigger warning
+        createRouter([
+            { path: "/", component: () => html`<p>second</p>` },
+        ]);
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining("A router already exists")
+        );
+        warnSpy.mockRestore();
     });
 });
