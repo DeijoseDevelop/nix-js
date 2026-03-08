@@ -480,9 +480,18 @@ export function createErrorBoundary(
 
             let activeCleanup: (() => void) | null = null;
             let errored = false;
+            let initialRenderDone = false;
+            let deferredError: unknown = undefined;
+            let hasDeferredError = false;
 
             // Renders the fallback outside the error handler window
             const renderFallback = (err: unknown): void => {
+                // Use marker.parentNode instead of the captured `parent`
+                // because `parent` may be a stale DocumentFragment when the
+                // boundary was rendered inside another template (the fragment
+                // was emptied when the outer template moved children to the DOM).
+                const liveParent = marker.parentNode!;
+
                 const fb: NixTemplate | NixComponent =
                     typeof fallback === "function" && !isNixComponent(fallback as object)
                         ? (fallback as (err: unknown) => NixTemplate | NixComponent)(err)
@@ -493,7 +502,7 @@ export function createErrorBoundary(
                     let tmplCleanup!: () => void;
                     try {
                         try { fb.onInit?.(); } catch { /* ignore errors in fallback */ }
-                        tmplCleanup = fb.render()._render(parent, before);
+                        tmplCleanup = fb.render()._render(liveParent, before);
                     } finally {
                         _popComponentContext();
                     }
@@ -508,22 +517,29 @@ export function createErrorBoundary(
                         tmplCleanup();
                     };
                 } else {
-                    activeCleanup = fb._render(parent, before);
+                    activeCleanup = fb._render(liveParent, before);
                 }
             };
 
-            // Called by effects inside `content` when they throw after mount
+            // Called by effects inside `content` when they throw
             const handleReactiveError = (err: unknown): void => {
                 if (errored) return;
                 errored = true;
-                activeCleanup?.();
-                activeCleanup = null;
-                renderFallback(err);
+                if (initialRenderDone) {
+                    // Post-mount: content is fully rendered — tear it down
+                    activeCleanup?.();
+                    activeCleanup = null;
+                    renderFallback(err);
+                } else {
+                    // During initial _render(): defer — content._render() hasn't
+                    // returned its cleanup yet, so we can't tear it down here.
+                    deferredError = err;
+                    hasDeferredError = true;
+                }
             };
 
             // ── Render content inside the error boundary window ──────────────
             _pushErrorHandler(handleReactiveError);
-            let capturedError: unknown = undefined;
             try {
                 if (isNixComponent(content)) {
                     _pushComponentContext();
@@ -535,36 +551,352 @@ export function createErrorBoundary(
                     } finally {
                         _popComponentContext();
                     }
-                    try {
-                        const ret = content.onMount?.();
-                        const prev = activeCleanup;
-                        activeCleanup = () => {
-                            try { content.onUnmount?.(); } catch { /* ignore */ }
-                            if (typeof ret === "function") try { ret(); } catch { /* ignore */ }
-                            prev?.();
-                        };
-                    } catch (e) {
-                        if (content.onError) content.onError(e); else throw e;
+                    if (!errored) {
+                        try {
+                            const ret = content.onMount?.();
+                            const prev = activeCleanup;
+                            activeCleanup = () => {
+                                try { content.onUnmount?.(); } catch { /* ignore */ }
+                                if (typeof ret === "function") try { ret(); } catch { /* ignore */ }
+                                prev?.();
+                            };
+                        } catch (e) {
+                            if (content.onError) content.onError(e); else throw e;
+                        }
                     }
                 } else {
                     activeCleanup = content._render(parent, before);
                 }
             } catch (err) {
+                // Synchronous throw (e.g. onInit without onError)
                 errored = true;
                 activeCleanup?.();
                 activeCleanup = null;
-                capturedError = err;
+                deferredError = err;
+                hasDeferredError = true;
             } finally {
                 // Always pop: effects already captured handleReactiveError as closure
                 _popErrorHandler();
+                initialRenderDone = true;
             }
 
-            // Render fallback *after* popping the handler (effects in fallback
-            // should not be caught by this same boundary)
-            if (errored) renderFallback(capturedError);
+            // Handle errors detected during initial render.  Now that _render
+            // has returned, activeCleanup holds content's cleanup which we can
+            // safely invoke to strip the (partially rendered) content from DOM.
+            if (hasDeferredError) {
+                activeCleanup?.();
+                activeCleanup = null;
+                renderFallback(deferredError);
+            }
 
             return () => {
                 activeCleanup?.();
+                marker.remove();
+            };
+        },
+    };
+}
+
+// ─── Transitions ─────────────────────────────────────────────────────────────
+
+/**
+ * Options for `transition()`.  All class-name overrides are optional — by
+ * default they are derived from `name` (default `"nix"`).
+ *
+ * | phase        | from class        | active class        | to class        |
+ * |--------------|-------------------|---------------------|-----------------|
+ * | enter        | `{n}-enter-from`  | `{n}-enter-active`  | `{n}-enter-to`  |
+ * | leave        | `{n}-leave-from`  | `{n}-leave-active`  | `{n}-leave-to`  |
+ */
+export interface TransitionOptions {
+    /**
+     * Prefix for all generated CSS classes.  Default `"nix"`.
+     * e.g. `name: "fade"` generates `.fade-enter-from`, `.fade-leave-to`, …
+     */
+    name?: string;
+    /** Override the enter-from class individually. */
+    enterFrom?: string;
+    /** Override the enter-active class individually. */
+    enterActive?: string;
+    /** Override the enter-to class individually. */
+    enterTo?: string;
+    /** Override the leave-from class individually. */
+    leaveFrom?: string;
+    /** Override the leave-active class individually. */
+    leaveActive?: string;
+    /** Override the leave-to class individually. */
+    leaveTo?: string;
+    /**
+     * When `true` the enter transition also plays on the very first render
+     * (similar to Vue's `appear`).  Default `false`.
+     */
+    appear?: boolean;
+    /**
+     * Fallback duration in **milliseconds** used when no `transition-duration`
+     * or `animation-duration` is found on the element via `getComputedStyle`.
+     */
+    duration?: number;
+    /** Called synchronously right before the enter classes are added. */
+    onBeforeEnter?: (el: Element) => void;
+    /** Called after the enter transition has fully completed. */
+    onAfterEnter?: (el: Element) => void;
+    /** Called synchronously right before the leave classes are added. */
+    onBeforeLeave?: (el: Element) => void;
+    /** Called after the leave transition has fully completed and the DOM is removed. */
+    onAfterLeave?: (el: Element) => void;
+}
+
+/** Content that can be wrapped with `transition()`. */
+export type TransitionContent =
+    | NixTemplate
+    | NixComponent
+    | (() => NixTemplate | NixComponent | null);
+
+// ── Internal transition helpers ──────────────────────────────────────────────
+
+function _resolveTransitionClasses(opts: TransitionOptions) {
+    const n = opts.name ?? "nix";
+    return {
+        enterFrom: opts.enterFrom ?? `${n}-enter-from`,
+        enterActive: opts.enterActive ?? `${n}-enter-active`,
+        enterTo: opts.enterTo ?? `${n}-enter-to`,
+        leaveFrom: opts.leaveFrom ?? `${n}-leave-from`,
+        leaveActive: opts.leaveActive ?? `${n}-leave-active`,
+        leaveTo: opts.leaveTo ?? `${n}-leave-to`,
+    };
+}
+
+function _cssMaxDuration(cssValue: string): number {
+    return Math.max(0, ...cssValue.split(",").map((s) => parseFloat(s) || 0));
+}
+
+function _waitTransitionEnd(el: Element, fallbackMs = 0): Promise<void> {
+    return new Promise((resolve) => {
+        const st = getComputedStyle(el);
+        const ms =
+            Math.max(
+                _cssMaxDuration(st.transitionDuration || "0"),
+                _cssMaxDuration(st.animationDuration || "0"),
+            ) * 1000;
+        const wait = ms > 0 ? ms + 100 : fallbackMs > 0 ? fallbackMs : 0;
+
+        if (wait <= 0) { resolve(); return; }
+
+        let timerId: ReturnType<typeof setTimeout>;
+        const done = (e: Event) => {
+            if (e.target !== el) return;
+            clearTimeout(timerId);
+            el.removeEventListener("transitionend", done);
+            el.removeEventListener("animationend", done);
+            resolve();
+        };
+        el.addEventListener("transitionend", done);
+        el.addEventListener("animationend", done);
+        timerId = setTimeout(() => {
+            el.removeEventListener("transitionend", done);
+            el.removeEventListener("animationend", done);
+            resolve();
+        }, wait);
+    });
+}
+
+// ── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Wraps `content` with CSS class-based enter / leave transitions.
+ *
+ * **Static content** (NixTemplate / NixComponent): plays the enter transition
+ * on mount (only if `appear: true`; otherwise instant), and cleans up
+ * immediately on unmount without a leave transition.
+ *
+ * **Reactive conditional** `() => Template | null`: plays the enter
+ * transition when the expression goes from `null` → value, and the leave
+ * transition when it goes from value → `null`.  An in-progress leave is
+ * cancelled and the DOM is removed synchronously when new content enters.
+ *
+ * @example
+ * ```css
+ * .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
+ * .fade-enter-from,   .fade-leave-to     { opacity: 0; }
+ * ```
+ * ```typescript
+ * const show = signal(true);
+ *
+ * // Reactive — full enter + leave
+ * transition(() => show.value ? html`<p>Hello</p>` : null, { name: "fade" })
+ *
+ * // Static — only enter (if appear: true)
+ * transition(html`<span>Always here</span>`, { name: "slide", appear: true })
+ * ```
+ */
+export function transition(
+    content: TransitionContent,
+    options: TransitionOptions = {},
+): NixTemplate {
+    const cls = _resolveTransitionClasses(options);
+
+    return {
+        __isNixTemplate: true as const,
+
+        mount(container) {
+            const el =
+                typeof container === "string"
+                    ? (document.querySelector(container) ?? document.body)
+                    : container;
+            const cleanup = this._render(el, null);
+            return { unmount: cleanup };
+        },
+
+        _render(parent, before) {
+            const marker = document.createComment("nix-t");
+            parent.insertBefore(marker, before);
+
+            // Currently displayed content cleanup
+            let contentCleanup: (() => void) | null = null;
+            // Cleanup of content currently being animated OUT (leave phase)
+            let leaveCleanup: (() => void) | null = null;
+            // Monotone generation counter — incremented on enter to cancel ongoing leave
+            let leaveGen = 0;
+            let isFirstRender = true;
+
+            /** Find first Element node between `marker` and `before`. */
+            const getEl = (): Element | null => {
+                let node: Node | null = marker.nextSibling;
+                while (node && node !== before) {
+                    if (node.nodeType === Node.ELEMENT_NODE) return node as Element;
+                    node = node.nextSibling;
+                }
+                return null;
+            };
+
+            /** Mount a NixTemplate or NixComponent and return its cleanup. */
+            function mountContent(tpl: NixTemplate | NixComponent): () => void {
+                if (isNixComponent(tpl)) {
+                    const comp = tpl as NixComponent;
+                    _pushComponentContext();
+                    let rendered!: NixTemplate;
+                    try {
+                        try { comp.onInit?.(); } catch { /* ignore */ }
+                        rendered = comp.render();
+                    } finally {
+                        _popComponentContext();
+                    }
+                    const tmplCleanup = rendered._render(parent, before);
+                    let mountRet: (() => void) | void;
+                    try { mountRet = comp.onMount?.(); } catch { /* ignore */ }
+                    return () => {
+                        try { comp.onUnmount?.(); } catch { /* ignore */ }
+                        if (typeof mountRet === "function") try { mountRet(); } catch { /* ignore */ }
+                        tmplCleanup();
+                    };
+                }
+                return (tpl as NixTemplate)._render(parent, before);
+            }
+
+            /** Mount content and play enter animation (does NOT block). */
+            const doEnter = (tpl: NixTemplate | NixComponent, skipAnim = false): void => {
+                // Cancel any in-progress leave
+                leaveGen++;
+                if (leaveCleanup) {
+                    leaveCleanup();
+                    leaveCleanup = null;
+                }
+
+                contentCleanup = mountContent(tpl);
+
+                const el = getEl();
+                const shouldAnimate = el && (!isFirstRender || options.appear) && !skipAnim;
+                if (shouldAnimate) {
+                    const gen = leaveGen;
+                    const doIt = async () => {
+                        options.onBeforeEnter?.(el);
+                        el.classList.add(cls.enterFrom, cls.enterActive);
+                        void el.getBoundingClientRect(); // force reflow
+                        await new Promise<void>((r) => requestAnimationFrame(() => r()));
+                        if (leaveGen !== gen) return; // superseded
+                        el.classList.remove(cls.enterFrom);
+                        el.classList.add(cls.enterTo);
+                        await _waitTransitionEnd(el, options.duration);
+                        if (leaveGen !== gen) return;
+                        el.classList.remove(cls.enterActive, cls.enterTo);
+                        options.onAfterEnter?.(el);
+                    };
+                    doIt().catch(() => { /* ignore */ });
+                }
+                isFirstRender = false;
+            };
+
+            /** Remove current content after playing leave animation (does NOT block). */
+            const doLeave = (): void => {
+                const savedCleanup = contentCleanup;
+                contentCleanup = null;
+                const el = getEl();
+
+                if (!el) { savedCleanup?.(); return; }
+
+                const gen = ++leaveGen;
+                leaveCleanup = savedCleanup ?? null;
+
+                const doIt = async () => {
+                    options.onBeforeLeave?.(el);
+                    el.classList.add(cls.leaveFrom, cls.leaveActive);
+                    void el.getBoundingClientRect();
+                    await new Promise<void>((r) => requestAnimationFrame(() => r()));
+                    if (leaveGen !== gen) return; // cancelled by enter
+                    el.classList.remove(cls.leaveFrom);
+                    el.classList.add(cls.leaveTo);
+                    await _waitTransitionEnd(el, options.duration);
+                    if (leaveGen !== gen) return;
+                    el.classList.remove(cls.leaveActive, cls.leaveTo);
+                    options.onAfterLeave?.(el);
+                    leaveCleanup?.();
+                    leaveCleanup = null;
+                };
+                doIt().catch(() => { /* ignore */ });
+            };
+
+            let disposeWatcher: (() => void) | null = null;
+
+            if (typeof content === "function" && !isNixComponent(content as unknown)) {
+                // ── Reactive conditional: () => Template | null ──────────────
+                const getter = content as () => NixTemplate | NixComponent | null;
+                let prevVal: NixTemplate | NixComponent | null = null;
+
+                disposeWatcher = effect(() => {
+                    const val = getter();
+                    const wasNull = prevVal === null;
+                    const isNull = val === null;
+
+                    if (wasNull && !isNull) {
+                        doEnter(val!);
+                    } else if (!wasNull && isNull) {
+                        doLeave();
+                    } else if (!wasNull && !isNull) {
+                        // Both non-null: instant swap (no transition)
+                        leaveGen++;
+                        leaveCleanup?.();
+                        leaveCleanup = null;
+                        contentCleanup?.();
+                        contentCleanup = null;
+                        doEnter(val!, true);
+                    }
+                    prevVal = val;
+                });
+                // The initial effect run (synchronous) counts as the first render,
+                // so subsequent null→value transitions should always animate.
+                isFirstRender = false;
+            } else {
+                // ── Static: mount once ───────────────────────────────────────
+                doEnter(content as NixTemplate | NixComponent);
+            }
+
+            return () => {
+                leaveGen++;               // cancel any in-progress leave
+                disposeWatcher?.();
+                contentCleanup?.();
+                leaveCleanup?.();
+                contentCleanup = null;
+                leaveCleanup = null;
                 marker.remove();
             };
         },
@@ -932,7 +1264,8 @@ function activateBindings(
                 });
             } else if (isNixTemplate(value)) {
                 // Template anidado estático: insertar directamente
-                value._render(anchor.parentNode!, anchor);
+                const templateCleanup = value._render(anchor.parentNode!, anchor);
+                disposes.push(templateCleanup);
             } else if (Array.isArray(value)) {
                 for (const item of value) {
                     if (isNixComponent(item)) {

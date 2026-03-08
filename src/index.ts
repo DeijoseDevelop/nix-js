@@ -27,6 +27,7 @@ export {
     provideOutlet,
     injectOutlet,
     createErrorBoundary,
+    transition,
     // Components
     mount,
     NixComponent,
@@ -70,6 +71,8 @@ export type {
     NixRef,
     PortalOutlet,
     ErrorFallback,
+    TransitionOptions,
+    TransitionContent,
     // Store
     Store,
     StoreSignals,
