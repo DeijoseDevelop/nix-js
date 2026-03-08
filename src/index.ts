@@ -79,6 +79,8 @@ export type {
     // Router
     Router,
     RouteRecord,
+    NavigationGuard,
+    NavigationGuardResult,
     // Async
     SuspenseOptions,
     // Dependency Injection

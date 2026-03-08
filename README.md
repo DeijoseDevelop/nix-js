@@ -1103,6 +1103,83 @@ export default class HomePage extends NixComponent {
 
 ---
 
+### Route Guards
+
+Intercept navigation before it commits. Guards run in order: all `beforeEach` guards first, then the route-level `beforeEnter` guard.
+
+| Return value | Effect |
+|---|---|
+| `void` / `undefined` | Allow navigation |
+| `false` | Cancel navigation (URL unchanged, current route unchanged) |
+| `string` (path) | Redirect to that path instead |
+| `Promise<...>` | Async guard — same return semantics |
+
+#### `router.beforeEach(guard)` — global guard
+
+Called before **every** navigation. Returns an unsubscribe function.
+
+```typescript
+import { createRouter } from "@deijose/nix-js";
+import type { NavigationGuard } from "@deijose/nix-js";
+
+const router = createRouter([...]);
+
+// Redirect unauthenticated users away from protected routes
+const stop = router.beforeEach((to, from) => {
+  const protected = ["/dashboard", "/profile", "/settings"];
+  if (protected.includes(to) && !isLoggedIn()) {
+    return "/login"; // redirect
+  }
+  // return nothing to allow
+});
+
+// Remove the guard later
+stop();
+```
+
+#### `beforeEnter` — per-route guard
+
+Defined on the route record. Fires only when navigating to that specific route.
+
+```typescript
+createRouter([
+  { path: "/",     component: () => new HomePage() },
+  {
+    path: "/admin",
+    component: () => new AdminPage(),
+    beforeEnter: (to, from) => {
+      if (!isAdmin()) return "/"; // only admins allowed
+    },
+  },
+]);
+```
+
+#### Async guards
+
+Return a `Promise` to perform async checks (e.g., token validation, API permission check):
+
+```typescript
+router.beforeEach(async (to, from) => {
+  const ok = await checkTokenValid();
+  if (!ok) return "/login";
+});
+```
+
+When any guard in the chain returns a `Promise`, the remaining guards and the navigation commit are deferred until the promise resolves. Navigation cannot be awaited from the callsite — it completes asynchronously (fire-and-forget).
+
+#### Type
+
+```typescript
+type NavigationGuardResult = void | undefined | false | string;
+
+type NavigationGuard = (
+  to: string,
+  from: string,
+) => NavigationGuardResult | Promise<NavigationGuardResult>;
+```
+
+---
+
 ## Forms
 
 Nix.js includes a built-in form management system inspired by react-hook-form.

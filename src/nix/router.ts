@@ -1,4 +1,5 @@
 // src/nix/router.ts — Fase 6: Router History API (pushState)
+//                     Fase 20: Route Guards (beforeEach / beforeEnter)
 
 import { signal } from "./reactivity";
 import type { Signal } from "./reactivity";
@@ -7,6 +8,32 @@ import type { NixTemplate } from "./template";
 import { html } from "./template";
 
 // ── Tipos públicos ────────────────────────────────────────────────────────────
+
+/**
+ * Value returned (or resolved) by a navigation guard.
+ * - `false`  — cancel the navigation.
+ * - `string` — redirect to that path.
+ * - `void` / `undefined` — allow the navigation.
+ */
+export type NavigationGuardResult = void | undefined | false | string;
+
+/**
+ * A navigation guard function.
+ *
+ * @param to   Destination pathname (e.g. `"/admin"`).
+ * @param from Current pathname before the navigation.
+ * @returns `false` to cancel, a path string to redirect, or nothing to allow.
+ *          May return a Promise for async guard logic.
+ *
+ * @example
+ * router.beforeEach((to, from) => {
+ *   if (!auth.isLoggedIn && to !== "/login") return "/login";
+ * });
+ */
+export type NavigationGuard = (
+    to: string,
+    from: string,
+) => NavigationGuardResult | Promise<NavigationGuardResult>;
 
 export interface RouteRecord {
     /**
@@ -35,6 +62,17 @@ export interface RouteRecord {
      * El componente padre debe incluir `new RouterView(1)` para renderizarlas.
      */
     children?: RouteRecord[];
+    /**
+     * Guard de nivel de ruta. Se ejecuta solo al entrar en esta ruta concreta.
+     * Misma semántica de retorno que `beforeEach`.
+     *
+     * @example
+     * { path: "/admin", component: () => new AdminPage(),
+     *   beforeEnter: (to, from) => {
+     *     if (!isAdmin) return "/";
+     *   }}
+     */
+    beforeEnter?: NavigationGuard;
 }
 
 export interface Router {
@@ -63,7 +101,8 @@ export interface Router {
      */
     readonly query: Signal<Record<string, string>>;
     /**
-     * Navegar a una ruta nueva (pushState + actualiza señales síncronamente).
+     * Navegar a una ruta nueva (pushState + actualiza señales).
+     * Si hay guards registrados, la navegación espera a que todos pasen.
      *
      * @param path     Ruta destino. Puede incluir query string: "/users?page=2"
      * @param query    Query params como objeto. Se mezclan con los del path.
@@ -72,6 +111,19 @@ export interface Router {
     navigate(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
     /** Árbol de rutas original (tal como se pasó a createRouter) */
     readonly routes: RouteRecord[];
+    /**
+     * Registra un guard de navegación global.
+     * Se ejecuta (en orden de registro) antes de cada navegación.
+     *
+     * Retorna una función para eliminar el guard.
+     *
+     * @example
+     * const stop = router.beforeEach((to, from) => {
+     *   if (!auth && to !== "/login") return "/login";
+     * });
+     * stop(); // elimina el guard
+     */
+    beforeEach(guard: NavigationGuard): () => void;
 }
 
 // ── Internos ──────────────────────────────────────────────────────────────────
@@ -87,10 +139,13 @@ interface FlatRoute {
     segments: Segment[];
     /** [componentePadre, componenteHijo, …] */
     chain: Array<() => NixTemplate | NixComponent>;
+    /** Guard de entrada de esta ruta concreta (del RouteRecord hoja) */
+    beforeEnter?: NavigationGuard;
 }
 
 interface RouterInternal extends Router {
     _flat: FlatRoute[];
+    _guards: NavigationGuard[];
 }
 
 /** Singleton de módulo — la última instancia creada con createRouter() */
@@ -157,7 +212,7 @@ function flattenRoutes(
         const fullPath = joinPaths(parentPath, route.path);
         const chain = [...parentChain, route.component];
         const segments = parseSegments(fullPath);
-        result.push({ fullPath, segments, chain });
+        result.push({ fullPath, segments, chain, beforeEnter: route.beforeEnter });
         if (route.children?.length) {
             result.push(...flattenRoutes(route.children, fullPath, chain));
         }
@@ -256,43 +311,115 @@ export function createRouter(routes: RouteRecord[]): Router {
     const params = signal<Record<string, string>>(initialMatch?.params ?? {});
     const query = signal<Record<string, string>>(parseQuery(window.location.search));
 
-    // Botón atrás/adelante del navegador
-    window.addEventListener("popstate", () => {
-        const p = getPathname();
-        const m = matchFlat(p, flat);
-        params.value = m?.params ?? {};
-        query.value = parseQuery(window.location.search);
-        current.value = p;
-    });
+    // ── Guards ────────────────────────────────────────────────────────────────
+    const _guards: NavigationGuard[] = [];
 
-    function navigate(
-        path: string,
-        queryObj?: Record<string, string | number | boolean | null | undefined>
+    /**
+     * Run global guards + optional route-level guard in sequence.
+     * Calls `onCommit` if all pass, `onCancel` if any blocks.
+     * Supports both sync and async guards.
+     */
+    function _runGuards(
+        to: string,
+        from: string,
+        routeGuard: NavigationGuard | undefined,
+        onCommit: () => void,
+        onCancel?: () => void,
     ): void {
-        // Separar pathname del query string incrustado en el path
+        const guards: NavigationGuard[] = [..._guards];
+        if (routeGuard) guards.push(routeGuard);
+
+        if (guards.length === 0) { onCommit(); return; }
+
+        let idx = 0;
+        function runNext(prev: NavigationGuardResult): void {
+            if (prev === false) { onCancel?.(); return; }
+            if (typeof prev === "string") {
+                // Redirect — guard to same path is treated as allow to avoid loops
+                if (prev !== to) navigate(prev);
+                else onCommit();
+                return;
+            }
+            if (idx >= guards.length) { onCommit(); return; }
+            const result = guards[idx++](to, from);
+            if (result instanceof Promise) { result.then(runNext); return; }
+            runNext(result);
+        }
+        runNext(undefined);
+    }
+
+    // ── Helpers internos de navegación ────────────────────────────────────────
+    function _parsePath(
+        path: string,
+        queryObj?: Record<string, string | number | boolean | null | undefined>,
+    ): { pathname: string; stringQuery: Record<string, string> } {
         const qIdx = path.indexOf("?");
         const pathname = qIdx === -1 ? path : path.slice(0, qIdx);
         const inlineQ = qIdx === -1 ? {} : parseQuery(path.slice(qIdx));
-
-        // El queryObj tiene precedencia sobre el inline
         const finalQuery = queryObj ? { ...inlineQ, ...queryObj } : inlineQ;
-
-        // Convertir todos los valores a string (omitir null/undefined/false)
         const stringQuery: Record<string, string> = {};
         for (const [k, v] of Object.entries(finalQuery)) {
             if (v != null && v !== false) stringQuery[k] = String(v);
         }
-
-        const m = matchFlat(pathname, flat);
-        params.value = m?.params ?? {};
-        query.value = stringQuery;
-        current.value = pathname;
-
-        const fullUrl = pathname + buildQueryString(stringQuery);
-        history.pushState(null, "", fullUrl);        // cambia URL sin recargar página
+        return { pathname, stringQuery };
     }
 
-    const router: RouterInternal = { current, params, query, navigate, routes, _flat: flat };
+    // ── Botón atrás/adelante del navegador ────────────────────────────────────
+    window.addEventListener("popstate", () => {
+        const p = getPathname();
+        const from = current.value;
+        const fromQuery = query.value;   // para restaurar la URL si se cancela
+        const m = matchFlat(p, flat);
+        const newQuery = parseQuery(window.location.search);
+
+        _runGuards(
+            p,
+            from,
+            m?.route.beforeEnter,
+            () => {
+                params.value = m?.params ?? {};
+                query.value = newQuery;
+                current.value = p;
+            },
+            () => {
+                // Guard canceló el popstate: restaurar URL anterior sin disparar otro popstate
+                history.pushState(null, "", from + buildQueryString(fromQuery));
+            },
+        );
+    });
+
+    // ── navigate ──────────────────────────────────────────────────────────────
+    function navigate(
+        path: string,
+        queryObj?: Record<string, string | number | boolean | null | undefined>,
+    ): void {
+        const { pathname, stringQuery } = _parsePath(path, queryObj);
+        const from = current.value;
+        const m = matchFlat(pathname, flat);
+
+        _runGuards(
+            pathname,
+            from,
+            m?.route.beforeEnter,
+            () => {
+                params.value = m?.params ?? {};
+                query.value = stringQuery;
+                current.value = pathname;
+                history.pushState(null, "", pathname + buildQueryString(stringQuery));
+            },
+        );
+    }
+
+    // ── beforeEach ────────────────────────────────────────────────────────────
+    function beforeEach(guard: NavigationGuard): () => void {
+        _guards.push(guard);
+        return () => {
+            const idx = _guards.indexOf(guard);
+            if (idx !== -1) _guards.splice(idx, 1);
+        };
+    }
+
+    const router: RouterInternal = { current, params, query, navigate, beforeEach, routes, _flat: flat, _guards };
     _currentRouter = router;
     return router;
 }
