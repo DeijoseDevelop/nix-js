@@ -3222,7 +3222,7 @@ const demoF11 = document.getElementById("demo11")!;
 // ══════════════════════════════════════════════════════════════
 import { nextTick } from "./nix";
 
-const testsF12  = document.getElementById("tests12")!;
+const testsF12 = document.getElementById("tests12")!;
 const summaryF12 = document.getElementById("summary12")!;
 let passF12 = 0, failF12 = 0;
 
@@ -3244,130 +3244,130 @@ function groupF12(label: string) {
 // resumen cuando todos terminan.
 (async () => {
 
-// ── Test 1: nextTick() retorna una promesa ────────────────────────────────────
-groupF12("nextTick — 1. Retorna una Promise");
-{
-  const p = nextTick();
-  assertF12(p instanceof Promise, "nextTick() instanceof Promise");
-  await p;
-}
+  // ── Test 1: nextTick() retorna una promesa ────────────────────────────────────
+  groupF12("nextTick — 1. Retorna una Promise");
+  {
+    const p = nextTick();
+    assertF12(p instanceof Promise, "nextTick() instanceof Promise");
+    await p;
+  }
 
-// ── Test 2: nextTick() resuelve después del tick síncrono ────────────────────
-groupF12("nextTick — 2. El código tras 'await nextTick()' corre después del tick síncrono");
-{
-  const order: string[] = [];
-  const run = async () => {
-    order.push("before");
+  // ── Test 2: nextTick() resuelve después del tick síncrono ────────────────────
+  groupF12("nextTick — 2. El código tras 'await nextTick()' corre después del tick síncrono");
+  {
+    const order: string[] = [];
+    const run = async () => {
+      order.push("before");
+      await nextTick();
+      order.push("after");
+    };
+    const p = run();
+    order.push("sync"); // esto corre ANTES de que el await resuelva
+    await p;
+    assertF12(
+      order[0] === "before" && order[1] === "sync" && order[2] === "after",
+      `orden correcto: [${order.join(", ")}]`
+    );
+  }
+
+  // ── Test 3: DOM actualizado después de nextTick ───────────────────────────────
+  groupF12("nextTick — 3. DOM refleja cambios reactivos después de await nextTick()");
+  {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const name = signal("Ana");
+    const handle = html`<span id="nt3">${() => name.value}</span>`.mount(host);
+
+    // En Nix.js los efectos son síncronos, así que el DOM ya está actualizado
+    // antes del nextTick, pero nextTick garantiza que cualquier efecto
+    // encolado (ej. batch) también haya terminado.
+    name.value = "Bea";
     await nextTick();
-    order.push("after");
-  };
-  const p = run();
-  order.push("sync"); // esto corre ANTES de que el await resuelva
-  await p;
-  assertF12(
-    order[0] === "before" && order[1] === "sync" && order[2] === "after",
-    `orden correcto: [${order.join(", ")}]`
-  );
-}
+    assertF12(
+      host.querySelector("#nt3")?.textContent === "Bea",
+      `textContent === 'Bea' tras nextTick (fue '${host.querySelector("#nt3")?.textContent}')`
+    );
+    handle.unmount();
+    document.body.removeChild(host);
+  }
 
-// ── Test 3: DOM actualizado después de nextTick ───────────────────────────────
-groupF12("nextTick — 3. DOM refleja cambios reactivos después de await nextTick()");
-{
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const name = signal("Ana");
-  const handle = html`<span id="nt3">${() => name.value}</span>`.mount(host);
+  // ── Test 4: nextTick(callback) ejecuta fn en microtask ───────────────────────
+  groupF12("nextTick — 4. nextTick(fn) ejecuta el callback en el microtask");
+  {
+    const order: string[] = [];
+    await new Promise<void>(resolve => {
+      nextTick(() => { order.push("tick"); resolve(); });
+      order.push("sync");
+    });
+    assertF12(
+      order[0] === "sync" && order[1] === "tick",
+      `orden correcto: [${order.join(", ")}]`
+    );
+  }
 
-  // En Nix.js los efectos son síncronos, así que el DOM ya está actualizado
-  // antes del nextTick, pero nextTick garantiza que cualquier efecto
-  // encolado (ej. batch) también haya terminado.
-  name.value = "Bea";
-  await nextTick();
-  assertF12(
-    host.querySelector("#nt3")?.textContent === "Bea",
-    `textContent === 'Bea' tras nextTick (fue '${host.querySelector("#nt3")?.textContent}')`
-  );
-  handle.unmount();
-  document.body.removeChild(host);
-}
+  // ── Test 5: batch + nextTick — efectos resueltos antes de nextTick ────────────
+  groupF12("nextTick — 5. Tras batch(), los efectos ya corrieron al hacer await nextTick()");
+  {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const a = signal(1);
+    const b = signal(2);
+    const handle = html`<span id="nt5">${() => a.value + b.value}</span>`.mount(host);
 
-// ── Test 4: nextTick(callback) ejecuta fn en microtask ───────────────────────
-groupF12("nextTick — 4. nextTick(fn) ejecuta el callback en el microtask");
-{
-  const order: string[] = [];
-  await new Promise<void>(resolve => {
-    nextTick(() => { order.push("tick"); resolve(); });
-    order.push("sync");
-  });
-  assertF12(
-    order[0] === "sync" && order[1] === "tick",
-    `orden correcto: [${order.join(", ")}]`
-  );
-}
+    batch(() => {
+      a.value = 10;
+      b.value = 20;
+    });
+    await nextTick();
+    assertF12(
+      host.querySelector("#nt5")?.textContent === "30",
+      `batch result === '30' tras nextTick (fue '${host.querySelector("#nt5")?.textContent}')`
+    );
+    handle.unmount();
+    document.body.removeChild(host);
+  }
 
-// ── Test 5: batch + nextTick — efectos resueltos antes de nextTick ────────────
-groupF12("nextTick — 5. Tras batch(), los efectos ya corrieron al hacer await nextTick()");
-{
-  const host = document.createElement("div");
-  document.body.appendChild(host);
-  const a = signal(1);
-  const b = signal(2);
-  const handle = html`<span id="nt5">${() => a.value + b.value}</span>`.mount(host);
+  // ── Test 6: múltiples nextTick encadenados ────────────────────────────────────
+  groupF12("nextTick — 6. Múltiples await nextTick() encadenados resuelven en orden");
+  {
+    const ticks: number[] = [];
+    nextTick(() => ticks.push(1));
+    nextTick(() => ticks.push(2));
+    nextTick(() => ticks.push(3));
+    await nextTick(); // espera al menos un microtask
+    await nextTick(); // los tres callbacks ya resolvieron
+    assertF12(ticks.length === 3, `3 callbacks ejecutados (fueron ${ticks.length})`);
+    assertF12(ticks[0] === 1 && ticks[1] === 2 && ticks[2] === 3,
+      `orden correcto: [${ticks.join(", ")}]`);
+  }
 
-  batch(() => {
-    a.value = 10;
-    b.value = 20;
-  });
-  await nextTick();
-  assertF12(
-    host.querySelector("#nt5")?.textContent === "30",
-    `batch result === '30' tras nextTick (fue '${host.querySelector("#nt5")?.textContent}')`
-  );
-  handle.unmount();
-  document.body.removeChild(host);
-}
-
-// ── Test 6: múltiples nextTick encadenados ────────────────────────────────────
-groupF12("nextTick — 6. Múltiples await nextTick() encadenados resuelven en orden");
-{
-  const ticks: number[] = [];
-  nextTick(() => ticks.push(1));
-  nextTick(() => ticks.push(2));
-  nextTick(() => ticks.push(3));
-  await nextTick(); // espera al menos un microtask
-  await nextTick(); // los tres callbacks ya resolvieron
-  assertF12(ticks.length === 3, `3 callbacks ejecutados (fueron ${ticks.length})`);
-  assertF12(ticks[0] === 1 && ticks[1] === 2 && ticks[2] === 3,
-    `orden correcto: [${ticks.join(", ")}]`);
-}
-
-// ── Resumen Fase 12 ───────────────────────────────────────────────────────────
-const totalF12 = passF12 + failF12;
-summaryF12.innerHTML = `<div class="summary ${failF12 === 0 ? 'all-pass' : 'has-fail'}">
+  // ── Resumen Fase 12 ───────────────────────────────────────────────────────────
+  const totalF12 = passF12 + failF12;
+  summaryF12.innerHTML = `<div class="summary ${failF12 === 0 ? 'all-pass' : 'has-fail'}">
   Fase 12 — nextTick(): ${passF12}/${totalF12} tests pasados ${failF12 === 0 ? "🎉" : `❌ ${failF12} fallaron`}
 </div>`;
 
-// ── Demo Interactivo Fase 12 ──────────────────────────────────────────────────
-const demoF12 = document.getElementById("demo12")!;
+  // ── Demo Interactivo Fase 12 ──────────────────────────────────────────────────
+  const demoF12 = document.getElementById("demo12")!;
 
-{
-  const inputRef  = ref<HTMLInputElement>();
-  const items     = signal<string[]>(["Manzana", "Banana"]);
-  const newItem   = signal("");
-  const lastAdded = signal("");
+  {
+    const inputRef = ref<HTMLInputElement>();
+    const items = signal<string[]>(["Manzana", "Banana"]);
+    const newItem = signal("");
+    const lastAdded = signal("");
 
-  const addItem = async () => {
-    const val = newItem.value.trim();
-    if (!val) return;
-    items.value = [...items.value, val];
-    lastAdded.value = val;
-    newItem.value = "";
-    // Tras nextTick el DOM ya reflejó la lista nueva
-    await nextTick();
-    inputRef.el?.focus();
-  };
+    const addItem = async () => {
+      const val = newItem.value.trim();
+      if (!val) return;
+      items.value = [...items.value, val];
+      lastAdded.value = val;
+      newItem.value = "";
+      // Tras nextTick el DOM ya reflejó la lista nueva
+      await nextTick();
+      inputRef.el?.focus();
+    };
 
-  mount(html`
+    mount(html`
     <div style="display:flex;flex-direction:column;gap:12px;max-width:360px">
       <p style="color:#94a3b8;font-size:13px;margin:0">
         Escribe un elemento, pulsa Añadir (o Enter).
@@ -3399,14 +3399,14 @@ const demoF12 = document.getElementById("demo12")!;
 
       <ul style="margin:0;padding-left:18px;color:#cbd5e1;font-size:14px">
         ${() => repeat(
-          items.value,
-          (item) => item,
-          (item) => html`<li>${item}</li>`
-        )}
+        items.value,
+        (item) => item,
+        (item) => html`<li>${item}</li>`
+      )}
       </ul>
     </div>
   `, demoF12);
-}
+  }
 
 })(); // fin bloque async
 
@@ -3417,7 +3417,7 @@ const demoF12 = document.getElementById("demo12")!;
 import { provide, inject, createInjectionKey } from "./nix";
 import type { InjectionKey } from "./nix";
 
-const testsF13  = document.getElementById("tests13")!;
+const testsF13 = document.getElementById("tests13")!;
 const summaryF13 = document.getElementById("summary13")!;
 let passF13 = 0, failF13 = 0;
 
@@ -3682,7 +3682,7 @@ import {
 import type { FieldState } from "./nix";
 
 {
-  const testsEl   = document.getElementById("tests15")!;
+  const testsEl = document.getElementById("tests15")!;
   const summaryEl = document.getElementById("summary15")!;
   let pass = 0, fail = 0;
 
@@ -3702,58 +3702,58 @@ import type { FieldState } from "./nix";
   function blur(field: FieldState<unknown>) { field.onBlur(); }
   // ── useField ─────────────────────────────────────────────────────────────
   const f1 = useField("hello");
-  assert15(f1.value.value === "hello",         "useField — initial value");
-  assert15(!f1.touched.value,                  "useField — not touched initially");
-  assert15(!f1.dirty.value,                    "useField — not dirty initially");
-  assert15(f1.error.value === null,            "useField — no error before interaction");
+  assert15(f1.value.value === "hello", "useField — initial value");
+  assert15(!f1.touched.value, "useField — not touched initially");
+  assert15(!f1.dirty.value, "useField — not dirty initially");
+  assert15(f1.error.value === null, "useField — no error before interaction");
 
   const f2 = useField("", [required()]);
   blur(f2);
-  assert15(f2.error.value === "Required",      "useField — error shows after blur");
+  assert15(f2.error.value === "Required", "useField — error shows after blur");
 
   type(f2, "hello");
-  assert15(f2.error.value === null,            "useField — error clears when valid value entered");
-  assert15(f2.dirty.value,                     "useField — dirty after input");
+  assert15(f2.error.value === null, "useField — error clears when valid value entered");
+  assert15(f2.dirty.value, "useField — dirty after input");
 
   f2.reset();
-  assert15(f2.value.value === "",              "useField — reset restores initial value");
-  assert15(!f2.touched.value,                  "useField — reset clears touched");
-  assert15(f2.error.value === null,            "useField — error hidden after reset");
+  assert15(f2.value.value === "", "useField — reset restores initial value");
+  assert15(!f2.touched.value, "useField — reset clears touched");
+  assert15(f2.error.value === null, "useField — error hidden after reset");
 
   // ── Built-in validators ──────────────────────────────────────────────────
   const fMin = useField("", [minLength(3)]);
   blur(fMin); type(fMin, "ab");
-  assert15(fMin.error.value !== null,          "minLength — fails when too short");
+  assert15(fMin.error.value !== null, "minLength — fails when too short");
   type(fMin, "abc");
-  assert15(fMin.error.value === null,          "minLength — passes at exact length");
+  assert15(fMin.error.value === null, "minLength — passes at exact length");
 
   const fMax = useField("", [maxLength(3)]);
   blur(fMax); type(fMax, "abcd");
-  assert15(fMax.error.value !== null,          "maxLength — fails when too long");
+  assert15(fMax.error.value !== null, "maxLength — fails when too long");
 
   const fEmail = useField("", [email()]);
   blur(fEmail); type(fEmail, "notanemail");
-  assert15(fEmail.error.value !== null,        "email — fails for invalid email");
+  assert15(fEmail.error.value !== null, "email — fails for invalid email");
   type(fEmail, "test@example.com");
-  assert15(fEmail.error.value === null,        "email — passes for valid email");
+  assert15(fEmail.error.value === null, "email — passes for valid email");
 
   const fNum = useField<number>(0, [min(18), max(120)]);
   blur(fNum);
   fNum.value.value = 10;
-  assert15(fNum.error.value !== null,          "min — fails below minimum");
+  assert15(fNum.error.value !== null, "min — fails below minimum");
   fNum.value.value = 18;
   fNum.dirty.value = true;
-  assert15(fNum.error.value === null,          "min — passes at minimum");
+  assert15(fNum.error.value === null, "min — passes at minimum");
   fNum.value.value = 200;
-  assert15(fNum.error.value !== null,          "max — fails above maximum");
+  assert15(fNum.error.value !== null, "max — fails above maximum");
 
   // ── External error injection (_setExternalError) ─────────────────────────
   const fExt = useField("ok");
   fExt._setExternalError("Server error");
   assert15(fExt.error.value === "Server error", "_setExternalError — injects external error");
-  assert15(fExt.touched.value,                  "_setExternalError — marks field as touched");
+  assert15(fExt.touched.value, "_setExternalError — marks field as touched");
   type(fExt, "new value");
-  assert15(fExt.error.value === null,           "_setExternalError — clears when user re-types");
+  assert15(fExt.error.value === null, "_setExternalError — clears when user re-types");
 
   // ── createForm ───────────────────────────────────────────────────────────
   const form1 = createForm({ name: "", email: "" });
@@ -3762,7 +3762,7 @@ import type { FieldState } from "./nix";
   // handleSubmit — preventDefault
   let prevented = false;
   const fakeEv = { preventDefault: () => { prevented = true; } } as unknown as Event;
-  form1.handleSubmit(() => {})(fakeEv);
+  form1.handleSubmit(() => { })(fakeEv);
   assert15(prevented, "handleSubmit — calls preventDefault");
 
   // handleSubmit — calls fn when no validators + fields untouched
@@ -3808,12 +3808,12 @@ import type { FieldState } from "./nix";
 
   // reset
   form7.reset();
-  assert15(!form7.dirty.value,        "reset — dirty cleared");
+  assert15(!form7.dirty.value, "reset — dirty cleared");
   assert15(form7.fields.x.value.value === "", "reset — value restored");
 
   // ── Summary ───────────────────────────────────────────────────────────────
   summaryEl.textContent = `${pass} passed, ${fail} failed`;
-  summaryEl.className   = fail === 0 ? "pass" : "fail";
+  summaryEl.className = fail === 0 ? "pass" : "fail";
 
   // ── Demo — Registration form ──────────────────────────────────────────────
   const demoEl = document.getElementById("demo15")!;
@@ -3822,9 +3822,9 @@ import type { FieldState } from "./nix";
     { name: "", email: "", age: 18, password: "", confirm: "" },
     {
       validators: {
-        name:     [required(), minLength(3), maxLength(30)],
-        email:    [required(), email()],
-        age:      [required(), min(18, "Must be at least 18 years old"), max(120)],
+        name: [required(), minLength(3), maxLength(30)],
+        email: [required(), email()],
+        age: [required(), min(18, "Must be at least 18 years old"), max(120)],
         password: [required(), minLength(8, "At least 8 characters")],
       },
       validate(values) {
@@ -3858,8 +3858,8 @@ import type { FieldState } from "./nix";
           `}
         />
         ${() => field.error.value
-          ? html`<p style="margin:0;font-size:12px;color:#f87171">${field.error.value}</p>`
-          : null}
+        ? html`<p style="margin:0;font-size:12px;color:#f87171">${field.error.value}</p>`
+        : null}
       </div>
     `;
   }
@@ -3867,13 +3867,13 @@ import type { FieldState } from "./nix";
   mount(html`
     <div style="max-width:420px">
       ${() => submitted.value
-        ? html`
+      ? html`
             <div style="padding:18px;border-radius:8px;background:#14532d;border:1px solid #22c55e;color:#bbf7d0">
               <strong>✅ Registered successfully!</strong>
               <pre style="margin:10px 0 0;font-size:12px;color:#86efac">${() => JSON.stringify(submitted.value, null, 2)}</pre>
             </div>
           `
-        : html`
+      : html`
             <form @submit=${regForm.handleSubmit((v) => { submitted.value = v; })}
                   style="display:flex;flex-direction:column;gap:14px">
 
@@ -3913,7 +3913,7 @@ import type { FieldState } from "./nix";
 import type { NixChildren } from "./nix";
 
 {
-  const testsEl  = document.getElementById("tests14")!;
+  const testsEl = document.getElementById("tests14")!;
   const summaryEl = document.getElementById("summary14")!;
   let pass = 0, fail = 0;
 
@@ -3958,7 +3958,7 @@ import type { NixChildren } from "./nix";
     .mount(div14b);
 
   assert14(!!div14b.querySelector("#slot-header"), "named slot 'header' se renderiza");
-  assert14(!!div14b.querySelector("#slot-body"),   "children (default slot) se renderiza junto a named slots");
+  assert14(!!div14b.querySelector("#slot-body"), "children (default slot) se renderiza junto a named slots");
   assert14(!!div14b.querySelector("#slot-footer"), "named slot 'footer' se renderiza");
 
   // ── TEST 3: children en función componente ────────────────────────────────
@@ -4014,7 +4014,7 @@ import type { NixChildren } from "./nix";
 
   // ── Summary ───────────────────────────────────────────────────────────────
   summaryEl.textContent = `${pass} passed, ${fail} failed`;
-  summaryEl.className   = fail === 0 ? "pass" : "fail";
+  summaryEl.className = fail === 0 ? "pass" : "fail";
 
   // ── Demo ──────────────────────────────────────────────────────────────────
   const demoEl = document.getElementById("demo14")!;
@@ -4108,15 +4108,15 @@ import { showWhen } from "./nix";
   const elHide = host.querySelector<HTMLElement>("#t16-hide")!;
 
   assert16(elShow.style.display !== "none", "show=true → element visible");
-  assert16(elHide.style.display === "none",  "hide=true → element hidden");
+  assert16(elHide.style.display === "none", "hide=true → element hidden");
 
   vis.value = false;
-  assert16(elShow.style.display === "none",  "show=false → element hidden");
-  assert16(elHide.style.display !== "none",  "hide=false → element visible");
+  assert16(elShow.style.display === "none", "show=false → element hidden");
+  assert16(elHide.style.display !== "none", "hide=false → element visible");
 
   vis.value = true;
-  assert16(elShow.style.display !== "none",  "show restored to true → visible again");
-  assert16(elHide.style.display === "none",  "hide restored to true → hidden again");
+  assert16(elShow.style.display !== "none", "show restored to true → visible again");
+  assert16(elHide.style.display === "none", "hide restored to true → hidden again");
 
   // Static value (non-function)
   const host2 = document.createElement("div");
@@ -4240,7 +4240,7 @@ import { portal } from "./nix";
   let passed17 = 0, failed17 = 0;
   function assert17(cond: boolean, label: string) {
     if (cond) { passed17++; console.log(`  ✅ ${label}`); }
-    else       { failed17++; console.error(`  ❌ FAIL: ${label}`); }
+    else { failed17++; console.error(`  ❌ FAIL: ${label}`); }
   }
 
   console.group("Fase 17 — Portal");
@@ -4290,7 +4290,7 @@ import { portal } from "./nix";
     html`${() => showPortal.value
       ? portal(html`<span id="reactive-portal">reactive</span>`, target2)
       : null
-    }`,
+      }`,
     document.createElement("div") // throwaway host (not attached — portals bypass it)
   );
 
@@ -4357,7 +4357,7 @@ import { portal } from "./nix";
   console.groupEnd();
 
   // ─── Summary ──────────────────────────────────────────────────────────────────
-  const tests17El  = document.getElementById("tests17");
+  const tests17El = document.getElementById("tests17");
   const summary17El = document.getElementById("summary17");
 
   if (tests17El) {
@@ -4388,11 +4388,11 @@ import { portal } from "./nix";
   if (demo17El) {
     const showModal = signal(false);
     const showToast = signal(false);
-    const toastMsg  = signal("");
+    const toastMsg = signal("");
     let toastTimer: ReturnType<typeof setTimeout>;
 
     function triggerToast(msg: string) {
-      toastMsg.value  = msg;
+      toastMsg.value = msg;
       showToast.value = true;
       clearTimeout(toastTimer);
       toastTimer = setTimeout(() => { showToast.value = false; }, 2500);
@@ -4437,7 +4437,7 @@ import { portal } from "./nix";
             "
           >
             <div
-              @click.stop=${() => {}}
+              @click.stop=${() => { }}
               style="
                 background:#1e293b;border:1px solid #334155;border-radius:12px;
                 padding:28px 32px;min-width:320px;max-width:480px;
@@ -4494,7 +4494,7 @@ import type { PortalOutlet } from "./nix";
   function assert17b(cond: boolean, label: string) {
     labels17b.push(label);
     if (cond) { passed17b++; console.log(`  ✅ ${label}`); }
-    else       { failed17b++; console.error(`  ❌ FAIL: ${label}`); }
+    else { failed17b++; console.error(`  ❌ FAIL: ${label}`); }
   }
 
   console.group("Fase 17b — Portal Ergonomics");
@@ -4503,15 +4503,15 @@ import type { PortalOutlet } from "./nix";
 
   // Test 1: token shape
   const outletA = createPortalOutlet();
-  assert17b(outletA.__isPortalOutlet === true,  "A — createPortalOutlet() devuelve token con __isPortalOutlet");
-  assert17b(outletA._container === null,         "A — _container es null antes de montar");
+  assert17b(outletA.__isPortalOutlet === true, "A — createPortalOutlet() devuelve token con __isPortalOutlet");
+  assert17b(outletA._container === null, "A — _container es null antes de montar");
 
   // Test 2: portalOutlet() creates the anchor div
   const hostA = document.createElement("div");
   document.body.appendChild(hostA);
   portalOutlet(outletA).mount(hostA);
   assert17b(hostA.querySelector("[data-nix-outlet]") !== null, "A — portalOutlet() crea div[data-nix-outlet] en el host");
-  assert17b(outletA._container !== null,                        "A — _container queda asignado tras montar el outlet");
+  assert17b(outletA._container !== null, "A — _container queda asignado tras montar el outlet");
 
   // Test 3: portal(content, outlet) renders into the outlet div
   mount(html`${portal(html`<span id="acc-outlet-content">en outlet</span>`, outletA)}`, document.createElement("div"));
@@ -4565,12 +4565,12 @@ import type { PortalOutlet } from "./nix";
   const outletC = createPortalOutlet();
 
   class ProviderC extends NixComponent {
-    onInit()  { provideOutlet(outletC); }
-    render()  { return html`<div>${new ConsumerC()}</div>`; }
+    onInit() { provideOutlet(outletC); }
+    render() { return html`<div>${new ConsumerC()}</div>`; }
   }
   class ConsumerC extends NixComponent {
-    onInit()  { injectedOutlet = injectOutlet(); }
-    render()  { return html`<span></span>`; }
+    onInit() { injectedOutlet = injectOutlet(); }
+    render() { return html`<span></span>`; }
   }
 
   const hostC = document.createElement("div");
@@ -4583,7 +4583,7 @@ import type { PortalOutlet } from "./nix";
   console.groupEnd();
 
   // ─── Summary ──────────────────────────────────────────────────────────────
-  const tests17bEl   = document.getElementById("tests17b");
+  const tests17bEl = document.getElementById("tests17b");
   const summary17bEl = document.getElementById("summary17b");
 
   if (tests17bEl) {
@@ -4623,7 +4623,7 @@ import type { PortalOutlet } from "./nix";
 
     class ModalButton extends NixComponent {
       private outlet: PortalOutlet | undefined;
-      private open   = signal(false);
+      private open = signal(false);
       onInit() { this.outlet = injectOutlet(); }
       render() {
         return html`
@@ -4644,7 +4644,7 @@ import type { PortalOutlet } from "./nix";
                 <div
                   style="background:#1e293b;border:1px solid #334155;border-radius:12px;
                          padding:28px 32px;max-width:400px"
-                  @click.stop=${() => {}}
+                  @click.stop=${() => { }}
                 >
                   <h3 style="margin:0 0 10px;color:#f1f5f9">Modal via injectOutlet()</h3>
                   <p style="color:#94a3b8;font-size:14px;margin:0 0 18px;line-height:1.6">
@@ -4678,13 +4678,16 @@ import type { PortalOutlet } from "./nix";
 // ══════════════════════════════════════════════════════════════
 import { createErrorBoundary } from "./nix";
 
+// CANARY — does Phase 18 code execute at all?
+document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started";
+
 {
   let passed18 = 0, failed18 = 0;
   const labels18: string[] = [];
   function assert18(cond: boolean, label: string) {
     labels18.push(label);
     if (cond) { passed18++; console.log(`  ✅ ${label}`); }
-    else       { failed18++; console.error(`  ❌ FAIL: ${label}`); }
+    else { failed18++; console.error(`  ❌ FAIL: ${label}`); }
   }
 
   console.group("Fase 18 — Error Boundaries");
@@ -4696,7 +4699,7 @@ import { createErrorBoundary } from "./nix";
     html`<span id="eb-ok">content</span>`,
     html`<span id="eb-fb1">fallback</span>`
   ).mount(host1);
-  assert18(host1.querySelector("#eb-ok") !== null,  "no error → content rendered");
+  assert18(host1.querySelector("#eb-ok") !== null, "no error → content rendered");
   assert18(host1.querySelector("#eb-fb1") === null, "no error → fallback NOT rendered");
   host1.remove();
 
@@ -4725,13 +4728,13 @@ import { createErrorBoundary } from "./nix";
   // ─── Test 4: NixComponent — onInit throws ─────────────────────────────────
   class BrokenInit extends NixComponent {
     onInit() { throw new Error("init fail"); }
-    render()  { return html`<span id="eb-broken-init">never</span>`; }
+    render() { return html`<span id="eb-broken-init">never</span>`; }
   }
   const host4 = document.createElement("div");
   document.body.appendChild(host4);
   createErrorBoundary(new BrokenInit(), html`<span id="eb-fb4">caught init</span>`).mount(host4);
   assert18(host4.querySelector("#eb-broken-init") === null, "onInit throw → content NOT rendered");
-  assert18(host4.querySelector("#eb-fb4") !== null,         "onInit throw → fallback shown");
+  assert18(host4.querySelector("#eb-fb4") !== null, "onInit throw → fallback shown");
   host4.remove();
 
   // ─── Test 5: NixComponent — render() throws ──────────────────────────────
@@ -4756,10 +4759,10 @@ import { createErrorBoundary } from "./nix";
     html`<span id="eb-fb6">reactive fallback</span>`
   ).mount(host6);
   assert18(host6.querySelector("#eb-reactive") !== null, "reactive: content visible before error");
-  assert18(host6.querySelector("#eb-fb6") === null,       "reactive: fallback hidden before error");
+  assert18(host6.querySelector("#eb-fb6") === null, "reactive: fallback hidden before error");
   boom.value = true;
   assert18(host6.querySelector("#eb-reactive") === null, "reactive throw → content removed");
-  assert18(host6.querySelector("#eb-fb6") !== null,       "reactive throw → fallback shown");
+  assert18(host6.querySelector("#eb-fb6") !== null, "reactive throw → fallback shown");
   host6.remove();
 
   // ─── Test 7: unmount cleans up boundary ──────────────────────────────────
@@ -4782,24 +4785,24 @@ import { createErrorBoundary } from "./nix";
     html`
       <span id="eb-outer-ok">outer content</span>
       ${createErrorBoundary(
-        html`<span>${() => { if (innerErr.value) throw new Error("inner"); return "inner ok"; }}</span>`,
-        html`<span id="eb-inner-fb">inner fallback</span>`
-      )}
+      html`<span>${() => { if (innerErr.value) throw new Error("inner"); return "inner ok"; }}</span>`,
+      html`<span id="eb-inner-fb">inner fallback</span>`
+    )}
     `,
     html`<span id="eb-outer-fb">outer fallback</span>`
   ).mount(host8);
-  assert18(host8.querySelector("#eb-outer-ok") !== null,  "nested: outer content visible");
-  assert18(host8.querySelector("#eb-inner-fb") === null,  "nested: inner fallback hidden initially");
+  assert18(host8.querySelector("#eb-outer-ok") !== null, "nested: outer content visible");
+  assert18(host8.querySelector("#eb-inner-fb") === null, "nested: inner fallback hidden initially");
   innerErr.value = true;
-  assert18(host8.querySelector("#eb-inner-fb") !== null,  "nested: inner boundary caught the error");
-  assert18(host8.querySelector("#eb-outer-fb") === null,  "nested: outer boundary NOT triggered");
-  assert18(host8.querySelector("#eb-outer-ok") !== null,  "nested: outer content unaffected");
+  assert18(host8.querySelector("#eb-inner-fb") !== null, "nested: inner boundary caught the error");
+  assert18(host8.querySelector("#eb-outer-fb") === null, "nested: outer boundary NOT triggered");
+  assert18(host8.querySelector("#eb-outer-ok") !== null, "nested: outer content unaffected");
   host8.remove();
 
   console.groupEnd();
 
   // ─── Summary ──────────────────────────────────────────────────────────────
-  const tests18El   = document.getElementById("tests18");
+  const tests18El = document.getElementById("tests18");
   const summary18El = document.getElementById("summary18");
 
   if (tests18El) {
@@ -4818,8 +4821,8 @@ import { createErrorBoundary } from "./nix";
   if (demo18El) {
     // Simulates a widget that can fail on demand
     const shouldFail = signal(false);
-    const failMsg    = signal("Something went wrong");
-    const resetKey   = signal(0); // bump to re-mount content
+    const failMsg = signal("Something went wrong");
+    const resetKey = signal(0); // bump to re-mount content
 
     class DataWidget extends NixComponent {
       private data = signal(["Alice", "Bob", "Carol"]);
@@ -4831,9 +4834,9 @@ import { createErrorBoundary } from "./nix";
             </p>
             <ul style="margin:0;padding:0 0 0 18px">
               ${() => {
-                if (shouldFail.value) throw new Error(failMsg.value);
-                return this.data.value.map(name => html`<li style="color:#e2e8f0;font-size:14px">${name}</li>`);
-              }}
+            if (shouldFail.value) throw new Error(failMsg.value);
+            return this.data.value.map(name => html`<li style="color:#e2e8f0;font-size:14px">${name}</li>`);
+          }}
             </ul>
           </div>
         `;
@@ -4862,7 +4865,10 @@ import { createErrorBoundary } from "./nix";
         </div>
 
         <!-- The boundary key-resets by conditionally swapping based on resetKey -->
-        ${() => createErrorBoundary(
+        ${() => {
+        const _key = resetKey.value; // dependency: re-creates boundary on Recuperar
+        void _key;
+        return createErrorBoundary(
           new DataWidget(),
           (err) => html`
             <div style="padding:14px;border-radius:8px;border:1px solid #7f1d1d;background:#450a0a;color:#fca5a5">
@@ -4873,7 +4879,8 @@ import { createErrorBoundary } from "./nix";
               </p>
             </div>
           `
-        )}
+        );
+      }}
 
         <p style="font-size:12px;color:#64748b;margin:0">
           El error boundary aísla el fallo. El botón "Recuperar" limpia la señal de error
@@ -4881,5 +4888,269 @@ import { createErrorBoundary } from "./nix";
         </p>
       </div>
     `, demo18El);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  FASE 19: Transitions / Animations
+//  Tests → #tests19 | Summary → #summary19 | Demo → #demo19
+// ══════════════════════════════════════════════════════════════
+import { transition } from "./nix";
+
+{
+  let passed19 = 0, failed19 = 0;
+  const labels19: string[] = [];
+  const results19: boolean[] = [];
+  function assert19(cond: boolean, label: string) {
+    labels19.push(label);
+    results19.push(cond);
+    if (cond) { passed19++; console.log(`  ✅ ${label}`); }
+    else { failed19++; console.error(`  ❌ FAIL: ${label}`); }
+  }
+
+  console.group("Fase 19 — Transitions");
+
+  // ─── Test 1: static content renders in DOM (no appear) ────────────────────
+  {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const handle = transition(
+      html`<p class="t19-static">Static</p>`,
+      { name: "fade" }
+    ).mount(host);
+    const rendered = host.querySelector(".t19-static");
+    assert19(rendered !== null, "T1 — static content rendered in DOM");
+    // No enter classes without appear
+    assert19(
+      !rendered?.classList.contains("fade-enter-from"),
+      "T1 — no enter-from class without appear"
+    );
+    handle.unmount();
+    assert19(host.querySelector(".t19-static") === null, "T1 — cleanup removes DOM");
+  }
+
+  // ─── Test 2: static content with appear adds enter classes ────────────────
+  {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      html`<span class="t19-appear">Appear</span>`,
+      { name: "fade", appear: true }
+    ).mount(host);
+    const el = host.querySelector(".t19-appear");
+    // Classes are added synchronously before rAF
+    assert19(
+      el?.classList.contains("fade-enter-from") ?? false,
+      "T2 — enter-from class present immediately after mount (appear:true)"
+    );
+    assert19(
+      el?.classList.contains("fade-enter-active") ?? false,
+      "T2 — enter-active class present immediately after mount (appear:true)"
+    );
+    host.remove();
+  }
+
+  // ─── Test 3: reactive null→value triggers enter ───────────────────────────
+  {
+    const show = signal(false);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      () => show.value ? html`<div class="t19-cond">Cond</div>` : null,
+      { name: "slide" }
+    ).mount(host);
+    assert19(host.querySelector(".t19-cond") === null, "T3 — null start: nothing rendered");
+    show.value = true;
+    assert19(host.querySelector(".t19-cond") !== null, "T3 — content appears when show=true");
+    assert19(
+      host.querySelector(".t19-cond")?.classList.contains("slide-enter-from") ?? false,
+      "T3 — slide-enter-from added on first enter"
+    );
+    host.remove();
+  }
+
+  // ─── Test 4: reactive value→null triggers leave (element still in DOM) ────
+  {
+    const show = signal(true);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      () => show.value ? html`<div class="t19-leave">Leave</div>` : null,
+      { name: "fade" }
+    ).mount(host);
+    // Initially visible
+    assert19(host.querySelector(".t19-leave") !== null, "T4 — content starts visible");
+    show.value = false;
+    // During leave transition, element still in DOM with leave classes
+    assert19(host.querySelector(".t19-leave") !== null, "T4 — element stays in DOM during leave");
+    assert19(
+      host.querySelector(".t19-leave")?.classList.contains("fade-leave-from") ?? false,
+      "T4 — fade-leave-from added when leaving"
+    );
+    host.remove();
+  }
+
+  // ─── Test 5: JS hooks onBeforeEnter / onAfterEnter fire ───────────────────
+  {
+    let beforeFired = false;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      html`<div class="t19-hooks">Hooks</div>`,
+      {
+        name: "x",
+        appear: true,
+        onBeforeEnter: () => { beforeFired = true; },
+        onAfterEnter: () => { /* async — tested via duration */ },
+      }
+    ).mount(host);
+    assert19(beforeFired, "T5 — onBeforeEnter called synchronously");
+    host.remove();
+  }
+
+  // ─── Test 6: JS hooks onBeforeLeave fires ────────────────────────────────
+  {
+    let leaveFired = false;
+    const show = signal(true);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      () => show.value ? html`<div class="t19-hooks-leave">L</div>` : null,
+      { name: "x", onBeforeLeave: () => { leaveFired = true; } }
+    ).mount(host);
+    show.value = false;
+    assert19(leaveFired, "T6 — onBeforeLeave called when leaving");
+    host.remove();
+  }
+
+  // ─── Test 7: custom class name overrides ─────────────────────────────────
+  {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      html`<em class="t19-custom">Custom</em>`,
+      { appear: true, enterFrom: "my-from", enterActive: "my-active", enterTo: "my-to" }
+    ).mount(host);
+    const el = host.querySelector(".t19-custom");
+    assert19(el?.classList.contains("my-from") ?? false, "T7 — custom enterFrom class used");
+    assert19(el?.classList.contains("my-active") ?? false, "T7 — custom enterActive class used");
+    host.remove();
+  }
+
+  // ─── Test 8: leave cancelled by re-enter (instant swap) ──────────────────
+  {
+    const show = signal(true);
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    transition(
+      () => show.value ? html`<div class="t19-cancel">Show</div>` : null,
+      { name: "fade" }
+    ).mount(host);
+    show.value = false; // starts leave
+    show.value = true;  // immediately cancelled — re-enter
+    // After re-enter, content is visible again
+    assert19(host.querySelector(".t19-cancel") !== null, "T8 — re-enter after leave cancel keeps content in DOM");
+    host.remove();
+  }
+
+  // ─── Test 9: unmount cleans up transition content from DOM ───────────────
+  {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const handle = transition(
+      html`<p class="t19-unmount">Unmount</p>`,
+      { name: "f" }
+    ).mount(host);
+    assert19(host.querySelector(".t19-unmount") !== null, "T9 — content present before unmount");
+    handle.unmount();
+    assert19(host.querySelector(".t19-unmount") === null, "T9 — content removed after unmount");
+    host.remove();
+  }
+
+  // ─── Summary ────────────────────────────────────────────────────────────
+  console.groupEnd();
+
+  const tests19El = document.getElementById("tests19");
+  const summary19El = document.getElementById("summary19");
+
+  if (tests19El) {
+    tests19El.innerHTML = labels19.map((l, i) => {
+      const ok = results19[i];
+      return `<div style="padding:4px 8px;border-left:3px solid ${ok ? "#22c55e" : "#ef4444"};margin:3px 0;font-size:13px">${ok ? "✅" : "❌"} ${l}</div>`;
+    }).join("");
+  }
+  if (summary19El) {
+    const total = passed19 + failed19;
+    summary19El.innerHTML = `<p style="font-weight:600;color:${failed19 === 0 ? "#22c55e" : "#ef4444"}">${passed19}/${total} tests pasados</p>`;
+  }
+
+  // ─── Demo ────────────────────────────────────────────────────────────────
+  const demo19El = document.querySelector("#demo19");
+  if (demo19El) {
+    const showFade = signal(true);
+    const showSlide = signal(false);
+    const showZoom = signal(false);
+
+    const card = (label: string, color: string) =>
+      html`<div style="${`padding:16px 20px;border-radius:8px;border:1px solid ${color};background:${color}22;color:${color};font-size:13px;font-weight:600`}">${label}</div>`;
+
+    html`
+      <div style="display:flex;flex-direction:column;gap:20px">
+        <style>
+          /* ── Fade ────────────────────────────────── */
+          .fade-enter-active, .fade-leave-active { transition: opacity 0.4s ease; }
+          .fade-enter-from,   .fade-leave-to     { opacity: 0; }
+          /* ── Slide Up ────────────────────────────── */
+          .slide-up-enter-active, .slide-up-leave-active {
+            transition: opacity 0.35s ease, transform 0.35s ease;
+          }
+          .slide-up-enter-from, .slide-up-leave-to {
+            opacity: 0; transform: translateY(14px);
+          }
+          /* ── Zoom ────────────────────────────────── */
+          .zoom-enter-active, .zoom-leave-active {
+            transition: opacity 0.3s ease, transform 0.3s ease;
+          }
+          .zoom-enter-from, .zoom-leave-to {
+            opacity: 0; transform: scale(0.85);
+          }
+        </style>
+
+        <!-- Fade -->
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="font-size:12px;color:#94a3b8;font-weight:600">FADE</label>
+          <button
+            style="padding:6px 14px;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;width:fit-content"
+            @click=${() => { showFade.value = !showFade.value; }}
+          >${() => showFade.value ? "Ocultar" : "Mostrar"}</button>
+          ${transition(() => showFade.value ? card("Fade — opacidad suave", "#3b82f6") : null, { name: "fade" })}
+        </div>
+
+        <!-- Slide Up -->
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="font-size:12px;color:#94a3b8;font-weight:600">SLIDE UP</label>
+          <button
+            style="padding:6px 14px;background:#7c3aed;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;width:fit-content"
+            @click=${() => { showSlide.value = !showSlide.value; }}
+          >${() => showSlide.value ? "Ocultar" : "Mostrar"}</button>
+          ${transition(() => showSlide.value ? card("Slide Up — sube al aparecer", "#8b5cf6") : null, { name: "slide-up" })}
+        </div>
+
+        <!-- Zoom -->
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label style="font-size:12px;color:#94a3b8;font-weight:600">ZOOM</label>
+          <button
+            style="padding:6px 14px;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px;width:fit-content"
+            @click=${() => { showZoom.value = !showZoom.value; }}
+          >${() => showZoom.value ? "Ocultar" : "Mostrar"}</button>
+          ${transition(() => showZoom.value ? card("Zoom — escala al aparecer", "#10b981") : null, { name: "zoom" })}
+        </div>
+
+        <p style="font-size:11px;color:#475569;margin:0">
+          Las clases CSS son las únicas que necesitas. <code>transition()</code>
+          añade y quita las clases automáticamente en el momento correcto.
+        </p>
+      </div>
+    `.mount(demo19El as Element);
   }
 }

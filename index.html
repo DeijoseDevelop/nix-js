@@ -6,6 +6,20 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nix.js ❄️ — Fase 2: Template Engine</title>
+  <!-- DEBUG: catch all uncaught errors -->
+  <script>
+    window.__DEBUG_ERRORS = [];
+    window.onerror = function (msg, src, line, col, err) {
+      window.__DEBUG_ERRORS.push({ msg, src, line, col, err: err ? err.stack : null });
+      var d = document.getElementById('__debug_errors');
+      if (d) d.textContent = JSON.stringify(window.__DEBUG_ERRORS, null, 2);
+    };
+    window.addEventListener('unhandledrejection', function (e) {
+      window.__DEBUG_ERRORS.push({ type: 'unhandledrejection', reason: String(e.reason) });
+      var d = document.getElementById('__debug_errors');
+      if (d) d.textContent = JSON.stringify(window.__DEBUG_ERRORS, null, 2);
+    });
+  </script>
   <style>
     * {
       box-sizing: border-box;
@@ -537,6 +551,22 @@
 
   <h2>Demo — Error Boundary</h2>
   <div id="demo18" class="section"></div>
+
+  <!-- ══ Fase 19: Transitions ──────────────────────────────── -->
+  <section class="phase-section">
+    <h1 class="phase-title">❄️ Nix.js — Fase 19</h1>
+    <p class="phase-sub">
+      Transitions: <code>transition(content, options)</code> ·
+      animaciones de entrada/salida CSS · <code>appear</code> · hooks JS
+    </p>
+  </section>
+
+  <h2>Tests</h2>
+  <div id="tests19" class="section"></div>
+  <div id="summary19"></div>
+
+  <h2>Demo — Transitions</h2>
+  <div id="demo19" class="section"></div>
 
 </body>
 

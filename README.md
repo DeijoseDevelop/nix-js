@@ -87,6 +87,13 @@
     - [Reactive errors](#reactive-errors)
     - [Nested boundaries](#nested-boundaries)
     - [What is and isn't caught](#what-is-and-isnt-caught)
+  - [Transitions](#transitions)
+    - [Basic enter/leave transition](#basic-enterleave-transition)
+    - [appear — transition on first render](#appear--transition-on-first-render)
+    - [Static content](#static-content)
+    - [Custom class names](#custom-class-names)
+    - [JS hooks](#js-hooks)
+    - [TransitionOptions reference](#transitionoptions-reference)
   - [API Reference](#api-reference)
     - [Reactivity](#reactivity-1)
     - [Signal methods](#signal-methods)
@@ -1644,6 +1651,123 @@ createErrorBoundary(
 | Event handler throws | ❌ (use try/catch in the handler) |
 | `async` / `await` / Promises | ❌ (use try/catch with signals) |
 | Errors inside the `fallback` itself | ❌ (propagate to parent boundary) |
+
+---
+
+## Transitions
+
+`transition(content, options?)` wraps any template or reactive conditional with
+CSS class-based enter / leave animations — no extra DOM wrappers, no JavaScript
+animation logic in your code.
+
+### Basic enter/leave transition
+
+Define CSS classes that match the `name` option (default `"nix"`):
+
+```css
+/* Fade */
+.fade-enter-active,
+.fade-leave-active  { transition: opacity 0.3s ease; }
+.fade-enter-from,
+.fade-leave-to      { opacity: 0; }
+```
+
+Wrap a reactive conditional with `transition()`:
+
+```typescript
+import { signal, html, transition, mount } from "@deijose/nix-js";
+
+const show = signal(true);
+
+mount(
+  transition(
+    () => show.value ? html`<p>Hello, world!</p>` : null,
+    { name: "fade" }
+  ),
+  "#app"
+);
+
+// Toggle visibility:
+document.querySelector("button")!.addEventListener("click", () => {
+  show.value = !show.value;
+});
+```
+
+**Class lifecycle:**
+
+| Phase  | Step 1 (before rAF)               | Step 2 (after rAF)                | Step 3 (after transition end) |
+|--------|-----------------------------------|------------------------------------|--------------------------------|
+| Enter  | `{n}-enter-from {n}-enter-active` | `{n}-enter-to {n}-enter-active`   | — (all removed)                |
+| Leave  | `{n}-leave-from {n}-leave-active` | `{n}-leave-to {n}-leave-active`   | — (all removed, DOM cleaned up)|
+
+### appear — transition on first render
+
+By default, the enter transition is skipped on the first render (content appears
+instantly). Set `appear: true` to animate even the first appearance:
+
+```typescript
+transition(
+  html`<div class="banner">Welcome!</div>`,
+  { name: "fade", appear: true }
+);
+```
+
+### Static content
+
+Passing a static `NixTemplate` or `NixComponent` mounts it immediately (with
+`appear` enter if configured). There is no leave transition because the content
+is always visible — cleanup is instant when the parent unmounts.
+
+```typescript
+transition(html`<footer>Always here</footer>`, { name: "slide", appear: true });
+```
+
+### Custom class names
+
+Override individual class names instead of using a `name` prefix:
+
+```typescript
+transition(content, {
+  enterFrom:   "my-enter-start",
+  enterActive: "my-enter-running",
+  enterTo:     "my-enter-end",
+  leaveFrom:   "my-leave-start",
+  leaveActive: "my-leave-running",
+  leaveTo:     "my-leave-end",
+});
+```
+
+### JS hooks
+
+Inspect or manipulate the element at each transition stage:
+
+```typescript
+transition(content, {
+  name: "fade",
+  onBeforeEnter: (el) => console.log("about to enter", el),
+  onAfterEnter:  (el) => el.focus(),
+  onBeforeLeave: (el) => console.log("about to leave", el),
+  onAfterLeave:  (el) => console.log("left", el),
+});
+```
+
+### TransitionOptions reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `name` | `string` | `"nix"` | Prefix for all generated CSS classes |
+| `enterFrom` | `string` | `"{name}-enter-from"` | Override enter-from class |
+| `enterActive` | `string` | `"{name}-enter-active"` | Override enter-active class |
+| `enterTo` | `string` | `"{name}-enter-to"` | Override enter-to class |
+| `leaveFrom` | `string` | `"{name}-leave-from"` | Override leave-from class |
+| `leaveActive` | `string` | `"{name}-leave-active"` | Override leave-active class |
+| `leaveTo` | `string` | `"{name}-leave-to"` | Override leave-to class |
+| `appear` | `boolean` | `false` | Play enter transition on first render |
+| `duration` | `number` | — | Fallback duration (ms) when no CSS transition found |
+| `onBeforeEnter` | `(el) => void` | — | Called before enter classes are added |
+| `onAfterEnter` | `(el) => void` | — | Called after enter transition completes |
+| `onBeforeLeave` | `(el) => void` | — | Called before leave classes are added |
+| `onAfterLeave` | `(el) => void` | — | Called after leave transition completes and DOM removed |
 
 ---
 
