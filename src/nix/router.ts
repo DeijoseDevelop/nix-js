@@ -150,6 +150,8 @@ interface RouterInternal extends Router {
 
 /** Singleton de módulo — la última instancia creada con createRouter() */
 let _currentRouter: RouterInternal | null = null;
+/** Cleanup function for the current router's popstate listener. */
+let _currentPopstateCleanup: (() => void) | null = null;
 
 function getRouter(): RouterInternal {
     if (!_currentRouter) {
@@ -247,7 +249,12 @@ function tryMatch(path: string, route: FlatRoute): Record<string, string> | null
         if (seg.kind === "literal") {
             if (parts[i] !== seg.value) return null;
         } else if (seg.kind === "param") {
-            params[seg.name] = decodeURIComponent(parts[i] ?? "");
+            try {
+                params[seg.name] = decodeURIComponent(parts[i] ?? "");
+            } catch {
+                // Malformed percent-encoding (e.g. "%ZZ") — use raw segment
+                params[seg.name] = parts[i] ?? "";
+            }
         }
     }
     return params;
@@ -313,11 +320,15 @@ export function createRouter(routes: RouteRecord[]): Router {
 
     // ── Guards ────────────────────────────────────────────────────────────────
     const _guards: NavigationGuard[] = [];
+    /** Monotonically increasing counter to cancel stale async guard chains. */
+    let _navGeneration = 0;
 
     /**
      * Run global guards + optional route-level guard in sequence.
      * Calls `onCommit` if all pass, `onCancel` if any blocks.
      * Supports both sync and async guards.
+     * If a new navigation starts while guards are pending, the stale chain
+     * is silently abandoned (generation check).
      */
     function _runGuards(
         to: string,
@@ -329,10 +340,15 @@ export function createRouter(routes: RouteRecord[]): Router {
         const guards: NavigationGuard[] = [..._guards];
         if (routeGuard) guards.push(routeGuard);
 
+        const gen = ++_navGeneration;
+
         if (guards.length === 0) { onCommit(); return; }
 
         let idx = 0;
         function runNext(prev: NavigationGuardResult): void {
+            // Abandon if a newer navigation has started
+            if (gen !== _navGeneration) return;
+
             if (prev === false) { onCancel?.(); return; }
             if (typeof prev === "string") {
                 // Redirect — guard to same path is treated as allow to avoid loops
@@ -349,6 +365,10 @@ export function createRouter(routes: RouteRecord[]): Router {
     }
 
     // ── Helpers internos de navegación ────────────────────────────────────────
+    /** Tracks whether navigate() has been called — used to skip the initial
+     *  microtask guard check if the app already programmatically navigated. */
+    let _hasNavigated = false;
+
     function _parsePath(
         path: string,
         queryObj?: Record<string, string | number | boolean | null | undefined>,
@@ -365,7 +385,13 @@ export function createRouter(routes: RouteRecord[]): Router {
     }
 
     // ── Botón atrás/adelante del navegador ────────────────────────────────────
-    window.addEventListener("popstate", () => {
+    // Clean up any previous router's popstate listener
+    if (_currentPopstateCleanup) {
+        _currentPopstateCleanup();
+        _currentPopstateCleanup = null;
+    }
+
+    const onPopstate = () => {
         const p = getPathname();
         const from = current.value;
         const fromQuery = query.value;   // para restaurar la URL si se cancela
@@ -386,13 +412,17 @@ export function createRouter(routes: RouteRecord[]): Router {
                 history.pushState(null, "", from + buildQueryString(fromQuery));
             },
         );
-    });
+    };
+
+    window.addEventListener("popstate", onPopstate);
+    _currentPopstateCleanup = () => window.removeEventListener("popstate", onPopstate);
 
     // ── navigate ──────────────────────────────────────────────────────────────
     function navigate(
         path: string,
         queryObj?: Record<string, string | number | boolean | null | undefined>,
     ): void {
+        _hasNavigated = true;
         const { pathname, stringQuery } = _parsePath(path, queryObj);
         const from = current.value;
         const m = matchFlat(pathname, flat);
@@ -427,6 +457,10 @@ export function createRouter(routes: RouteRecord[]): Router {
     // returns, so we defer the initial check to a microtask — by then all guards
     // are in place and the initial path is validated exactly like any navigation.
     queueMicrotask(() => {
+        // Skip if the app already navigated programmatically — the navigate()
+        // call already ran guards on the new destination.
+        if (_hasNavigated) return;
+
         const m = matchFlat(initialPath, flat);
         _runGuards(
             initialPath,

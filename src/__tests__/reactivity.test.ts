@@ -255,3 +255,23 @@ describe("nextTick", () => {
         expect(fn).toHaveBeenCalledOnce();
     });
 });
+
+// ── Effect recursion guard ────────────────────────────────────────────────────
+
+describe("effect recursion guard", () => {
+    it("throws when effect exceeds max recursion depth", () => {
+        const s = signal(0);
+        expect(() => {
+            effect(() => { s.value = s.value + 1; });
+        }).toThrow(/Maximum effect re-execution depth exceeded/);
+    });
+
+    it("normal nested reads do not trigger the guard", () => {
+        const a = signal(1);
+        const b = signal(2);
+        let result = 0;
+        effect(() => { result = a.value + b.value; });
+        a.value = 10;
+        expect(result).toBe(12);
+    });
+});
