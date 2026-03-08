@@ -8,4 +8,7 @@ export default defineConfig({
     // Si despliegas en nginx/Apache/etc., configura el servidor para que
     // responda con index.html a cualquier ruta no-archivo (ver README).
     appType: "spa",
+    test: {
+        environment: "happy-dom",
+    },
 });

@@ -1,0 +1,225 @@
+import { describe, it, expect } from "vitest";
+import { html } from "../nix/template";
+import { createRouter, useRouter, RouterView } from "../nix/router";
+import type { NavigationGuard } from "../nix/router";
+
+// ── createRouter ──────────────────────────────────────────────────────────────
+
+describe("createRouter", () => {
+    it("initializes with current pathname", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        expect(r.current.value).toBe(window.location.pathname);
+    });
+
+    it("navigate updates current signal", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        r.navigate("/about");
+        expect(r.current.value).toBe("/about");
+    });
+
+    it("extracts dynamic params from :param paths", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/user/:id", component: () => html`<p>user</p>` },
+        ]);
+        r.navigate("/user/42");
+        expect(r.params.value).toEqual({ id: "42" });
+    });
+
+    it("parses query strings", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/search", component: () => html`<p>search</p>` },
+        ]);
+        r.navigate("/search?q=hello&page=1");
+        expect(r.query.value).toEqual({ q: "hello", page: "1" });
+    });
+
+    it("navigate with query object", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/search", component: () => html`<p>search</p>` },
+        ]);
+        r.navigate("/search", { q: "test", page: 2 });
+        expect(r.query.value.q).toBe("test");
+        expect(r.query.value.page).toBe("2");
+    });
+
+    it("nested routes construct full paths", () => {
+        const r = createRouter([
+            {
+                path: "/dashboard",
+                component: () => html`<div>dashboard</div>`,
+                children: [
+                    { path: "/stats", component: () => html`<p>stats</p>` },
+                ],
+            },
+        ]);
+        r.navigate("/dashboard/stats");
+        expect(r.current.value).toBe("/dashboard/stats");
+    });
+
+    it("wildcard route matches any path", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "*", component: () => html`<p>404</p>` },
+        ]);
+        r.navigate("/nonexistent");
+        expect(r.current.value).toBe("/nonexistent");
+    });
+});
+
+// ── useRouter ─────────────────────────────────────────────────────────────────
+
+describe("useRouter", () => {
+    it("returns the active router singleton", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        expect(useRouter()).toBe(r);
+    });
+});
+
+// ── Route Guards ──────────────────────────────────────────────────────────────
+
+describe("route guards", () => {
+    it("beforeEach fires on navigate", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        let fired = false;
+        r.beforeEach(() => { fired = true; });
+        r.navigate("/about");
+        expect(fired).toBe(true);
+    });
+
+    it("beforeEach returning false cancels navigation", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        const beforePath = r.current.value;
+        r.beforeEach(() => false);
+        r.navigate("/about");
+        expect(r.current.value).toBe(beforePath);
+    });
+
+    it("beforeEach returning string redirects", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/admin", component: () => html`<p>admin</p>` },
+            { path: "/login", component: () => html`<p>login</p>` },
+        ]);
+        r.beforeEach((to) => {
+            if (to === "/admin") return "/login";
+        });
+        r.navigate("/admin");
+        expect(r.current.value).toBe("/login");
+    });
+
+    it("beforeEach receives correct to/from", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        let capturedTo = "", capturedFrom = "";
+        r.beforeEach((to, from) => { capturedTo = to; capturedFrom = from; });
+        const from = r.current.value;
+        r.navigate("/about");
+        expect(capturedTo).toBe("/about");
+        expect(capturedFrom).toBe(from);
+    });
+
+    it("beforeEnter fires only for its route", () => {
+        let fired = false;
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+            {
+                path: "/admin", component: () => html`<p>admin</p>`,
+                beforeEnter: (() => { fired = true; }) as NavigationGuard,
+            },
+        ]);
+        r.navigate("/about");
+        expect(fired).toBe(false);
+        r.navigate("/admin");
+        expect(fired).toBe(true);
+    });
+
+    it("beforeEnter returning false blocks navigation", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            {
+                path: "/secret", component: () => html`<p>secret</p>`,
+                beforeEnter: (() => false) as NavigationGuard,
+            },
+        ]);
+        const beforePath = r.current.value;
+        r.navigate("/secret");
+        expect(r.current.value).toBe(beforePath);
+    });
+
+    it("multiple guards run in registration order", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        const order: number[] = [];
+        r.beforeEach(() => { order.push(1); });
+        r.beforeEach(() => { order.push(2); });
+        r.beforeEach(() => { order.push(3); });
+        r.navigate("/about");
+        expect(order).toEqual([1, 2, 3]);
+    });
+
+    it("unsubscribe removes the guard", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+            { path: "/b", component: () => html`<p>b</p>` },
+        ]);
+        let count = 0;
+        const stop = r.beforeEach(() => { count++; });
+        r.navigate("/a");
+        expect(count).toBe(1);
+        stop();
+        r.navigate("/b");
+        expect(count).toBe(1);
+    });
+
+    it("guard returning false short-circuits remaining guards", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        let secondFired = false;
+        r.beforeEach(() => false);
+        r.beforeEach(() => { secondFired = true; });
+        r.navigate("/about");
+        expect(secondFired).toBe(false);
+    });
+});
+
+// ── RouterView ────────────────────────────────────────────────────────────────
+
+describe("RouterView", () => {
+    it("renders the matched route component", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p class="rv-home">Home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        // Navigate to "/" explicitly so current matches the route
+        r.navigate("/");
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        html`<div>${new RouterView()}</div>`.mount(el);
+        expect(el.querySelector(".rv-home")).not.toBeNull();
+        document.body.removeChild(el);
+    });
+});

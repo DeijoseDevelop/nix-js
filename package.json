@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
   "license": "MIT",
   "repository": {
@@ -47,13 +47,16 @@
     "preview": "vite preview",
     "build:lib": "vite build --config vite.lib.config.ts && tsc --project tsconfig.lib.json && terser dist/lib/nix-js.js -c -m -o dist/lib/nix-js.js && terser dist/lib/nix-js.cjs -c -m -o dist/lib/nix-js.cjs",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "prepublishOnly": "cp README.md .readme-full.md && cp .readme-npm.md README.md",
     "postpublish": "mv .readme-full.md README.md"
   },
   "devDependencies": {
+    "happy-dom": "^20.8.3",
     "terser": "^5.46.0",
     "typescript": "~5.9.3",
-    "vite": "^8.0.0-beta.13"
+    "vite": "^8.0.0-beta.13",
+    "vitest": "^4.0.18"
   },
   "overrides": {
     "vite": "^8.0.0-beta.13"
