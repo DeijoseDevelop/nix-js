@@ -1,11 +1,8 @@
-// ❄️ Nix.js — Public Library Entry Point
-//
-// This file is the single entry point for the compiled library.
-// Import from here when using Nix.js as an installed package:
-//
-//   import { signal, html, NixComponent, mount } from "nix-js";
+// Nix.js — Public Library Entry Point
+// Single entry for the compiled library. Import from here as an npm consumer:
+//   import { signal, html, NixComponent, mount } from "@deijose/nix-js";
 
-// ── Values ────────────────────────────────────────────────────────────────────
+// --- Values ---
 export {
     // Reactivity
     Signal,
@@ -41,6 +38,8 @@ export {
     // Async / Lazy
     suspend,
     lazy,
+    createQuery,
+    invalidateQueries,
     // Dependency Injection
     provide,
     inject,
@@ -60,7 +59,7 @@ export {
     extendValidators,
 } from "./nix";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// --- Types ---
 export type {
     // Reactivity
     WatchOptions,
@@ -81,8 +80,11 @@ export type {
     RouteRecord,
     NavigationGuard,
     NavigationGuardResult,
+    AfterEachHook,
+    ResolvedRoute,
     // Async
     SuspenseOptions,
+    QueryOptions,
     // Dependency Injection
     InjectionKey,
     // Forms

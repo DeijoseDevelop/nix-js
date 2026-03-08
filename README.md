@@ -123,6 +123,7 @@
   - [Known Limitations](#known-limitations)
   - [Contributing](#contributing)
   - [Changelog](#changelog)
+    - [v1.1.1](#v111)
     - [v1.1.0](#v110)
     - [v1.0.8](#v108)
     - [v1.0.7](#v107)
@@ -2306,6 +2307,10 @@ npm run build:lib    # production build
 ---
 
 ## Changelog
+
+### v1.1.1
+- Fixed `createQuery`, `invalidateQueries`, and `QueryOptions` missing from the root `src/index.ts` export barrel (consumers got TS error: `has no exported member`)
+- Also added `AfterEachHook` and `ResolvedRoute` router types that were missing from the root barrel
 
 ### v1.1.0
 - Added `invalidate` option to `suspend()` — re-fetch data without destroying/recreating the DOM
