@@ -6,8 +6,11 @@
 [![Bundle size](https://img.shields.io/badge/min%2Bgzip-~8%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)]()
+[![Website](https://img.shields.io/badge/website-nix--js-indigo.svg)](https://nix-js-landing-c2yq.vercel.app/)
 
 > A lightweight, fully reactive micro-framework for building modern web UIs — no virtual DOM, no compiler, no build-time magic. Just signals, tagged templates, and pure TypeScript.
+>
+> **[→ Documentation & Live Demo](https://nix-js-landing-c2yq.vercel.app/)**
 
 ---
 
