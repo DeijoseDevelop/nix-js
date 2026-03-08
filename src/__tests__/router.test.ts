@@ -204,6 +204,50 @@ describe("route guards", () => {
         r.navigate("/about");
         expect(secondFired).toBe(false);
     });
+
+    it("beforeEach guard runs on initial load (direct URL access)", async () => {
+        history.pushState(null, "", "/admin");
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/admin", component: () => html`<p>admin</p>` },
+            { path: "/login", component: () => html`<p>login</p>` },
+        ]);
+        // Guard registered after createRouter — mirrors real app setup
+        r.beforeEach((to) => {
+            if (to === "/admin") return "/login";
+        });
+        // Wait for the initial-check microtask to fire
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        expect(r.current.value).toBe("/login");
+        history.replaceState(null, "", "/");
+    });
+
+    it("beforeEnter guard blocks initial direct access", async () => {
+        history.pushState(null, "", "/secret");
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            {
+                path: "/secret",
+                component: () => html`<p>secret</p>`,
+                beforeEnter: (() => false) as NavigationGuard,
+            },
+        ]);
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        expect(r.current.value).toBe("/");
+        history.replaceState(null, "", "/");
+    });
+
+    it("allowed initial route stays unchanged", async () => {
+        history.pushState(null, "", "/about");
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+        r.beforeEach(() => { /* allow all */ });
+        await new Promise<void>((resolve) => queueMicrotask(resolve));
+        expect(r.current.value).toBe("/about");
+        history.replaceState(null, "", "/");
+    });
 });
 
 // ── RouterView ────────────────────────────────────────────────────────────────

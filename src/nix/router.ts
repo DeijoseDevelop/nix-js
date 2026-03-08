@@ -421,6 +421,30 @@ export function createRouter(routes: RouteRecord[]): Router {
 
     const router: RouterInternal = { current, params, query, navigate, beforeEach, routes, _flat: flat, _guards };
     _currentRouter = router;
+
+    // ── Initial navigation guard check ────────────────────────────────────────
+    // Guards are registered with beforeEach() / beforeEnter after createRouter()
+    // returns, so we defer the initial check to a microtask — by then all guards
+    // are in place and the initial path is validated exactly like any navigation.
+    queueMicrotask(() => {
+        const m = matchFlat(initialPath, flat);
+        _runGuards(
+            initialPath,
+            "",   // no "from" on first load
+            m?.route.beforeEnter,
+            () => { /* allowed — current/params/query already reflect initial path */ },
+            () => {
+                // Guard returned false with no redirect: fall back to root
+                const fallback = "/";
+                history.replaceState(null, "", fallback);
+                const fm = matchFlat(fallback, flat);
+                current.value = fallback;
+                params.value = fm?.params ?? {};
+                query.value = {};
+            },
+        );
+    });
+
     return router;
 }
 
