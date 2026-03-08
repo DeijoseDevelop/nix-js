@@ -1,32 +1,12 @@
-// ═══════════════════════════════════════════════
-//  Nix.js ❄️ — Forms  (Fase 15)
-// ═══════════════════════════════════════════════
-//
-//  Two levels:
-//
-//    useField(initial, validators?)     — standalone reactive field
-//    createForm(initialValues, options) — full form with submit +
-//                                         external validator support
-//                                         (Zod, Valibot, Yup, custom…)
-//
-//  Built-in validators (also available as a grouped namespace):
-//    required()  minLength(n)  maxLength(n)
-//    email()     pattern(re)  min(n)  max(n)
-//
-//  Custom validator API:
-//    createValidator<T>(fn)               — define a typed custom rule
-//    validators                           — grouped namespace object
-//    extendValidators(validators, {...})  — merge custom rules into the namespace
-
 import { signal, computed } from "./reactivity";
 import type { Signal } from "./reactivity";
 
-// ─── Validator ────────────────────────────────────────────────────────────────
+// --- Validator ---
 
 /** A validator function. Return an error string, or null/undefined if valid. */
 export type Validator<T> = (value: T) => string | null | undefined;
 
-// ─── Built-in validators ──────────────────────────────────────────────────────
+// --- Built-in validators ---
 
 export function required(message = "Required"): Validator<unknown> {
     return (v) =>
@@ -71,61 +51,16 @@ export function max(n: number, message?: string): Validator<number> {
             : null;
 }
 
-// ─── Custom validator API ─────────────────────────────────────────────────────
+// --- Custom validator API ---
 
-/**
- * Creates a typed custom validator, fully compatible with `useField` and
- * `createForm`. The preferred way to define your own rules without importing
- * the `Validator<T>` type manually.
- *
- * @example Simple rule
- * ```typescript
- * const noSpaces = createValidator<string>((v) =>
- *   v.includes(" ") ? "No spaces allowed" : null
- * );
- *
- * useField("", [noSpaces]);
- * ```
- *
- * @example Configurable rule (same pattern as built-ins)
- * ```typescript
- * const phone = (msg = "Invalid phone number") =>
- *   createValidator<string>((v) =>
- *     /^\+?\d{7,15}$/.test(v) ? null : msg
- *   );
- *
- * useField("", [phone()]);
- * useField("", [phone("Enter your mobile number")]);
- * ```
- */
+/** Creates a typed custom validator compatible with `useField` and `createForm`. */
 export function createValidator<T>(
     fn: (value: T) => string | null | undefined
 ): Validator<T> {
     return fn;
 }
 
-/**
- * All built-in validators grouped as a namespace object.
- *
- * Use this when you prefer `validators.required()` over individual named
- * imports. Combine with `extendValidators` to add your own rules.
- *
- * @example
- * ```typescript
- * import { validators } from "@deijose/nix-js";
- *
- * createForm(
- *   { name: "", email: "", age: 0 },
- *   {
- *     validators: {
- *       name:  [validators.required(), validators.minLength(2)],
- *       email: [validators.required(), validators.email()],
- *       age:   [validators.required(), validators.min(18)],
- *     },
- *   }
- * );
- * ```
- */
+/** All built-in validators grouped as a namespace. Extensible via `extendValidators`. */
 export const validators = {
     required,
     minLength,
@@ -140,48 +75,8 @@ export const validators = {
 export type ValidatorsBase = typeof validators;
 
 /**
- * Merges your own validator factories into the `validators` namespace, returning
- * a fully typed object that includes both built-ins and custom rules.
- *
- * The original `validators` object is **never mutated** — a new object is returned.
- *
- * @example
- * ```typescript
- * import { validators, extendValidators, createValidator } from "@deijose/nix-js";
- *
- * const myValidators = extendValidators(validators, {
- *   // Configurable rule (custom message support)
- *   phone: (msg = "Invalid phone number") =>
- *     createValidator<string>((v) => /^\+?\d{7,15}$/.test(v) ? null : msg),
- *
- *   // Rule reusing a built-in internally
- *   slug: (msg = "Only lowercase letters, numbers and hyphens") =>
- *     createValidator<string>((v) =>
- *       /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) ? null : msg
- *     ),
- * });
- *
- * // IDE auto-complete covers built-ins and custom rules alike:
- * myValidators.required()        // ✅ built-in
- * myValidators.email()           // ✅ built-in
- * myValidators.phone()           // ✅ custom
- * myValidators.slug("Bad slug")  // ✅ custom, custom message
- *
- * // Use in a form like any other validators:
- * createForm(
- *   { phone: "", slug: "" },
- *   {
- *     validators: {
- *       phone: [myValidators.required(), myValidators.phone()],
- *       slug:  [myValidators.required(), myValidators.slug()],
- *     },
- *   }
- * );
- * ```
- *
- * @param base       The base validators namespace (pass `validators`).
- * @param extensions An object whose values are validator factory functions.
- * @returns          A new merged namespace object.
+ * Merges custom validator factories into the built-in namespace.
+ * Returns a new object — the original is never mutated.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function extendValidators<E extends Record<string, (...args: any[]) => Validator<any>>>(
@@ -191,7 +86,7 @@ export function extendValidators<E extends Record<string, (...args: any[]) => Va
     return { ...base, ...extensions };
 }
 
-// ─── FieldState ───────────────────────────────────────────────────────────────
+// --- FieldState ---
 
 /** Public state of a single form field. */
 export interface FieldState<T> {
@@ -219,23 +114,9 @@ export interface FieldState<T> {
     _setExternalError(msg: string | null): void;
 }
 
-// ─── useField ─────────────────────────────────────────────────────────────────
+// --- useField ---
 
-/**
- * Creates a standalone reactive form field with optional validators.
- *
- * @example
- * const name = useField("", [required(), minLength(2)]);
- *
- * html`
- *   <input value=${() => name.value.value}
- *          @input=${name.onInput}
- *          @blur=${name.onBlur} />
- *   ${() => name.error.value
- *     ? html`<p class="err">${name.error.value}</p>`
- *     : null}
- * `
- */
+/** Creates a standalone reactive form field with optional validators. */
 export function useField<T>(
     initialValue: T,
     validators: Validator<T>[] = []
@@ -288,7 +169,7 @@ export function useField<T>(
     return { value, error, touched, dirty, onInput, onBlur, reset, _setExternalError };
 }
 
-// ─── FormState ────────────────────────────────────────────────────────────────
+// --- FormState ---
 
 /** Map of field-name → error message for external validation results. */
 export type FieldErrors<T extends Record<string, unknown>> = {
@@ -363,35 +244,11 @@ export interface FormOptions<T extends Record<string, unknown>> {
     ) => { [K in keyof T]?: string | string[] | null | undefined } | null | undefined;
 }
 
-// ─── createForm ───────────────────────────────────────────────────────────────
+// --- createForm ---
 
 /**
  * Creates a managed form with reactive fields, built-in validation,
- * schema-level validation (Zod / Valibot / Yup / custom), and submit handling.
- *
- * @example
- * const form = createForm(
- *   { name: "", email: "", age: 0 },
- *   {
- *     validators: {
- *       name:  [required(), minLength(2)],
- *       email: [required(), email()],
- *       age:   [required(), min(18)],
- *     },
- *   }
- * );
- *
- * html`
- *   <form @submit=${form.handleSubmit(onSubmit)}>
- *     <input value=${() => form.fields.name.value.value}
- *            @input=${form.fields.name.onInput}
- *            @blur=${form.fields.name.onBlur} />
- *     ${() => form.fields.name.error.value
- *       ? html`<p class="err">${form.fields.name.error.value}</p>`
- *       : null}
- *     <button type="submit">Submit</button>
- *   </form>
- * `
+ * schema-level validation (Zod/Valibot/Yup/custom), and submit handling.
  */
 export function createForm<T extends Record<string, unknown>>(
     initialValues: T,

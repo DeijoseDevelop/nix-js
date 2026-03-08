@@ -1,19 +1,3 @@
-// ═══════════════════════════════════════════════
-//  Nix.js ❄️ — Template Engine  (Fase 2)
-// ═══════════════════════════════════════════════
-//
-//  html`<p>Hola ${() => name.value}</p>`
-//  → NixTemplate { mount(el), _render(parent, before) }
-//
-//  Tipos de binding:
-//    1. texto estático   →  string / number directo
-//    2. texto reactivo   →  () => primitivo
-//    3. evento           →  @event=${handler}
-//    4. atributo         →  attr=${fn | valor}
-//    5. template anidado →  html`` directo
-//    6. condicional      →  () => html`` | null
-//    7. lista            →  () => html``[]
-
 import { effect, _pushErrorHandler, _popErrorHandler } from "./reactivity";
 import { isNixComponent } from "./lifecycle";
 import type { NixComponent } from "./lifecycle";
@@ -27,16 +11,13 @@ import {
     createInjectionKey,
 } from "./context";
 
-// ─── Tipos públicos ───────────────────────────────────────────────────────────
+// --- Public types ---
 
 export interface NixTemplate {
     readonly __isNixTemplate: true;
-    /** Monta el template en un contenedor (uso externo / raíz). */
+    /** Mounts the template into a container element (public / root API). */
     mount(container: Element | string): NixMountHandle;
-    /**
-     * @internal — Renderiza el template antes del nodo `before` (o al final
-     * de `parent` si `before` es null).  Retorna una función de limpieza.
-     */
+    /** @internal Renders before `before` node (or appends to `parent`). Returns cleanup. */
     _render(parent: Node, before: Node | null): () => void;
 }
 
@@ -44,65 +25,19 @@ export interface NixMountHandle {
     unmount(): void;
 }
 
-/**
- * Contenedor para una referencia directa a un elemento DOM.
- * Se asigna automáticamente cuando el template se monta y se limpia al
- * desmontarse.
- *
- * @example
- * const inputRef = ref<HTMLInputElement>();
- * html`<input ref=${inputRef} />`
- * // después del mount:
- * inputRef.el?.focus();
- */
+/** Direct reference to a DOM element, assigned on mount and cleared on unmount. */
 export interface NixRef<T extends Element = Element> {
     el: T | null;
 }
 
-/**
- * Crea un objeto `NixRef` vacío.
- * Pásalo como valor del atributo especial `ref` en un template para que
- * Nix.js rellene automáticamente `ref.el` con el elemento real del DOM.
- */
+/** Creates an empty `NixRef`. Use as `ref` attribute value in templates. */
 export function ref<T extends Element = Element>(): NixRef<T> {
     return { el: null };
 }
 
-// ─── show / hide directive ────────────────────────────────────────────────────
+// --- show / hide ---
 
-/**
- * Toggles the visibility of an element **without unmounting it** from the DOM
- * (sets `style.display = "none"` when hidden, restores it when visible).
- *
- * Use the `show` or `hide` attribute bindings inside templates — or call
- * this helper directly for imperative use outside of templates.
- *
- * ### Template usage
- * ```html
- * <!-- show: element is visible when condition is truthy -->
- * <div show=${() => isVisible.value}>...</div>
- *
- * <!-- hide: element is hidden when condition is truthy (inverse of show) -->
- * <div hide=${() => isLoading.value}>Submit</div>
- * ```
- *
- * ### Difference from conditional rendering
- * | | `show` / `hide` | conditional (`() => condition ? html\`…\` : null`) |
- * |---|---|---|
- * | DOM node kept | ✅ always | ❌ destroyed when hidden |
- * | Lifecycle hooks | not called on toggle | called on every toggle |
- * | Use when | hiding/showing frequently | rarely shown alternatives |
- *
- * ### Imperative usage (outside a template)
- * ```typescript
- * import { showWhen } from "@deijose/nix-js";
- * import { effect } from "@deijose/nix-js";
- *
- * const el = document.getElementById("my-panel")!;
- * // Reactively controlled:
- * effect(() => showWhen(el, isVisible.value));
- * ```
- */
+/** Toggles element visibility via `display: none` without unmounting. */
 export function showWhen(el: HTMLElement, condition: boolean): void {
     if (!condition) {
         if (el.style.display !== "none") el.style.display = "none";
@@ -111,11 +46,7 @@ export function showWhen(el: HTMLElement, condition: boolean): void {
     }
 }
 
-/**
- * Resultado de `repeat()` — lista con keys para diffing eficiente.
- * El template engine lo reconoce y solo añade/mueve/elimina los nodos
- * que realmente cambiaron, preservando el DOM de los items estables.
- */
+/** Keyed list result for efficient DOM diffing via `repeat()`. */
 export interface KeyedList<T = unknown> {
     readonly __isKeyedList: true;
     readonly items: T[];
@@ -124,19 +55,8 @@ export interface KeyedList<T = unknown> {
 }
 
 /**
- * Crea una lista con keys para diffing eficiente.
- * Úsalo en lugar de `.map()` cuando la lista cambia frecuentemente.
- *
- * @param items    Array reactivo de datos
- * @param keyFn    Devuelve una clave única por item (p.ej. `item => item.id`)
- * @param renderFn Devuelve el template/componente para cada item
- *
- * @example
- * ${() => repeat(
- *   users.value,
- *   u => u.id,
- *   u => html`<li>${u.name}</li>`
- * )}
+ * Creates a keyed list for efficient DOM reconciliation.
+ * Use instead of `.map()` when the list changes frequently.
  */
 export function repeat<T>(
     items: T[],
@@ -146,115 +66,31 @@ export function repeat<T>(
     return { __isKeyedList: true as const, items, keyFn, renderFn };
 }
 
-// ─── portal() ─────────────────────────────────────────────────────────────────
+// --- portal ---
 
 /**
- * Renders `content` into `target` instead of the current position in the tree.
- * The portal is cleaned up automatically when the parent template is unmounted.
+ * Renders `content` into `target` instead of the current tree position.
+ * Useful for modals, tooltips, and overlays that must escape overflow clipping.
+ * Returns a NixTemplate — works inside reactive conditionals.
  *
- * Use this to render modals, tooltips, notifications, or dropdowns outside of
- * your component tree — typically into `document.body` — so they are not clipped
- * by `overflow: hidden` or buried under other stacking contexts.
- *
- * The portal returns a `NixTemplate`, so it works as a node value anywhere in
- * a template, including inside reactive conditionals: the portal is
- * mounted/unmounted together with whatever controls its condition.
- *
- * @param content  Template or component to render inside the portal.
- * @param target   CSS selector or `Element` to render into. Defaults to `document.body`.
- *
- * @example Reactive modal
- * ```typescript
- * import { signal, portal, html } from "@deijose/nix-js";
- *
- * const isOpen = signal(false);
- *
- * html`
- *   <button @click=${() => { isOpen.value = true; }}>Open</button>
- *
- *   ${() => isOpen.value
- *     ? portal(html`
- *         <div class="overlay" @click=${() => { isOpen.value = false; }}>
- *           <div class="modal" @click.stop=${() => {}}>
- *             <h2>Hello from a portal!</h2>
- *             <button @click=${() => { isOpen.value = false; }}>Close</button>
- *           </div>
- *         </div>
- *       `)
- *     : null
- *   }
- * `
- * ```
- *
- * @example Custom target
- * ```typescript
- * portal(html`<div class="toast">Saved!</div>`, "#toast-root")
- * portal(html`<Tooltip />`, document.getElementById("tooltip-layer")!)
- * ```
+ * @param content  Template or component to render.
+ * @param target   CSS selector, Element, PortalOutlet, or NixRef. Defaults to `document.body`.
  */
-// ─── PortalOutlet ────────────────────────────────────────────────────────────
+// --- PortalOutlet ---
 
-/**
- * Opaque token created by `createPortalOutlet()`.
- *
- * Pass it to `portalOutlet()` to declare the DOM anchor where portals targeting
- * this outlet will render, and to `portal(content, outlet)` as the target.
- *
- * @see createPortalOutlet
- * @see portalOutlet
- */
+/** Opaque token for a named portal target. */
 export interface PortalOutlet {
     readonly __isPortalOutlet: true;
-    /** @internal — resolved DOM container; set when `portalOutlet()` is mounted */
+    /** @internal */
     _container: Element | null;
 }
 
-/**
- * Creates a `PortalOutlet` token — a lightweight, typed anchor point that
- * decouples *where* a portal renders from direct DOM access.
- * No CSS selectors, no `document.querySelector`, no manual element references.
- *
- * ### Workflow
- * 1. Create the token at module or component scope.
- * 2. Place `${portalOutlet(outlet)}` in your layout template to declare the anchor.
- * 3. From any child: `portal(content, outlet)` renders into that anchor.
- *
- * @example
- * ```typescript
- * const modalOutlet = createPortalOutlet();
- *
- * // Layout:
- * html`
- *   <main>${mainContent}</main>
- *   ${portalOutlet(modalOutlet)}
- * `
- *
- * // Child (any depth):
- * html`${() => show.value ? portal(html\`<Modal />\`, modalOutlet) : null}`
- * ```
- */
+/** Creates a PortalOutlet token for decoupled portal targeting. */
 export function createPortalOutlet(): PortalOutlet {
     return { __isPortalOutlet: true as const, _container: null };
 }
 
-/**
- * Declares the DOM anchor for a `PortalOutlet` inside a template.
- * Creates a `<div data-nix-outlet>` at this position; portals targeting
- * `outlet` will render their content as children of that div.
- *
- * The anchor's lifecycle follows its parent template — when the parent
- * unmounts, the outlet div and any portals inside it are cleaned up.
- *
- * @example
- * ```typescript
- * mount(html`
- *   <div class="app">
- *     <main>${mainContent}</main>
- *     ${portalOutlet(modalOutlet)}
- *   </div>
- * `, document.body);
- * ```
- */
+/** Declares the DOM anchor for a PortalOutlet inside a template. */
 export function portalOutlet(outlet: PortalOutlet): NixTemplate {
     return {
         __isNixTemplate: true as const,
@@ -338,125 +174,31 @@ export function portal(
     };
 }
 
-// ─── Portal outlet — provide / inject shortcut (Option C) ────────────────────
+// --- Portal outlet via provide/inject ---
 
 const _OUTLET_KEY = createInjectionKey<PortalOutlet>("nix:portal-outlet");
 
-/**
- * Provides a `PortalOutlet` to descendant components via the inject system.
- * Must be called inside `onInit()` of a `NixComponent`.
- *
- * Eliminates prop drilling: any descendant can call `injectOutlet()` to
- * obtain the outlet without it being passed through every layer.
- *
- * @example
- * ```typescript
- * class AppLayout extends NixComponent {
- *   private outlet = createPortalOutlet();
- *   onInit() { provideOutlet(this.outlet); }
- *   render() {
- *     return html`
- *       <main>...</main>
- *       ${portalOutlet(this.outlet)}
- *     `;
- *   }
- * }
- * ```
- */
+/** Provides a PortalOutlet to descendant components via dependency injection. */
 export function provideOutlet(outlet: PortalOutlet): void {
     provide(_OUTLET_KEY, outlet);
 }
 
-/**
- * Injects the nearest `PortalOutlet` provided by an ancestor component.
- * Returns `undefined` if no ancestor has called `provideOutlet()`.
- *
- * Use `portal(content, injectOutlet())` to render into the ancestor's outlet
- * with no CSS selectors, no `document.querySelector`, and no prop drilling.
- *
- * @example
- * ```typescript
- * class ToastButton extends NixComponent {
- *   private outlet: PortalOutlet | undefined;
- *   private active  = signal(false);
- *   onInit() { this.outlet = injectOutlet(); }
- *   render() {
- *     return html`
- *       <button @click=${() => { this.active.value = true; }}>Notify</button>
- *       ${() => this.active.value
- *         ? portal(html\`<div class="toast">Done!</div>\`, this.outlet)
- *         : null
- *       }
- *     `;
- *   }
- * }
- * ```
- */
+/** Injects the nearest PortalOutlet provided by an ancestor. */
 export function injectOutlet(): PortalOutlet | undefined {
     return inject(_OUTLET_KEY);
 }
 
-// ─── Error Boundary ─────────────────────────────────────────────────────────────────
+// --- Error Boundary ---
 
-/**
- * Fallback value for `createErrorBoundary()`:
- * - A static `NixTemplate` or `NixComponent` — always render this on error.
- * - A function `(err) => NixTemplate | NixComponent` — render based on the error.
- */
+/** Fallback: a static template/component, or a factory receiving the error. */
 export type ErrorFallback =
     | NixTemplate
     | NixComponent
     | ((err: unknown) => NixTemplate | NixComponent);
 
 /**
- * Wraps `content` in an error boundary. If any error is thrown during the
- * **initial render** or during a **reactive update** inside `content`, the
- * boundary automatically:
- * 1. Tears down the broken subtree (effects, event listeners, DOM).
- * 2. Renders `fallback` in its place — without crashing the rest of the app.
- *
- * Errors caught:
- * - `onInit()` / `render()` throws in any `NixComponent` inside `content`
- * - Throws inside `html\`\`` binding expressions during initial render
- * - Reactive re-renders: effects created inside `content` that throw when
- *   a signal changes
- *
- * Not caught (same as React):
- * - Event handler throws (wrap those with your own try/catch)
- * - Async code (Promises, `setTimeout`, etc.)
- * - Errors thrown inside `fallback` itself (propagate to the parent boundary)
- *
- * @example Basic usage
- * ```typescript
- * import { createErrorBoundary, html, signal } from "@deijose/nix-js";
- *
- * mount(
- *   createErrorBoundary(
- *     new MyWidget(),
- *     (err) => html`<div class="error">Widget failed: ${String(err)}</div>`
- *   ),
- *   "#app"
- * );
- * ```
- *
- * @example Static fallback
- * ```typescript
- * createErrorBoundary(
- *   html`${() => riskyValue.value}`,
- *   html`<p>Something went wrong.</p>`
- * )
- * ```
- *
- * @example Nested boundaries (inner catches first)
- * ```typescript
- * createErrorBoundary(
- *   html`
- *     <header>...</header>
- *     ${createErrorBoundary(new RiskyWidget(), html`<p>Widget error</p>`)}
- *   `,
- *   html`<p>App-level error</p>`
- * )
- * ```
+ * Wraps `content` in an error boundary. If rendering or a reactive update
+ * throws, the boundary tears down the broken subtree and renders `fallback`.
  */
 export function createErrorBoundary(
     content: NixTemplate | NixComponent,
@@ -538,7 +280,7 @@ export function createErrorBoundary(
                 }
             };
 
-            // ── Render content inside the error boundary window ──────────────
+            // --- Render content inside the error boundary ---
             _pushErrorHandler(handleReactiveError);
             try {
                 if (isNixComponent(content)) {
@@ -597,7 +339,7 @@ export function createErrorBoundary(
     };
 }
 
-// ─── Transitions ─────────────────────────────────────────────────────────────
+// --- Transitions ---
 
 /**
  * Options for `transition()`.  All class-name overrides are optional — by
@@ -652,7 +394,7 @@ export type TransitionContent =
     | NixComponent
     | (() => NixTemplate | NixComponent | null);
 
-// ── Internal transition helpers ──────────────────────────────────────────────
+// --- Internal transition helpers ---
 
 function _resolveTransitionClasses(opts: TransitionOptions) {
     const n = opts.name ?? "nix";
@@ -700,34 +442,12 @@ function _waitTransitionEnd(el: Element, fallbackMs = 0): Promise<void> {
     });
 }
 
-// ── Public API ───────────────────────────────────────────────────────────────
+// --- transition() ---
 
 /**
- * Wraps `content` with CSS class-based enter / leave transitions.
- *
- * **Static content** (NixTemplate / NixComponent): plays the enter transition
- * on mount (only if `appear: true`; otherwise instant), and cleans up
- * immediately on unmount without a leave transition.
- *
- * **Reactive conditional** `() => Template | null`: plays the enter
- * transition when the expression goes from `null` → value, and the leave
- * transition when it goes from value → `null`.  An in-progress leave is
- * cancelled and the DOM is removed synchronously when new content enters.
- *
- * @example
- * ```css
- * .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease; }
- * .fade-enter-from,   .fade-leave-to     { opacity: 0; }
- * ```
- * ```typescript
- * const show = signal(true);
- *
- * // Reactive — full enter + leave
- * transition(() => show.value ? html`<p>Hello</p>` : null, { name: "fade" })
- *
- * // Static — only enter (if appear: true)
- * transition(html`<span>Always here</span>`, { name: "slide", appear: true })
- * ```
+ * Wraps content with CSS class-based enter/leave transitions.
+ * Static content plays enter on mount (only with `appear: true`).
+ * Reactive `() => Template | null` auto-animates enter/leave on toggle.
  */
 export function transition(
     content: TransitionContent,
@@ -858,7 +578,7 @@ export function transition(
             let disposeWatcher: (() => void) | null = null;
 
             if (typeof content === "function" && !isNixComponent(content as unknown)) {
-                // ── Reactive conditional: () => Template | null ──────────────
+                // Reactive conditional: () => Template | null
                 const getter = content as () => NixTemplate | NixComponent | null;
                 let prevVal: NixTemplate | NixComponent | null = null;
 
@@ -886,7 +606,7 @@ export function transition(
                 // so subsequent null→value transitions should always animate.
                 isFirstRender = false;
             } else {
-                // ── Static: mount once ───────────────────────────────────────
+                // Static: mount once
                 doEnter(content as NixTemplate | NixComponent);
             }
 
@@ -903,7 +623,7 @@ export function transition(
     };
 }
 
-// ─── Contexto de binding ──────────────────────────────────────────────────────
+// --- Binding context ---
 
 type BindingContext =
     | { type: "node" }
@@ -911,40 +631,24 @@ type BindingContext =
     | { type: "attr"; attrName: string; hadOpenQuote: boolean };
 
 /**
- * Examina el string que PRECEDE a un valor interpolado y determina
- * el contexto en que aparece: nodo, evento o atributo.
+ * Determines the binding context (node, event, or attribute) for an interpolated
+ * value based on the preceding template string.
  *
- *   "<p>"            → node
- *   "<button @click="  → event  (hadOpenQuote = true)
- *   "<div class="    → attr   (hadOpenQuote = true)
- *   "<div class=     → attr   (hadOpenQuote = false)
- *
- * ⚠️  LIMITACIÓN — Interpolación parcial de atributos NO soportada:
- *
- *   ✅  html`<div class="${cls}">` ← el valor completo es una interpolación
- *   ❌  html`<div class="prefix-${cls}">` ← literal + interpolación mezclados
- *
- *   En el segundo caso, detectContext ve el string previo terminando en
- *   `class="prefix-` y no puede identificar que la interpolación es PARTE
- *   del valor — la regex del atributo no matchea por el literal intermedio.
- *   Solución: calcular siempre el string completo fuera del template:
- *
- *     const cls = `prefix-${dynamic}`;
- *     html`<div class="${cls}">`
+ * Note: Partial attribute interpolation is not supported
+ * (e.g. `class="prefix-${cls}"` won't work — compute the full string outside).
  */
 function detectContext(prevString: string): BindingContext {
     const lastClose = prevString.lastIndexOf(">");
     const lastOpen = prevString.lastIndexOf("<");
 
+    // Between tags → node context
     if (lastOpen <= lastClose) {
-        // Estamos entre tags → contexto de nodo
         return { type: "node" };
     }
 
-    // Estamos dentro de la definición de un tag
     const tagContent = prevString.slice(lastOpen + 1);
 
-    // Evento: @eventname[.modifier...]=  / @eventname[.modifier...]="  / '
+    // Event: @eventname[.modifier...]=
     const eventMatch = tagContent.match(/@([\w:.-]+)=["']?$/);
     if (eventMatch) {
         const full = eventMatch[1];          // e.g. "click.prevent.stop"
@@ -960,7 +664,7 @@ function detectContext(prevString: string): BindingContext {
         };
     }
 
-    // Atributo: attrname=  / attrname="  / attrname='
+    // Attribute: attrname=
     const attrMatch = tagContent.match(/([\w:.-]+)=["']?$/);
     if (attrMatch) {
         return {
@@ -974,16 +678,11 @@ function detectContext(prevString: string): BindingContext {
     return { type: "node" };
 }
 
-// ─── Construcción del HTML con marcadores ─────────────────────────────────────
+// --- Static HTML construction with markers ---
 
 /**
- * Construye el string HTML estático reemplazando cada valor interpolado con:
- *  - nodo:   <!--nix-N-->
- *  - evento: atributo data-nix-e-N="eventname"
- *  - attr:   atributo data-nix-a-N="attrname"
- *
- * Para eventos/attrs, también elimina las comillas de apertura del string
- * anterior y marca el string siguiente para omitir la comilla de cierre.
+ * Builds the static HTML string, replacing each interpolated value with
+ * a comment marker (node), data-nix-e-N (event), or data-nix-a-N (attribute).
  */
 function buildHTML(
     strings: readonly string[],
@@ -995,7 +694,7 @@ function buildHTML(
     for (let i = 0; i < strings.length; i++) {
         let s = strings[i];
 
-        // Omitir la comilla de cierre que dejó el binding anterior
+        // Skip closing quote left by previous binding
         if (skipLeading[i] === 1 && (s[0] === '"' || s[0] === "'")) {
             s = s.slice(1);
         }
@@ -1006,7 +705,7 @@ function buildHTML(
             if (ctx.type === "node") {
                 result += s + `<!--nix-${i}-->`;
             } else if (ctx.type === "event") {
-                // data-nix-e-N almacena solo el nombre base del evento
+                // data-nix-e-N stores only the base event name
                 const full = ctx.modifiers.length
                     ? `${ctx.eventName}.${ctx.modifiers.join(".")}`
                     : ctx.eventName;
@@ -1028,7 +727,7 @@ function buildHTML(
     return result;
 }
 
-// ─── Helpers de inspección del DOM ───────────────────────────────────────────
+// --- DOM inspection helpers ---
 
 function isNixTemplate(v: unknown): v is NixTemplate {
     return (
@@ -1046,7 +745,7 @@ function isKeyedList(v: unknown): v is KeyedList {
     );
 }
 
-/** Recorre el subárbol y devuelve un mapa de índice → Comment marcador. */
+/** Walks the subtree and returns a map of index → Comment marker. */
 function findCommentMarkers(root: Node): Map<number, Comment> {
     const map = new Map<number, Comment>();
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
@@ -1059,7 +758,7 @@ function findCommentMarkers(root: Node): Map<number, Comment> {
     return map;
 }
 
-/** Recorre el subárbol buscando atributos data-nix-e-N / data-nix-a-N. */
+/** Walks the subtree for data-nix-e-N / data-nix-a-N attribute markers. */
 function findAttrEventMarkers(
     fragment: DocumentFragment
 ): Map<number, { el: Element; type: "attr" | "event"; name: string }> {
@@ -1069,7 +768,7 @@ function findAttrEventMarkers(
     >();
 
     const check = (el: Element) => {
-        const attrs = Array.from(el.attributes); // snapshot antes de mutar
+        const attrs = Array.from(el.attributes); // snapshot before mutation
         for (const attr of attrs) {
             let m = attr.name.match(/^data-nix-e-(\d+)$/);
             if (m) {
@@ -1089,12 +788,9 @@ function findAttrEventMarkers(
     return map;
 }
 
-// ─── Activación de bindings ───────────────────────────────────────────────────
+// --- Binding activation ---
 
-/**
- * Activa todos los bindings del fragmento clonado.
- * Devuelve un array de funciones dispose para limpiar al desmontar.
- */
+/** Activates all bindings on the cloned fragment. Returns dispose functions. */
 function activateBindings(
     fragment: DocumentFragment,
     contexts: BindingContext[],
@@ -1110,7 +806,7 @@ function activateBindings(
         const ctx = contexts[i];
         const value = values[i];
 
-        // ── EVENTOS ──────────────────────────────────────────────
+        // --- Events ---
         if (ctx.type === "event") {
             const info = attrEventMap.get(i);
             if (!info) continue;
@@ -1118,13 +814,13 @@ function activateBindings(
             const rawHandler = value as EventListener;
             const mods = ctx.modifiers;
 
-            // Opciones para addEventListener
+            // addEventListener options
             const listenerOpts: AddEventListenerOptions = {};
             if (mods.includes("once")) listenerOpts.once = true;
             if (mods.includes("capture")) listenerOpts.capture = true;
             if (mods.includes("passive")) listenerOpts.passive = true;
 
-            // Mapa de teclas con nombre
+            // Named key map for keyboard event modifiers
             const KEY_MAP: Record<string, string> = {
                 enter: "Enter",
                 escape: "Escape",
@@ -1143,7 +839,7 @@ function activateBindings(
                 if (mods.includes("stop")) e.stopPropagation();
                 if (mods.includes("self") && e.target !== e.currentTarget) return;
 
-                // Filtros de tecla (solo aplican cuando el evento tiene `key`)
+                // Key filters (only apply when event has `key`)
                 if ("key" in e) {
                     const ke = e as KeyboardEvent;
                     for (const mod of mods) {
@@ -1162,20 +858,20 @@ function activateBindings(
             continue;
         }
 
-        // ── ATRIBUTOS ─────────────────────────────────────────────
+        // --- Attributes ---
         if (ctx.type === "attr") {
             const info = attrEventMap.get(i);
             if (!info) continue;
             const { el, name: attrName } = info;
 
-            // ── REF especial ──────────────────────────────────────────────
+            // --- ref attribute ---
             if (attrName === "ref") {
                 (value as NixRef<Element>).el = el as Element;
                 disposes.push(() => { (value as NixRef<Element>).el = null; });
                 continue;
             }
 
-            // ── SHOW / HIDE — toggle visibility without unmounting the DOM ─────
+            // --- show / hide attribute ---
             // show=${() => condition}  → hides element when condition is falsy
             // hide=${() => condition}  → hides element when condition is truthy
             if (attrName === "show" || attrName === "hide") {
@@ -1230,14 +926,14 @@ function activateBindings(
             continue;
         }
 
-        // ── NODO ──────────────────────────────────────────────────
+        // --- Nodes ---
         const anchor = commentMap.get(i);
         if (!anchor) continue;
 
-        // Valor completamente estático (string/number/NixTemplate/NixComponent directo)
+        // Static value (string/number/NixTemplate/NixComponent)
         if (typeof value !== "function") {
             if (isNixComponent(value)) {
-                // Componente clase estático: render + programar onMount tras inserción en DOM
+                // Static class component: render + schedule onMount after DOM insertion
                 const inst = value;
                 _pushComponentContext();
                 let innerCleanup!: () => void;
@@ -1263,7 +959,7 @@ function activateBindings(
                     innerCleanup();
                 });
             } else if (isNixTemplate(value)) {
-                // Template anidado estático: insertar directamente
+                // Static nested template
                 const templateCleanup = value._render(anchor.parentNode!, anchor);
                 disposes.push(templateCleanup);
             } else if (Array.isArray(value)) {
@@ -1310,14 +1006,11 @@ function activateBindings(
             continue;
         }
 
-        // Valor dinámico (función)
-        // Usamos el anchor como "end marker". El contenido se inserta antes de él.
-        // Para texto reactivo simple, reutilizamos un TextNode.
+        // Dynamic value (function)
         let textNode: Text | null = null;
-        // Para templates/condicionales/listas guardamos el cleanup del contenido anterior
         let innerCleanup: (() => void) | null = null;
 
-        // ── Estado para repeat() keyed diffing ──────────────────────────────
+        // Keyed list diffing state
         type Key = string | number;
         interface KEntry {
             start: Comment;
@@ -1326,17 +1019,16 @@ function activateBindings(
         }
         let keyedState: Map<Key, KEntry> | null = null;
 
-        // Capturar el contexto provide/inject vigente en este punto del árbol,
-        // para que los componentes dinámicos (reactivos) vean los valores
-        // provistos por sus ancestros incluso al re-renderizar.
+        // Capture the provide/inject context snapshot so dynamic components
+        // rendered later still see ancestor-provided values.
         const ctxSnapshot = _captureContextSnapshot();
 
         const dispose = effect(() => {
             const v = (value as () => unknown)();
 
-            // ── Texto reactivo simple ──
+            // Simple reactive text
             if (typeof v === "string" || typeof v === "number") {
-                // Limpiamos cualquier template previo si hubiera
+                // Clear any previous template
                 if (innerCleanup) {
                     innerCleanup();
                     innerCleanup = null;
@@ -1350,7 +1042,7 @@ function activateBindings(
                 return;
             }
 
-            // Para otros tipos, siempre reconstruimos
+            // For other types, always rebuild
             if (textNode) {
                 textNode.parentNode?.removeChild(textNode);
                 textNode = null;
@@ -1361,12 +1053,12 @@ function activateBindings(
             }
 
             if (v == null || v === false) {
-                // Nada que renderizar
+                // Nothing to render
             } else if (isNixTemplate(v)) {
-                // Condicional: template activo
+                // Conditional: active template
                 innerCleanup = v._render(anchor.parentNode!, anchor);
             } else if (isNixComponent(v)) {
-                // NixComponent dinámico (condicional de clase)
+                // Dynamic NixComponent (conditional)
                 const inst = v;
                 let templateCleanup!: () => void;
                 _withComponentContext(ctxSnapshot, () => {
@@ -1387,7 +1079,7 @@ function activateBindings(
                     templateCleanup();
                 };
             } else if (isKeyedList(v)) {
-                // ── Keyed list (repeat()) ── diffing eficiente con keys ──────
+                // Keyed list (repeat()) diffing
                 if (!keyedState) keyedState = new Map();
                 const parent = anchor.parentNode!;
                 const newKeyOrder: Key[] = v.items.map(
@@ -1395,7 +1087,7 @@ function activateBindings(
                 );
                 const newKeySet = new Set(newKeyOrder);
 
-                // 1. Eliminar entries que ya no están en la nueva lista
+                // 1. Remove entries no longer in the new list
                 for (const [key, entry] of keyedState) {
                     if (!newKeySet.has(key)) {
                         entry.cleanup();
@@ -1410,18 +1102,18 @@ function activateBindings(
                     }
                 }
 
-                // 2. Insertar/mover items en orden inverso para poder usar
-                //    insertBefore con un insertionPoint que avanza hacia la izquierda.
+                // 2. Insert/move items in reverse order using insertBefore
+                //    with an insertionPoint advancing leftward.
                 let insertionPoint: Node = anchor;
                 for (let idx = newKeyOrder.length - 1; idx >= 0; idx--) {
                     const key = newKeyOrder[idx];
                     const item = v.items[idx];
 
                     if (keyedState.has(key)) {
-                        // Item existente — mover solo si no está ya en posición
+                        // Existing item — move only if not already in position
                         const entry = keyedState.get(key)!;
                         if (entry.end.nextSibling !== insertionPoint) {
-                            // Recolectar nodos del item (start … end inclusive) y moverlos
+                            // Collect item nodes (start … end inclusive) and move them
                             const nodesToMove: Node[] = [];
                             let node: Node = entry.start;
                             while (true) {
@@ -1435,7 +1127,7 @@ function activateBindings(
                         }
                         insertionPoint = entry.start;
                     } else {
-                        // Item nuevo — renderizar y registrar
+                        // New item — render and register
                         const endMarker = document.createComment("nix-ke");
                         const startMarker = document.createComment("nix-ks");
                         parent.insertBefore(endMarker, insertionPoint);
@@ -1527,54 +1219,35 @@ function activateBindings(
     return { disposes, postMountHooks };
 }
 
-// ─── Función principal html`` ─────────────────────────────────────────────────
+// --- html`` tag function ---
 
 export function html(
     strings: TemplateStringsArray,
     ...values: unknown[]
 ): NixTemplate {
-    // 1. Determinar el contexto de cada valor
-    //
-    // ⚠️  Usamos una cadena ACUMULADA en lugar de solo strings[i], porque
-    //    cuando hay múltiples bindings en el MISMO tag (e.g. id="${x}" @click=${fn}),
-    //    el string entre ellos es `" @click=` — sin ningún `<` ni `>` — y
-    //    detectContext lo clasificaría erróneamente como "node".
-    //    Al acumular todos los strings anteriores conservamos la información
-    //    de que seguimos dentro de un tag abierto.
+    // Build binding contexts using an accumulated string so multiple bindings
+    // within the same tag (e.g. id="${x}" @click=${fn}) are correctly detected.
     const contexts: BindingContext[] = [];
     let accumulated = "";
     for (let i = 0; i < strings.length - 1; i++) {
         accumulated += strings[i];
         const ctx = detectContext(accumulated);
         contexts.push(ctx);
-        // Avanzar el acumulado más allá del valor interpolado para que la
-        // siguiente iteración sepa si seguimos dentro del mismo tag.
-        // Usamos un placeholder neutro que no contiene `<` ni `>`.
         accumulated += "__nix__";
     }
 
-    // 2. Construir el HTML estático con marcadores
     const rawHTML = buildHTML(strings, contexts);
 
-    // ── Función interna de renderizado ────────────────────────────────────────
     function _render(parent: Node, before: Node | null): () => void {
-        // 3. Parsear el HTML a un DocumentFragment
         const tpl = document.createElement("template");
         tpl.innerHTML = rawHTML;
         const fragment = tpl.content;
 
-        // 4. Activar bindings (ANTES de insertar, para conservar referencias)
         const { disposes, postMountHooks } = activateBindings(fragment, contexts, values);
 
-        // 5. Insertar el fragmento en el DOM
-        //    El fragmento queda vacío después, pero los nodos ya están en el DOM
-        //    y los disposes siguen apuntando a ellos correctamente.
-
-        // Insertamos un "start marker" que nos permite limpiar luego
         const startMarker = document.createComment("nix-scope");
         parent.insertBefore(startMarker, before);
 
-        // Mover todos los nodos del fragmento antes de `before`
         let child = fragment.firstChild;
         while (child) {
             const next = child.nextSibling;
@@ -1582,17 +1255,12 @@ export function html(
             child = next;
         }
 
-        // ── Lifecycle: onMount de NixComponents embebidos ──────────────────────
-        // Se dispara DESPUÉS de la inserción para que el DOM esté presente.
+        // Lifecycle: fire onMount after DOM insertion
         postMountHooks.forEach((cb) => cb());
 
-        // 6. Retornar función de limpieza
         return () => {
-            // Destruir effects, listeners y NixComponents anidados.
-            // Los onUnmount de NixComponents embebidos están dentro de disposes.
             disposes.forEach((d) => d());
-
-            // Remover todos los nodos entre startMarker y before
+            // Remove all nodes between startMarker and before
             let node = startMarker.nextSibling;
             while (node && node !== before) {
                 const next = node.nextSibling;
@@ -1603,7 +1271,6 @@ export function html(
         };
     }
 
-    // ── API pública ────────────────────────────────────────────────────────────
     const nixTemplate: NixTemplate = {
         __isNixTemplate: true,
 

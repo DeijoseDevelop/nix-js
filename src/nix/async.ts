@@ -1,11 +1,9 @@
-// src/nix/async.ts — Fase 8: Lazy loading + Suspense
-
 import { signal } from "./reactivity";
 import { NixComponent } from "./lifecycle";
 import type { NixTemplate } from "./template";
 import { html } from "./template";
 
-// ── Tipos públicos ────────────────────────────────────────────────────────────
+// --- Types ---
 
 type AsyncState<T> =
     | { status: "pending" }
@@ -13,52 +11,19 @@ type AsyncState<T> =
     | { status: "error"; error: unknown };
 
 export interface SuspenseOptions {
-    /**
-     * Template a mostrar mientras la promesa está pendiente.
-     * Por defecto: spinner de puntos animados.
-     */
+    /** Template shown while the promise is pending. */
     fallback?: NixTemplate;
-    /**
-     * Factory que recibe el error y devuelve el template de error.
-     * Por defecto: mensaje de error en rojo.
-     */
+    /** Factory receiving the error, returns the error template. */
     errorFallback?: (err: unknown) => NixTemplate;
-    /**
-     * Si `true`, mantiene el fallback visible mientras `asyncFn` vuelve a
-     * ejecutarse tras un cambio reactivo. Si `false` (por defecto), durante
-     * las recargas se sigue mostrando el contenido anterior hasta que la nueva
-     * promesa se resuelva.
-     */
+    /** If `true`, shows fallback during re-fetches instead of stale content. */
     resetOnRefresh?: boolean;
 }
 
-// ── suspend() ─────────────────────────────────────────────────────────────────
+// --- suspend() ---
 
 /**
- * Ejecuta una función async y renderiza según su estado (pending / resolved /
- * error). Equivale al patrón <Suspense> de otros frameworks.
- *
- * @param asyncFn   Función que devuelve una promesa con los datos.
- * @param renderFn  Recibe los datos resueltos y devuelve el template/componente.
- * @param options   `fallback`, `errorFallback`, `resetOnRefresh`.
- *
- * @example
- * // Uso simple con fallback por defecto
- * const userView = suspend(
- *   () => fetchUser(userId.value),
- *   user => html`<div>${user.name}</div>`
- * );
- *
- * @example
- * // Con fallback personalizado y manejo de error
- * suspend(
- *   () => api.getItems(),
- *   items => html`<ul>${items.map(i => html`<li>${i}</li>`)}</ul>`,
- *   {
- *     fallback: html`<span>Cargando items…</span>`,
- *     errorFallback: err => html`<p style="color:red">Error: ${String(err)}</p>`,
- *   }
- * )
+ * Runs an async function and renders based on its state (pending/resolved/error).
+ * Equivalent to the Suspense pattern in other frameworks.
  */
 export function suspend<T>(
     asyncFn: () => Promise<T>,
@@ -78,7 +43,7 @@ export function suspend<T>(
                 border:2px solid #38bdf840;border-top-color:#38bdf8;
                 animation:nix-spin .7s linear infinite
             "></span>
-            Cargando…
+            Loading…
         </span>
         <style>@keyframes nix-spin{to{transform:rotate(360deg)}}</style>
     `;
@@ -119,38 +84,25 @@ export function suspend<T>(
     return new SuspendComponent();
 }
 
-// ── lazy() ────────────────────────────────────────────────────────────────────
+// --- lazy() ---
 
 /**
- * Envuelve un import dinámico para lazy loading de componentes de ruta.
- * El módulo se carga una sola vez (cacheado) y mientras tanto muestra el
- * fallback. Compatible directamente con el campo `component` de `RouteRecord`.
- *
- * El módulo importado debe exportar el componente como **export default**.
- *
- * @param importFn  Función que hace el import dinámico.
- * @param fallback  Template opcional mientras se descarga el chunk.
- *
- * @example
- * createRouter([
- *   { path: "/",      component: lazy(() => import("./pages/Home"))    },
- *   { path: "/about", component: lazy(() => import("./pages/About"))   },
- *   { path: "/admin", component: lazy(() => import("./pages/Admin"),
- *       html`<p>Cargando panel…</p>`) },
- * ])
+ * Wraps a dynamic import for lazy-loading route components.
+ * The module is loaded once (cached). Compatible with `RouteRecord.component`.
+ * The imported module must use a default export.
  */
 export function lazy(
     importFn: () => Promise<{ default: new () => NixComponent }>,
     fallback?: NixTemplate
 ): () => NixComponent {
-    // Cache del constructor — null mientras no se haya cargado
+    // Cached constructor — null until loaded
     let Cached: (new () => NixComponent) | null = null;
 
     return (): NixComponent => {
-        // Si ya está cargado, instanciar directamente (sin Suspense)
+        // Already loaded: instantiate directly (no Suspense)
         if (Cached) return new Cached();
 
-        // Primera vez: cargar el chunk y cachear
+        // First load: fetch the chunk and cache
         return suspend(
             async () => {
                 const mod = await importFn();

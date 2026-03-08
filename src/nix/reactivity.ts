@@ -1,25 +1,4 @@
-// ═══════════════════════════════════════════════
-//  Nix.js ❄️ — Sistema de Reactividad
-// ═══════════════════════════════════════════════
-//
-//  Conceptos:
-//
-//    signal(valor)    → dato reactivo, al cambiar notifica
-//    effect(fn)       → se re-ejecuta cuando sus signals cambian
-//    computed(fn)     → valor derivado que se auto-actualiza
-//    batch(fn)        → agrupa cambios en 1 sola actualización
-//
-//  Cómo funciona:
-//
-//    1. Un effect se ejecuta y LEE signals
-//    2. Cada signal registra "este effect me está leyendo"
-//    3. Cuando el signal CAMBIA, re-ejecuta sus effects
-//    4. El effect se des-suscribe de las viejas y se suscribe a las nuevas
-//
-//    signal.value (get)  →  "Oye signal, te estoy leyendo"
-//    signal.value (set)  →  "Oye effects, cambié, re-ejecútense"
-
-// ── Tracking: saber quién está observando ──
+// --- Dependency tracking ---
 
 let activeEffect: (() => void) | null = null;
 const effectStack: ((() => void) | null)[] = [];
@@ -27,7 +6,7 @@ const effectStack: ((() => void) | null)[] = [];
 let activeDeps: Set<Signal<any>> | null = null;
 const depsStack: (Set<Signal<any>> | null)[] = [];
 
-// ── Error boundary support ────────────────────────────────────────────────────
+// --- Error boundary support ---
 
 let activeErrorHandler: ((err: unknown) => void) | null = null;
 const errorHandlerStack: (((err: unknown) => void) | null)[] = [];
@@ -47,17 +26,17 @@ export function _popErrorHandler(): void {
     activeErrorHandler = errorHandlerStack.pop() ?? null;
 }
 
-// ── Batching: agrupar notificaciones ──
+// --- Batching ---
 
 let batchLevel = 0;
 const pendingEffects = new Set<() => void>();
 
-// ── Effect recursion guard ──
+// --- Effect recursion guard ---
 
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
-// ── Signal ──
+// --- Signal ---
 
 export class Signal<T> {
     private _value: T;
@@ -67,10 +46,7 @@ export class Signal<T> {
         this._value = initialValue;
     }
 
-    /**
-     * Leer el valor.
-     * Si hay un effect activo, se suscribe automáticamente.
-     */
+    /** Read the current value. Subscribes the active effect if one exists. */
     get value(): T {
         if (activeEffect) {
             this._subs.add(activeEffect);
@@ -79,29 +55,19 @@ export class Signal<T> {
         return this._value;
     }
 
-    /**
-     * Escribir un nuevo valor.
-     * Si es diferente al actual, notifica a todos los effects suscritos.
-     */
+    /** Write a new value. Notifies subscribers when the value changes. */
     set value(newValue: T) {
         if (Object.is(this._value, newValue)) return;
         this._value = newValue;
         this._notify();
     }
 
-    /**
-     * Modificar el valor con una función.
-     *   count.update(n => n + 1)
-     */
+    /** Mutate the value via a updater function. */
     update(fn: (current: T) => T): void {
         this.value = fn(this._value);
     }
 
-    /**
-     * Leer SIN suscribirse.
-     * Útil cuando necesitas el valor pero no quieres
-     * que el effect se re-ejecute si cambia.
-     */
+    /** Read without subscribing the active effect. */
     peek(): T {
         return this._value;
     }
@@ -126,24 +92,17 @@ export class Signal<T> {
     }
 }
 
-// ── Factory functions ──
+// --- Factories ---
 
 export function signal<T>(initialValue: T): Signal<T> {
     return new Signal(initialValue);
 }
 
 /**
- * Ejecuta una función y la RE-EJECUTA cada vez que
- * algún signal leído dentro de ella cambie.
- *
- * Retorna una función dispose() para destruir el effect.
- *
- *   const dispose = effect(() => {
- *     console.log(count.value);
- *     return () => console.log("cleanup");
- *   });
- *
- *   dispose();
+ * Runs `fn` and re-runs it whenever any signal read inside changes.
+ * Returns a dispose function to tear down the effect.
+ * If `fn` returns a function, it is called as cleanup before each re-run
+ * and on disposal.
  */
 export function effect(fn: () => void | (() => void)): () => void {
     let cleanup: (() => void) | void;
@@ -195,11 +154,7 @@ export function effect(fn: () => void | (() => void)): () => void {
     };
 }
 
-/**
- * Valor derivado que se recalcula automáticamente.
- *
- *   const doubled = computed(() => count.value * 2);
- */
+/** Derived signal that recalculates when its dependencies change. */
 export function computed<T>(fn: () => T): Signal<T> {
     const s = new Signal<T>(undefined as T);
 
@@ -210,15 +165,7 @@ export function computed<T>(fn: () => T): Signal<T> {
     return s;
 }
 
-/**
- * Agrupa múltiples cambios para que los effects
- * se ejecuten UNA sola vez al final.
- *
- *   batch(() => {
- *     x.value = 1;
- *     y.value = 2;
- *   });
- */
+/** Groups multiple signal writes so effects flush once at the end. */
 export function batch(fn: () => void): void {
     batchLevel++;
     try {
@@ -233,13 +180,7 @@ export function batch(fn: () => void): void {
     }
 }
 
-/**
- * Ejecuta `fn` sin suscribirse a ninguna signal que lea dentro de ella.
- * Útil para leer valores reactivos sin que esas lecturas re-disparen el
- * efecto actual (p.ej. en callbacks de `watch`).
- *
- *   const total = untrack(() => price.value * qty.value); // no se suscribe
- */
+/** Executes `fn` without subscribing to any signals read inside it. */
 export function untrack<T>(fn: () => T): T {
     const prevEffect = activeEffect;
     const prevDeps = activeDeps;
@@ -253,38 +194,18 @@ export function untrack<T>(fn: () => T): T {
     }
 }
 
-// ── watch ──
+// --- watch ---
 
 export interface WatchOptions {
-    /**
-     * Si es `true`, el callback se ejecuta inmediatamente con el valor
-     * actual antes de que haya ningún cambio.  Por defecto: `false`.
-     */
+    /** Fire the callback immediately with the current value. Default: `false`. */
     immediate?: boolean;
-    /**
-     * Si es `true`, el watcher se elimina automáticamente después de la
-     * primera vez que el callback se dispara.  Por defecto: `false`.
-     */
+    /** Automatically dispose after the first callback invocation. Default: `false`. */
     once?: boolean;
 }
 
 /**
- * Observa una fuente reactiva y ejecuta `callback(newValue, oldValue)` cada
- * vez que cambia.
- *
- * La fuente puede ser:
- *  - Un getter: `() => count.value + other.value`
- *  - Una Signal directamente: `count`
- *
- * Retorna una función `dispose()` para detener la observación.
- *
- * @example
- * const stop = watch(
- *   () => user.value.name,
- *   (newName, oldName) => console.log(newName, oldName),
- *   { immediate: true }
- * );
- * stop(); // deja de observar
+ * Watches a reactive source and calls `callback(newValue, oldValue)` on each change.
+ * Accepts a Signal or a getter function. Returns a dispose function.
  */
 export function watch<T>(
     source: Signal<T> | (() => T),
@@ -329,23 +250,9 @@ export function watch<T>(
     };
 }
 
-// ── nextTick ──
+// --- nextTick ---
 
-/**
- * Espera a que todos los efectos síncronos pendientes hayan corrido y el
- * DOM esté actualizado, devolviendo una promesa que resuelve en el próximo
- * microtask.
- *
- * Úsala cuando necesitas leer el DOM *después* de un cambio reactivo:
- *
- *   count.value++;
- *   await nextTick();
- *   console.log(el.textContent); // ya refleja el nuevo valor
- *
- * También acepta un callback opcional:
- *
- *   nextTick(() => el.focus());
- */
+/** Returns a promise that resolves on the next microtask. Accepts an optional callback. */
 export function nextTick(fn?: () => void): Promise<void> {
     return fn ? Promise.resolve().then(fn) : Promise.resolve();
 }
