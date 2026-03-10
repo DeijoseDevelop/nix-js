@@ -213,7 +213,7 @@ src/
     component.ts    — mount()
     store.ts        — createStore()
     router.ts       — createRouter(), RouterView, Link, useRouter()
-    async.ts        — suspend(), lazy()
+    async.ts        — suspend(), lazy(), createQuery() with built-in caching
     context.ts      — provide(), inject(), createInjectionKey()
     index.ts        — re-exports everything
   main.ts           — application entry point
@@ -1200,6 +1200,15 @@ suspend(
     // Signal that triggers re-fetch when its value changes.
     // DOM is reused — no destroy/recreate cycle.
     invalidate: mySignal,
+
+    // Cache key — when set, resolved data is cached globally.
+    // Subsequent mounts with the same key render cached data instantly.
+    cacheKey: "user-profile",
+
+    // Time (ms) that cached data is considered fresh.
+    // While fresh, no background refetch happens on mount.
+    // Only used when `cacheKey` is set. Default: 0.
+    staleTime: 60_000,
   }
 )
 ```
@@ -1251,7 +1260,7 @@ ${suspend(() => api.getAll(), renderFn, { invalidate: refreshKey })}
 
 ### `createQuery()` / `invalidateQueries()`
 
-For apps with multiple components sharing the same data source, **key-based queries** eliminate prop drilling entirely. Any component can invalidate any query by its key — no need to pass signals around.
+For apps with multiple components sharing the same data source, **key-based queries** with **built-in caching** eliminate prop drilling entirely. Data is cached globally by key — when a component remounts, cached data renders **instantly** (no loading spinner) while a background refetch runs silently. Similar to React Query / TanStack Query.
 
 ```typescript
 import { createQuery, invalidateQueries, html, mount } from "@deijose/nix-js";
@@ -1278,8 +1287,33 @@ function ReservationsTable(): NixTemplate {
 
 async function confirmLoan(id: number) {
   await fetch(`/api/reservations/${id}/confirm`, { method: "POST" });
-  invalidateQueries("reservations");  // all components using this key re-fetch
+  invalidateQueries("reservations");  // clears cache + all instances re-fetch
 }
+```
+
+**Caching behavior:**
+
+1. **First mount** — shows fallback (spinner), fetches data, stores in global cache.
+2. **Subsequent mounts** (e.g. navigating back) — renders cached data **immediately**, refetches in background.
+3. **`invalidateQueries(key)`** — clears cache for that key + forces all active instances to refetch.
+4. **Garbage collection** — cache entries with no active subscribers are cleaned up after 5 minutes.
+
+```typescript
+// With staleTime — skip background refetch if data is recent
+createQuery(
+  "books",
+  () => api.getBooks(),
+  (books) => html`...`,
+  { staleTime: 30_000 }  // 30s: no refetch if data is less than 30s old
+);
+
+// Never refetch on mount — only invalidateQueries() triggers refresh
+createQuery(
+  "static-config",
+  () => api.getConfig(),
+  (cfg) => html`...`,
+  { refetchOnMount: false }
+);
 ```
 
 **Signature:**
@@ -1293,15 +1327,19 @@ function createQuery<T>(
 ): NixComponent;
 
 function invalidateQueries(key: string): void;
+function clearQueryCache(key?: string): void;
+function setQueryCacheTime(ms: number): void;
 ```
 
-**`QueryOptions`** — same as `SuspenseOptions` without `invalidate`:
+**`QueryOptions`:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `fallback` | `NixTemplate` | spinner | Template shown while pending |
 | `errorFallback` | `(err) => NixTemplate` | red text | Error template factory |
 | `resetOnRefresh` | `boolean` | `false` | Show fallback during re-fetches |
+| `staleTime` | `number` | `0` | Time (ms) that cached data is considered fresh. While fresh, no refetch on mount |
+| `refetchOnMount` | `"always"` \| `"stale"` \| `false` | `"always"` | Controls background refetch on mount |
 
 **When to use which:**
 
@@ -1310,6 +1348,8 @@ function invalidateQueries(key: string): void;
 | Single component owns the data + refresh trigger | `suspend()` + `invalidate` |
 | Multiple components share the same data source | `createQuery()` + `invalidateQueries()` |
 | One-shot data (no refresh needed) | `suspend()` without options |
+| Cached data across page navigations | `createQuery()` with `staleTime` |
+| Single component with caching | `suspend()` with `cacheKey` |
 
 ### `lazy()`
 
@@ -2166,12 +2206,14 @@ transition(content, {
 
 | Export | Description |
 |--------|-------------|
-| `suspend(asyncFn, renderFn, opts?)` | Async data fetching with Suspense. Supports `invalidate` signal for re-fetching without DOM rebuild |
-| `createQuery(key, asyncFn, renderFn, opts?)` | Key-based async fetching with global invalidation |
-| `invalidateQueries(key)` | Force all active `createQuery` instances with that key to re-fetch |
+| `suspend(asyncFn, renderFn, opts?)` | Async data fetching with Suspense. Supports `invalidate`, `cacheKey`, `staleTime` |
+| `createQuery(key, asyncFn, renderFn, opts?)` | Key-based async fetching with built-in caching and global invalidation |
+| `invalidateQueries(key)` | Clear cache + force all active `createQuery` instances with that key to re-fetch |
+| `clearQueryCache(key?)` | Clear all cached data, or a specific key |
+| `setQueryCacheTime(ms)` | Set how long unused cache entries persist (default 5 min) |
 | `lazy(importFn, fallback?)` | Dynamic import with caching |
-| `SuspenseOptions` | Options type for `suspend()` (includes `invalidate`) |
-| `QueryOptions` | Options type for `createQuery()` |
+| `SuspenseOptions` | Options type for `suspend()` (includes `invalidate`, `cacheKey`, `staleTime`) |
+| `QueryOptions` | Options type for `createQuery()` (includes `staleTime`, `refetchOnMount`) |
 
 ### Forms
 

@@ -40,6 +40,8 @@ export {
     lazy,
     createQuery,
     invalidateQueries,
+    clearQueryCache,
+    setQueryCacheTime,
     // Dependency Injection
     provide,
     inject,

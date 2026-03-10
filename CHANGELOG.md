@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.2.0
+- **feat(async): built-in query caching** — `createQuery` now caches resolved data globally by key (stale-while-revalidate). When a component remounts, cached data renders **instantly** (no loading spinner) while a background refetch runs.
+- New `QueryOptions`:
+  - `staleTime` — time (ms) that cached data is considered fresh (default `0`)
+  - `refetchOnMount` — `"always"` | `"stale"` | `false` (default `"always"`)
+- New `SuspenseOptions`:
+  - `cacheKey` — opt-in caching for `suspend()` with the same global cache
+  - `staleTime` — same semantics as `QueryOptions.staleTime`
+- New exports: `clearQueryCache(key?)`, `setQueryCacheTime(ms)`
+- `invalidateQueries(key)` now also clears the cache entry for that key
+- Automatic garbage collection of unused cache entries (default 5 min TTL)
+
 ## v1.1.3
 - chore: add homepage link to landing page
 
