@@ -2,11 +2,11 @@
 
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js.svg)](https://www.npmjs.com/package/@deijose/nix-js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-158%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-158%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
 [![Bundle size](https://img.shields.io/badge/min%2Bgzip-~8%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)]()
-[![Website](https://img.shields.io/badge/website-nix--js-indigo.svg)](https://nix-js-landing-c2yq.vercel.app/)
+[![Website](https://img.shields.io/badge/website-nix--js-indigo.svg)](https://nix-js-landing.vercel.app/)
 
 > A lightweight, fully reactive micro-framework for building modern web UIs — no virtual DOM, no compiler, no build-time magic. Just signals, tagged templates, and pure TypeScript.
 >
