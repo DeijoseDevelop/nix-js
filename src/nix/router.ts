@@ -48,13 +48,37 @@ export interface ResolvedRoute {
     route: RouteRecord | undefined;
 }
 
+/**
+ * Options for `createRouter()`.
+ */
+export interface RouterOptions {
+    /**
+     * Base path for the application.
+     * Useful when deploying under a sub-path (e.g. GitHub Pages).
+     *
+     * If omitted, the router auto-detects the base from the `<base href>` tag
+     * that tools like Vite inject when you set `base` in your config.
+     *
+     * @example
+     * // vite.config.ts sets base: "/my-app/"
+     * // No need to pass base — auto-detected from <base href>
+     * createRouter(routes);
+     *
+     * // Or pass it explicitly:
+     * createRouter(routes, { base: "/my-app/" });
+     */
+    base?: string;
+}
+
 export interface Router {
-    /** Signal with the current active pathname. */
+    /** Signal with the current active pathname (without the base prefix). */
     readonly current: Signal<string>;
     /** Signal with the extracted dynamic route params. */
     readonly params: Signal<Record<string, string>>;
     /** Signal with the URL query params. */
     readonly query: Signal<Record<string, string>>;
+    /** The resolved base path used by the router. */
+    readonly base: string;
     /** Navigate to a new path via `pushState`. Guards run before committing. */
     navigate(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
     /** Navigate via `replaceState` (no new history entry). Guards still run. */
@@ -94,6 +118,7 @@ interface FlatRoute {
 interface RouterInternal extends Router {
     _flat: FlatRoute[];
     _guards: NavigationGuard[];
+    _base: string;
 }
 
 /** Module-level singleton — the last router created with `createRouter()`. */
@@ -237,15 +262,73 @@ function matchFlat(
     return best ? { route: best, params: bestParams } : undefined;
 }
 
+// --- Base path helpers ---
+
+/**
+ * Normalizes a base path: ensures it starts with `/` and does NOT end with `/`.
+ * Returns `""` for root base (no prefix needed).
+ */
+function normalizeBase(raw: string): string {
+    let b = raw.trim();
+    if (!b || b === "/") return "";
+    if (!b.startsWith("/")) b = "/" + b;
+    if (b.endsWith("/")) b = b.slice(0, -1);
+    return b;
+}
+
+/**
+ * Auto-detects the base from the `<base href>` tag in the document.
+ * Vite injects this tag when you set `base` in `vite.config.ts`.
+ */
+function detectBase(): string {
+    if (typeof document === "undefined") return "";
+    const baseEl = document.querySelector("base");
+    if (!baseEl) return "";
+    const href = baseEl.getAttribute("href") || "";
+    // <base href> can be a full URL or just a path
+    try {
+        const url = new URL(href, window.location.origin);
+        return normalizeBase(url.pathname);
+    } catch {
+        return normalizeBase(href);
+    }
+}
+
 // --- createRouter ---
 
 /**
  * Creates the History API router and sets it as the active singleton.
  * In production the server must serve `index.html` for all non-file routes.
+ *
+ * @param routes  The route tree.
+ * @param options Optional configuration — use `base` for sub-path deployments.
  */
-export function createRouter(routes: RouteRecord[]): Router {
+export function createRouter(routes: RouteRecord[], options?: RouterOptions): Router {
+    // Resolve the base path: explicit > auto-detect > root
+    const _base = options?.base != null
+        ? normalizeBase(options.base)
+        : detectBase();
+
+    /**
+     * Reads `window.location.pathname` and strips the base prefix,
+     * returning the app-level path (e.g. `/home` instead of `/my-app/home`).
+     */
     function getPathname(): string {
-        return window.location.pathname || "/";
+        const raw = window.location.pathname || "/";
+        if (_base && raw.startsWith(_base)) {
+            const stripped = raw.slice(_base.length);
+            return stripped === "" ? "/" : stripped;
+        }
+        return raw;
+    }
+
+    /**
+     * Prepends the base to an app-level path so it can be used in
+     * `pushState` / `replaceState` / `<a href>`.
+     */
+    function toFullPath(appPath: string): string {
+        if (!_base) return appPath;
+        return _base + (appPath.startsWith("/") ? appPath : "/" + appPath);
     }
 
     const initialPath = getPathname();
@@ -352,7 +435,7 @@ export function createRouter(routes: RouteRecord[]): Router {
             },
             () => {
                 // Guard cancelled popstate: restore previous URL without triggering another popstate
-                history.pushState(null, "", from + buildQueryString(fromQuery));
+                history.pushState(null, "", toFullPath(from) + buildQueryString(fromQuery));
             },
         );
     };
@@ -371,7 +454,7 @@ export function createRouter(routes: RouteRecord[]): Router {
         params.value = m?.params ?? {};
         query.value = stringQuery;
         current.value = pathname;
-        const url = pathname + buildQueryString(stringQuery);
+        const url = toFullPath(pathname) + buildQueryString(stringQuery);
         if (useReplace) {
             history.replaceState(null, "", url);
         } else {
@@ -469,9 +552,9 @@ export function createRouter(routes: RouteRecord[]): Router {
     }
 
     const router: RouterInternal = {
-        current, params, query, navigate, replace,
+        current, params, query, base: _base || "/", navigate, replace,
         back, forward, go, isActive, resolve,
-        beforeEach, afterEach, routes, _flat: flat, _guards,
+        beforeEach, afterEach, routes, _flat: flat, _guards, _base,
     };
 
     if (_currentRouter) {
@@ -498,7 +581,7 @@ export function createRouter(routes: RouteRecord[]): Router {
             () => {
                 // Guard returned false with no redirect: fall back to root
                 const fallback = "/";
-                history.replaceState(null, "", fallback);
+                history.replaceState(null, "", toFullPath(fallback));
                 const fm = matchFlat(fallback, flat);
                 current.value = fallback;
                 params.value = fm?.params ?? {};
@@ -576,7 +659,10 @@ export class Link extends NixComponent {
     render(): NixTemplate {
         const to = this._to;
         const label = this._label;
-        const href = to;
+        const router = getRouter();
+        // Build the full href including the base path for correct URLs
+        const base = router._base || "";
+        const href = base + (to.startsWith("/") ? to : "/" + to);
         return html`<a
       href=${href}
       style=${() => {

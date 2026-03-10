@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.3.0
+- **feat(router): robust base path support** — the router now natively supports running under a sub-path prefix (like GitHub Pages).
+  - Automatically detects the `<base href>` tag injected by Vite when `base: "/slug/"` is configured.
+  - Added new `RouterOptions` interface in `createRouter(routes, { base: '/slug/' })` for explicit configuration.
+  - Native integration with `router.current`, `<Link>`, and History API pushes to seamlessly respect the active base.
+
 ## v1.2.0
 - **feat(async): built-in query caching** — `createQuery` now caches resolved data globally by key (stale-while-revalidate). When a component remounts, cached data renders **instantly** (no loading spinner) while a background refetch runs.
 - New `QueryOptions`:

@@ -80,6 +80,7 @@ export type {
     // Router
     Router,
     RouteRecord,
+    RouterOptions,
     NavigationGuard,
     NavigationGuardResult,
     AfterEachHook,
