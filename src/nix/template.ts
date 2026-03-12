@@ -11,7 +11,21 @@ import {
     createInjectionKey,
 } from "./context";
 
+const COMMENT = {
+    SCOPE: "nix-scope",
+    ERROR_BOUNDARY: "nix-eb",
+    TRANSITION: "nix-t",
+    KEYED_START: "nix-ks",
+    KEYED_END: "nix-ke",
+} as const;
+
 // --- Public types ---
+
+interface KEntry {
+    start: Comment;
+    end: Comment;
+    cleanup: () => void;
+}
 
 export interface NixTemplate {
     readonly __isNixTemplate: true;
@@ -66,7 +80,144 @@ export function repeat<T>(
     return { __isKeyedList: true as const, items, keyFn, renderFn };
 }
 
+// =============================================================================
+// --- Component mounting helpers ---
+// =============================================================================
+
+/**
+ * Renders a NixComponent into the DOM and calls onMount immediately.
+ * Propagates errors through onError (or re-throws if not present).
+ * Returns a full cleanup function (onUnmount + mountCleanup + renderCleanup).
+ */
+function _mountComponent(
+    inst: NixComponent,
+    parent: Node,
+    before: Node | null,
+): () => void {
+    _pushComponentContext();
+    let renderCleanup!: () => void;
+    try {
+        try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
+        renderCleanup = inst.render()._render(parent, before);
+    } finally {
+        _popComponentContext();
+    }
+    let mountCleanup: (() => void) | undefined;
+    try {
+        const ret = inst.onMount?.();
+        if (typeof ret === "function") mountCleanup = ret;
+    } catch (e) {
+        if (inst.onError) inst.onError(e); else throw e;
+    }
+    return () => {
+        try { inst.onUnmount?.(); } catch { /* ignore */ }
+        try { mountCleanup?.(); } catch { /* ignore */ }
+        renderCleanup();
+    };
+}
+
+/**
+ * Same as `_mountComponent` but silently swallows all lifecycle errors.
+ * Used for transition content and error boundary fallbacks where errors
+ * inside the fallback/transition itself must not propagate.
+ */
+function _mountComponentSilent(
+    inst: NixComponent,
+    parent: Node,
+    before: Node | null,
+): () => void {
+    _pushComponentContext();
+    let renderCleanup!: () => void;
+    try {
+        try { inst.onInit?.(); } catch { /* ignore */ }
+        renderCleanup = inst.render()._render(parent, before);
+    } finally {
+        _popComponentContext();
+    }
+    let mountRet: (() => void) | undefined;
+    try {
+        const ret = inst.onMount?.();
+        if (typeof ret === "function") mountRet = ret;
+    } catch { /* ignore */ }
+    return () => {
+        try { inst.onUnmount?.(); } catch { /* ignore */ }
+        try { mountRet?.(); } catch { /* ignore */ }
+        renderCleanup();
+    };
+}
+
+/**
+ * Renders a NixComponent using a captured context snapshot.
+ * Used for dynamic/keyed rendering inside reactive effects, where the
+ * provide/inject context must be inherited from the point of declaration.
+ * Calls onMount immediately. Returns a full cleanup function.
+ */
+function _mountComponentWithCtx(
+    inst: NixComponent,
+    parent: Node,
+    before: Node | null,
+    ctxSnapshot: ReturnType<typeof _captureContextSnapshot>,
+): () => void {
+    let renderCleanup!: () => void;
+    _withComponentContext(ctxSnapshot, () => {
+        try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
+        renderCleanup = inst.render()._render(parent, before);
+    });
+    let mountCleanup: (() => void) | undefined;
+    try {
+        const ret = inst.onMount?.();
+        if (typeof ret === "function") mountCleanup = ret;
+    } catch (e) {
+        if (inst.onError) inst.onError(e); else throw e;
+    }
+    return () => {
+        try { inst.onUnmount?.(); } catch { /* ignore */ }
+        try { mountCleanup?.(); } catch { /* ignore */ }
+        renderCleanup();
+    };
+}
+
+/**
+ * Renders a NixComponent with *deferred* onMount — used inside `html` template
+ * fragments where the DOM nodes are still in a DocumentFragment and onMount must
+ * fire only after the fragment is inserted into the live document.
+ *
+ * Pushes the full cleanup into `disposes` and the onMount call into `postMountHooks`.
+ */
+function _mountComponentDeferred(
+    inst: NixComponent,
+    parent: Node,
+    before: Node | null,
+    postMountHooks: Array<() => void>,
+    disposes: Array<() => void>,
+): void {
+    _pushComponentContext();
+    let renderCleanup!: () => void;
+    try {
+        try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
+        renderCleanup = inst.render()._render(parent, before);
+    } finally {
+        _popComponentContext();
+    }
+    let mountCleanup: (() => void) | undefined;
+    postMountHooks.push(() => {
+        try {
+            const ret = inst.onMount?.();
+            if (typeof ret === "function") mountCleanup = ret;
+        } catch (e) {
+            if (inst.onError) inst.onError(e); else throw e;
+        }
+    });
+    disposes.push(() => {
+        try { inst.onUnmount?.(); } catch { /* ignore */ }
+        try { mountCleanup?.(); } catch { /* ignore */ }
+        renderCleanup();
+    });
+}
+
+// =============================================================================
 // --- portal ---
+// =============================================================================
 
 /**
  * Renders `content` into `target` instead of the current tree position.
@@ -76,6 +227,7 @@ export function repeat<T>(
  * @param content  Template or component to render.
  * @param target   CSS selector, Element, PortalOutlet, or NixRef. Defaults to `document.body`.
  */
+
 // --- PortalOutlet ---
 
 /** Opaque token for a named portal target. */
@@ -138,34 +290,13 @@ export function portal(
             } else if (target instanceof Element) {
                 targetEl = target;
             } else if ("__isPortalOutlet" in target) {
-                // Option A: PortalOutlet token — render into the outlet's div
                 targetEl = (target as PortalOutlet)._container ?? document.body;
             } else {
-                // Option B: NixRef<Element> — portal into the referenced element
                 targetEl = (target as NixRef<Element>).el ?? document.body;
             }
 
             if (isNixComponent(content)) {
-                _pushComponentContext();
-                let templateCleanup!: () => void;
-                try {
-                    try { content.onInit?.(); } catch (e) { if (content.onError) content.onError(e); else throw e; }
-                    templateCleanup = content.render()._render(targetEl, null);
-                } finally {
-                    _popComponentContext();
-                }
-                let mountCleanup: (() => void) | undefined;
-                try {
-                    const ret = content.onMount?.();
-                    if (typeof ret === "function") mountCleanup = ret;
-                } catch (e) {
-                    if (content.onError) content.onError(e); else throw e;
-                }
-                return () => {
-                    try { content.onUnmount?.(); } catch { /* ignore */ }
-                    try { mountCleanup?.(); } catch { /* ignore */ }
-                    templateCleanup();
-                };
+                return _mountComponent(content, targetEl, null);
             }
 
             // NixTemplate: render into targetEl, ignoring the tree position
@@ -188,7 +319,9 @@ export function injectOutlet(): PortalOutlet | undefined {
     return inject(_OUTLET_KEY);
 }
 
+// =============================================================================
 // --- Error Boundary ---
+// =============================================================================
 
 /** Fallback: a static template/component, or a factory receiving the error. */
 export type ErrorFallback =
@@ -217,7 +350,7 @@ export function createErrorBoundary(
         },
 
         _render(parent: Node, before: Node | null): () => void {
-            const marker = document.createComment("nix-eb");
+            const marker = document.createComment(COMMENT.ERROR_BOUNDARY);
             parent.insertBefore(marker, before);
 
             let activeCleanup: (() => void) | null = null;
@@ -226,12 +359,10 @@ export function createErrorBoundary(
             let deferredError: unknown = undefined;
             let hasDeferredError = false;
 
-            // Renders the fallback outside the error handler window
+            // Renders the fallback outside the error handler window.
+            // Uses marker.parentNode (not captured `parent`) because `parent` may be
+            // a stale DocumentFragment that was already flushed to the live DOM.
             const renderFallback = (err: unknown): void => {
-                // Use marker.parentNode instead of the captured `parent`
-                // because `parent` may be a stale DocumentFragment when the
-                // boundary was rendered inside another template (the fragment
-                // was emptied when the outer template moved children to the DOM).
                 const liveParent = marker.parentNode!;
 
                 const fb: NixTemplate | NixComponent =
@@ -240,24 +371,8 @@ export function createErrorBoundary(
                         : (fallback as NixTemplate | NixComponent);
 
                 if (isNixComponent(fb)) {
-                    _pushComponentContext();
-                    let tmplCleanup!: () => void;
-                    try {
-                        try { fb.onInit?.(); } catch { /* ignore errors in fallback */ }
-                        tmplCleanup = fb.render()._render(liveParent, before);
-                    } finally {
-                        _popComponentContext();
-                    }
-                    let mountCleanup: (() => void) | undefined;
-                    try {
-                        const ret = fb.onMount?.();
-                        if (typeof ret === "function") mountCleanup = ret;
-                    } catch { /* ignore */ }
-                    activeCleanup = () => {
-                        try { fb.onUnmount?.(); } catch { /* ignore */ }
-                        mountCleanup?.();
-                        tmplCleanup();
-                    };
+                    // Silent: errors inside the fallback must never propagate
+                    activeCleanup = _mountComponentSilent(fb, liveParent, before);
                 } else {
                     activeCleanup = fb._render(liveParent, before);
                 }
@@ -281,6 +396,9 @@ export function createErrorBoundary(
             };
 
             // --- Render content inside the error boundary ---
+            // NOTE: this block is intentionally NOT using _mountComponent because the
+            // error boundary needs to intercept the `errored` flag between the render
+            // phase and the mount phase to decide whether to skip onMount entirely.
             _pushErrorHandler(handleReactiveError);
             try {
                 if (isNixComponent(content)) {
@@ -322,9 +440,8 @@ export function createErrorBoundary(
                 initialRenderDone = true;
             }
 
-            // Handle errors detected during initial render.  Now that _render
-            // has returned, activeCleanup holds content's cleanup which we can
-            // safely invoke to strip the (partially rendered) content from DOM.
+            // Handle errors detected during initial render. Now that _render has
+            // returned, activeCleanup holds content's cleanup and can be safely invoked.
             if (hasDeferredError) {
                 activeCleanup?.();
                 activeCleanup = null;
@@ -339,7 +456,9 @@ export function createErrorBoundary(
     };
 }
 
+// =============================================================================
 // --- Transitions ---
+// =============================================================================
 
 /**
  * Options for `transition()`.  All class-name overrides are optional — by
@@ -409,7 +528,7 @@ function _resolveTransitionClasses(opts: TransitionOptions) {
 }
 
 function _cssMaxDuration(cssValue: string): number {
-    return Math.max(0, ...cssValue.split(",").map((s) => parseFloat(s) || 0));
+    return Math.max(0, ...cssValue.split(",").map((s) => parseFloat(s.trim()) || 0));
 }
 
 function _waitTransitionEnd(el: Element, fallbackMs = 0): Promise<void> {
@@ -420,7 +539,7 @@ function _waitTransitionEnd(el: Element, fallbackMs = 0): Promise<void> {
                 _cssMaxDuration(st.transitionDuration || "0"),
                 _cssMaxDuration(st.animationDuration || "0"),
             ) * 1000;
-        const wait = ms > 0 ? ms + 100 : fallbackMs > 0 ? fallbackMs : 0;
+        const wait = ms > 0 ? ms + 100 : fallbackMs;
 
         if (wait <= 0) { resolve(); return; }
 
@@ -468,14 +587,11 @@ export function transition(
         },
 
         _render(parent, before) {
-            const marker = document.createComment("nix-t");
+            const marker = document.createComment(COMMENT.TRANSITION);
             parent.insertBefore(marker, before);
 
-            // Currently displayed content cleanup
             let contentCleanup: (() => void) | null = null;
-            // Cleanup of content currently being animated OUT (leave phase)
             let leaveCleanup: (() => void) | null = null;
-            // Monotone generation counter — incremented on enter to cancel ongoing leave
             let leaveGen = 0;
             let isFirstRender = true;
 
@@ -489,33 +605,19 @@ export function transition(
                 return null;
             };
 
-            /** Mount a NixTemplate or NixComponent and return its cleanup. */
+            /**
+             * Mount a NixTemplate or NixComponent and return its cleanup.
+             * Uses _mountComponentSilent so transition lifecycle errors don't propagate.
+             */
             function mountContent(tpl: NixTemplate | NixComponent): () => void {
                 if (isNixComponent(tpl)) {
-                    const comp = tpl as NixComponent;
-                    _pushComponentContext();
-                    let rendered!: NixTemplate;
-                    try {
-                        try { comp.onInit?.(); } catch { /* ignore */ }
-                        rendered = comp.render();
-                    } finally {
-                        _popComponentContext();
-                    }
-                    const tmplCleanup = rendered._render(parent, before);
-                    let mountRet: (() => void) | void;
-                    try { mountRet = comp.onMount?.(); } catch { /* ignore */ }
-                    return () => {
-                        try { comp.onUnmount?.(); } catch { /* ignore */ }
-                        if (typeof mountRet === "function") try { mountRet(); } catch { /* ignore */ }
-                        tmplCleanup();
-                    };
+                    return _mountComponentSilent(tpl as NixComponent, parent, before);
                 }
                 return (tpl as NixTemplate)._render(parent, before);
             }
 
             /** Mount content and play enter animation (does NOT block). */
             const doEnter = (tpl: NixTemplate | NixComponent, skipAnim = false): void => {
-                // Cancel any in-progress leave
                 leaveGen++;
                 if (leaveCleanup) {
                     leaveCleanup();
@@ -578,7 +680,6 @@ export function transition(
             let disposeWatcher: (() => void) | null = null;
 
             if (typeof content === "function" && !isNixComponent(content as unknown)) {
-                // Reactive conditional: () => Template | null
                 const getter = content as () => NixTemplate | NixComponent | null;
                 let prevVal: NixTemplate | NixComponent | null = null;
 
@@ -602,16 +703,13 @@ export function transition(
                     }
                     prevVal = val;
                 });
-                // The initial effect run (synchronous) counts as the first render,
-                // so subsequent null→value transitions should always animate.
                 isFirstRender = false;
             } else {
-                // Static: mount once
                 doEnter(content as NixTemplate | NixComponent);
             }
 
             return () => {
-                leaveGen++;               // cancel any in-progress leave
+                leaveGen++;
                 disposeWatcher?.();
                 contentCleanup?.();
                 leaveCleanup?.();
@@ -623,7 +721,9 @@ export function transition(
     };
 }
 
+// =============================================================================
 // --- Binding context ---
+// =============================================================================
 
 type BindingContext =
     | { type: "node" }
@@ -641,17 +741,15 @@ function detectContext(prevString: string): BindingContext {
     const lastClose = prevString.lastIndexOf(">");
     const lastOpen = prevString.lastIndexOf("<");
 
-    // Between tags → node context
     if (lastOpen <= lastClose) {
         return { type: "node" };
     }
 
     const tagContent = prevString.slice(lastOpen + 1);
 
-    // Event: @eventname[.modifier...]=
     const eventMatch = tagContent.match(/@([\w:.-]+)=["']?$/);
     if (eventMatch) {
-        const full = eventMatch[1];          // e.g. "click.prevent.stop"
+        const full = eventMatch[1];
         const parts = full.split(".");
         const eventName = parts[0];
         const modifiers = parts.slice(1);
@@ -664,7 +762,6 @@ function detectContext(prevString: string): BindingContext {
         };
     }
 
-    // Attribute: attrname=
     const attrMatch = tagContent.match(/([\w:.-]+)=["']?$/);
     if (attrMatch) {
         return {
@@ -678,7 +775,9 @@ function detectContext(prevString: string): BindingContext {
     return { type: "node" };
 }
 
+// =============================================================================
 // --- Static HTML construction with markers ---
+// =============================================================================
 
 /**
  * Builds the static HTML string, replacing each interpolated value with
@@ -688,14 +787,13 @@ function buildHTML(
     strings: readonly string[],
     contexts: BindingContext[]
 ): string {
-    const skipLeading = new Array(strings.length).fill(0);
+    const skipLeading = new Set<number>();
     let result = "";
 
     for (let i = 0; i < strings.length; i++) {
         let s = strings[i];
 
-        // Skip closing quote left by previous binding
-        if (skipLeading[i] === 1 && (s[0] === '"' || s[0] === "'")) {
+        if (skipLeading.has(i) && (s[0] === '"' || s[0] === "'")) {
             s = s.slice(1);
         }
 
@@ -705,19 +803,17 @@ function buildHTML(
             if (ctx.type === "node") {
                 result += s + `<!--nix-${i}-->`;
             } else if (ctx.type === "event") {
-                // data-nix-e-N stores only the base event name
                 const full = ctx.modifiers.length
                     ? `${ctx.eventName}.${ctx.modifiers.join(".")}`
                     : ctx.eventName;
                 const cut = `@${full}=`.length + (ctx.hadOpenQuote ? 1 : 0);
                 result += s.slice(0, -cut) + ` data-nix-e-${i}="${ctx.eventName}"`;
-                if (ctx.hadOpenQuote) skipLeading[i + 1] = 1;
+                if (ctx.hadOpenQuote) skipLeading.add(i + 1);
             } else {
-                // attr
                 const cut =
                     `${ctx.attrName}=`.length + (ctx.hadOpenQuote ? 1 : 0);
                 result += s.slice(0, -cut) + ` data-nix-a-${i}="${ctx.attrName}"`;
-                if (ctx.hadOpenQuote) skipLeading[i + 1] = 1;
+                if (ctx.hadOpenQuote) skipLeading.add(i + 1);
             }
         } else {
             result += s;
@@ -727,7 +823,9 @@ function buildHTML(
     return result;
 }
 
+// =============================================================================
 // --- DOM inspection helpers ---
+// =============================================================================
 
 function isNixTemplate(v: unknown): v is NixTemplate {
     return (
@@ -788,7 +886,26 @@ function findAttrEventMarkers(
     return map;
 }
 
+// =============================================================================
+// --- Keyboard modifier map (module-level — not recreated per binding) ---
+// =============================================================================
+
+const KEY_MAP: Readonly<Record<string, string>> = {
+    enter: "Enter",
+    escape: "Escape",
+    space: " ",
+    tab: "Tab",
+    delete: "Delete",
+    backspace: "Backspace",
+    up: "ArrowUp",
+    down: "ArrowDown",
+    left: "ArrowLeft",
+    right: "ArrowRight",
+};
+
+// =============================================================================
 // --- Binding activation ---
+// =============================================================================
 
 /** Activates all bindings on the cloned fragment. Returns dispose functions. */
 function activateBindings(
@@ -814,38 +931,21 @@ function activateBindings(
             const rawHandler = value as EventListener;
             const mods = ctx.modifiers;
 
-            // addEventListener options
             const listenerOpts: AddEventListenerOptions = {};
             if (mods.includes("once")) listenerOpts.once = true;
             if (mods.includes("capture")) listenerOpts.capture = true;
             if (mods.includes("passive")) listenerOpts.passive = true;
-
-            // Named key map for keyboard event modifiers
-            const KEY_MAP: Record<string, string> = {
-                enter: "Enter",
-                escape: "Escape",
-                space: " ",
-                tab: "Tab",
-                delete: "Delete",
-                backspace: "Backspace",
-                up: "ArrowUp",
-                down: "ArrowDown",
-                left: "ArrowLeft",
-                right: "ArrowRight",
-            };
 
             const handler: EventListener = (e: Event) => {
                 if (mods.includes("prevent")) e.preventDefault();
                 if (mods.includes("stop")) e.stopPropagation();
                 if (mods.includes("self") && e.target !== e.currentTarget) return;
 
-                // Key filters (only apply when event has `key`)
                 if ("key" in e) {
                     const ke = e as KeyboardEvent;
                     for (const mod of mods) {
                         const mapped = KEY_MAP[mod];
                         if (mapped !== undefined && ke.key !== mapped) return;
-                        // tecla individual (una letra/dígito)
                         if (!KEY_MAP[mod] && mod.length === 1 && ke.key.toLowerCase() !== mod) return;
                     }
                 }
@@ -872,12 +972,8 @@ function activateBindings(
             }
 
             // --- show / hide attribute ---
-            // show=${() => condition}  → hides element when condition is falsy
-            // hide=${() => condition}  → hides element when condition is truthy
             if (attrName === "show" || attrName === "hide") {
                 const htmlEl = el as HTMLElement;
-                // Preserve whatever `display` the element had before we touched it.
-                // We read it lazily on the first effect run.
                 let originalDisplay: string | null = null;
 
                 if (typeof value === "function") {
@@ -885,22 +981,18 @@ function activateBindings(
                         const visible = Boolean((value as () => unknown)());
                         const shouldShow = attrName === "show" ? visible : !visible;
                         if (originalDisplay === null) {
-                            // First run: capture current computed display
                             originalDisplay = htmlEl.style.display || "";
                         }
                         htmlEl.style.display = shouldShow ? originalDisplay : "none";
                     });
                     disposes.push(dispose);
                 } else {
-                    // Static value: apply once immediately
                     const shouldShow = attrName === "show" ? Boolean(value) : !Boolean(value);
                     if (!shouldShow) (el as HTMLElement).style.display = "none";
                 }
                 continue;
             }
 
-            // Properties like `value` and `checked` must be set as DOM properties
-            // (not HTML attributes) so reactive bindings update the live input state.
             const isDomProp = (attrName === "value" || attrName === "checked" || attrName === "selected") && attrName in el;
 
             if (typeof value === "function") {
@@ -916,7 +1008,6 @@ function activateBindings(
                 });
                 disposes.push(dispose);
             } else {
-                // Valor estático
                 if (isDomProp) {
                     (el as unknown as Record<string, unknown>)[attrName] = value ?? "";
                 } else if (value != null && value !== false) {
@@ -933,61 +1024,14 @@ function activateBindings(
         // Static value (string/number/NixTemplate/NixComponent)
         if (typeof value !== "function") {
             if (isNixComponent(value)) {
-                // Static class component: render + schedule onMount after DOM insertion
-                const inst = value;
-                _pushComponentContext();
-                let innerCleanup!: () => void;
-                try {
-                    try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
-                    innerCleanup = inst.render()._render(anchor.parentNode!, anchor);
-                } finally {
-                    _popComponentContext();
-                }
-                let mountCleanup: (() => void) | undefined;
-                postMountHooks.push(() => {
-                    try {
-                        const ret = inst.onMount?.();
-                        if (typeof ret === "function") mountCleanup = ret;
-                    } catch (e) {
-                        if (inst.onError) inst.onError(e);
-                        else throw e;
-                    }
-                });
-                disposes.push(() => {
-                    try { inst.onUnmount?.(); } catch { /* ignore */ }
-                    try { mountCleanup?.(); } catch { /* ignore */ }
-                    innerCleanup();
-                });
+                _mountComponentDeferred(value, anchor.parentNode!, anchor, postMountHooks, disposes);
             } else if (isNixTemplate(value)) {
-                // Static nested template
                 const templateCleanup = value._render(anchor.parentNode!, anchor);
                 disposes.push(templateCleanup);
             } else if (Array.isArray(value)) {
                 for (const item of value) {
                     if (isNixComponent(item)) {
-                        let innerCleanupItem!: () => void;
-                        _pushComponentContext();
-                        try {
-                            try { item.onInit?.(); } catch (e) { if (item.onError) item.onError(e); else throw e; }
-                            innerCleanupItem = item.render()._render(anchor.parentNode!, anchor);
-                        } finally {
-                            _popComponentContext();
-                        }
-                        let mountCleanupItem: (() => void) | undefined;
-                        postMountHooks.push(() => {
-                            try {
-                                const ret = item.onMount?.();
-                                if (typeof ret === "function") mountCleanupItem = ret;
-                            } catch (e) {
-                                if (item.onError) item.onError(e);
-                                else throw e;
-                            }
-                        });
-                        disposes.push(() => {
-                            try { item.onUnmount?.(); } catch { /* ignore */ }
-                            try { mountCleanupItem?.(); } catch { /* ignore */ }
-                            innerCleanupItem();
-                        });
+                        _mountComponentDeferred(item, anchor.parentNode!, anchor, postMountHooks, disposes);
                     } else if (isNixTemplate(item)) {
                         item._render(anchor.parentNode!, anchor);
                     } else if (item != null && item !== false) {
@@ -1010,25 +1054,16 @@ function activateBindings(
         let textNode: Text | null = null;
         let innerCleanup: (() => void) | null = null;
 
-        // Keyed list diffing state
         type Key = string | number;
-        interface KEntry {
-            start: Comment;
-            end: Comment;
-            cleanup: () => void;
-        }
         let keyedState: Map<Key, KEntry> | null = null;
 
-        // Capture the provide/inject context snapshot so dynamic components
-        // rendered later still see ancestor-provided values.
         const ctxSnapshot = _captureContextSnapshot();
 
         const dispose = effect(() => {
             const v = (value as () => unknown)();
 
-            // Simple reactive text
+            // Fast path: reactive text update
             if (typeof v === "string" || typeof v === "number") {
-                // Clear any previous template
                 if (innerCleanup) {
                     innerCleanup();
                     innerCleanup = null;
@@ -1055,35 +1090,14 @@ function activateBindings(
             if (v == null || v === false) {
                 // Nothing to render
             } else if (isNixTemplate(v)) {
-                // Conditional: active template
                 innerCleanup = v._render(anchor.parentNode!, anchor);
             } else if (isNixComponent(v)) {
-                // Dynamic NixComponent (conditional)
-                const inst = v;
-                let templateCleanup!: () => void;
-                _withComponentContext(ctxSnapshot, () => {
-                    try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
-                    templateCleanup = inst.render()._render(anchor.parentNode!, anchor);
-                });
-                let mountCleanup: (() => void) | undefined;
-                try {
-                    const ret = inst.onMount?.();
-                    if (typeof ret === "function") mountCleanup = ret;
-                } catch (e) {
-                    if (inst.onError) inst.onError(e);
-                    else throw e;
-                }
-                innerCleanup = () => {
-                    try { inst.onUnmount?.(); } catch { /* ignore */ }
-                    try { mountCleanup?.(); } catch { /* ignore */ }
-                    templateCleanup();
-                };
+                innerCleanup = _mountComponentWithCtx(v, anchor.parentNode!, anchor, ctxSnapshot);
             } else if (isKeyedList(v)) {
-                // Keyed list (repeat()) diffing
                 if (!keyedState) keyedState = new Map();
                 const parent = anchor.parentNode!;
                 const newKeyOrder: Key[] = v.items.map(
-                    (item, i) => v.keyFn(item as never, i)
+                    (item, idx) => v.keyFn(item as never, idx)
                 );
                 const newKeySet = new Set(newKeyOrder);
 
@@ -1103,17 +1117,14 @@ function activateBindings(
                 }
 
                 // 2. Insert/move items in reverse order using insertBefore
-                //    with an insertionPoint advancing leftward.
                 let insertionPoint: Node = anchor;
                 for (let idx = newKeyOrder.length - 1; idx >= 0; idx--) {
                     const key = newKeyOrder[idx];
                     const item = v.items[idx];
 
                     if (keyedState.has(key)) {
-                        // Existing item — move only if not already in position
                         const entry = keyedState.get(key)!;
                         if (entry.end.nextSibling !== insertionPoint) {
-                            // Collect item nodes (start … end inclusive) and move them
                             const nodesToMove: Node[] = [];
                             let node: Node = entry.start;
                             while (true) {
@@ -1127,60 +1138,25 @@ function activateBindings(
                         }
                         insertionPoint = entry.start;
                     } else {
-                        // New item — render and register
-                        const endMarker = document.createComment("nix-ke");
-                        const startMarker = document.createComment("nix-ks");
+                        const endMarker = document.createComment(COMMENT.KEYED_END);
+                        const startMarker = document.createComment(COMMENT.KEYED_START);
                         parent.insertBefore(endMarker, insertionPoint);
                         parent.insertBefore(startMarker, endMarker);
 
-                        let itemCleanup: () => void;
                         const rendered = v.renderFn(item as never, idx);
-                        if (isNixComponent(rendered)) {
-                            let tmplCleanup!: () => void;
-                            _withComponentContext(ctxSnapshot, () => {
-                                try { rendered.onInit?.(); } catch (e) { if (rendered.onError) rendered.onError(e); else throw e; }
-                                tmplCleanup = rendered.render()._render(parent, endMarker);
-                            });
-                            let mountCleanup: (() => void) | undefined;
-                            try {
-                                const ret = rendered.onMount?.();
-                                if (typeof ret === "function") mountCleanup = ret;
-                            } catch (e) {
-                                if (rendered.onError) rendered.onError(e); else throw e;
-                            }
-                            itemCleanup = () => {
-                                try { rendered.onUnmount?.(); } catch { /* ignore */ }
-                                try { mountCleanup?.(); } catch { /* ignore */ }
-                                tmplCleanup();
-                            };
-                        } else {
-                            itemCleanup = rendered._render(parent, endMarker);
-                        }
+                        const itemCleanup = isNixComponent(rendered)
+                            ? _mountComponentWithCtx(rendered, parent, endMarker, ctxSnapshot)
+                            : rendered._render(parent, endMarker);
 
                         keyedState.set(key, { start: startMarker, end: endMarker, cleanup: itemCleanup });
                         insertionPoint = startMarker;
                     }
                 }
             } else if (Array.isArray(v)) {
-                // Lista sin keys — renderizar cada elemento (re-render completo)
                 const cleanups: Array<() => void> = [];
                 for (const item of v) {
                     if (isNixComponent(item)) {
-                        try { item.onInit?.(); } catch (e) { if (item.onError) item.onError(e); else throw e; }
-                        const templateCleanup = item.render()._render(anchor.parentNode!, anchor);
-                        let mountCleanup: (() => void) | undefined;
-                        try {
-                            const ret = item.onMount?.();
-                            if (typeof ret === "function") mountCleanup = ret;
-                        } catch (e) {
-                            if (item.onError) item.onError(e);
-                            else throw e;
-                        }
-                        cleanups.push(() => {
-                            try { item.onUnmount?.(); } catch { /* ignore */ }
-                            try { mountCleanup?.(); } catch { /* ignore */ }
-                            templateCleanup();
-                        });
+                        cleanups.push(_mountComponent(item, anchor.parentNode!, anchor));
                     } else if (isNixTemplate(item)) {
                         cleanups.push(item._render(anchor.parentNode!, anchor));
                     } else if (item != null && item !== false) {
@@ -1191,7 +1167,6 @@ function activateBindings(
                 }
                 innerCleanup = () => cleanups.forEach((c) => c());
             } else {
-                // Primitivo embuelto en función (primera vez o tipo cambiado)
                 textNode = document.createTextNode(String(v));
                 anchor.parentNode!.insertBefore(textNode, anchor);
             }
@@ -1219,33 +1194,43 @@ function activateBindings(
     return { disposes, postMountHooks };
 }
 
+interface TemplateCache {
+    contexts: BindingContext[];
+    tpl: HTMLTemplateElement;
+}
+const _templateCache = new WeakMap<TemplateStringsArray, TemplateCache>();
+
+// =============================================================================
 // --- html`` tag function ---
+// =============================================================================
 
 export function html(
     strings: TemplateStringsArray,
     ...values: unknown[]
 ): NixTemplate {
-    // Build binding contexts using an accumulated string so multiple bindings
-    // within the same tag (e.g. id="${x}" @click=${fn}) are correctly detected.
-    const contexts: BindingContext[] = [];
-    let accumulated = "";
-    for (let i = 0; i < strings.length - 1; i++) {
-        accumulated += strings[i];
-        const ctx = detectContext(accumulated);
-        contexts.push(ctx);
-        accumulated += "__nix__";
+    let cached = _templateCache.get(strings);
+    if (!cached) {
+        const contexts: BindingContext[] = [];
+        let accumulated = "";
+        for (let i = 0; i < strings.length - 1; i++) {
+            accumulated += strings[i];
+            contexts.push(detectContext(accumulated));
+            accumulated += "__nix__";
+        }
+        const tpl = document.createElement("template");
+        tpl.innerHTML = buildHTML(strings, contexts);
+        cached = { contexts, tpl };
+        _templateCache.set(strings, cached);
     }
 
-    const rawHTML = buildHTML(strings, contexts);
+    const { contexts, tpl } = cached;
 
     function _render(parent: Node, before: Node | null): () => void {
-        const tpl = document.createElement("template");
-        tpl.innerHTML = rawHTML;
-        const fragment = tpl.content;
+        const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
         const { disposes, postMountHooks } = activateBindings(fragment, contexts, values);
 
-        const startMarker = document.createComment("nix-scope");
+        const startMarker = document.createComment(COMMENT.SCOPE);
         parent.insertBefore(startMarker, before);
 
         let child = fragment.firstChild;
@@ -1255,12 +1240,13 @@ export function html(
             child = next;
         }
 
-        // Lifecycle: fire onMount after DOM insertion
         postMountHooks.forEach((cb) => cb());
 
         return () => {
-            disposes.forEach((d) => d());
-            // Remove all nodes between startMarker and before
+            for (let i = disposes.length - 1; i >= 0; i--) {
+                const dispose = disposes[i];
+                dispose();
+            }
             let node = startMarker.nextSibling;
             while (node && node !== before) {
                 const next = node.nextSibling;
