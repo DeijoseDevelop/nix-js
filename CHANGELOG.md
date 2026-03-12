@@ -2,11 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
-## v1.5.5
+## v1.5.6
 
 Benchmark results (1,000 rows, js-framework-benchmark style — compared against v1.3.0 stable baseline):
 
-| Operation | v1.3.0 JS Only | v1.5.5 JS Only | Δ JS | v1.3.0 Full Render | v1.5.5 Full Render | Δ Full |
+| Operation | v1.3.0 JS Only | v1.5.6 JS Only | Δ JS | v1.3.0 Full Render | v1.5.6 Full Render | Δ Full |
 |---|---|---|---|---|---|---|
 | Create 1,000 | 220.20 ms | 90.10 ms | **–59%** | 603.90 ms | 187.00 ms | **–69%** |
 | Replace 1,000 | 286.50 ms | 87.80 ms | **–69%** | 567.50 ms | 170.80 ms | **–70%** |
