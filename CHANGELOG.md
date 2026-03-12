@@ -2,6 +2,61 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.5
+
+Benchmark results (1,000 rows, js-framework-benchmark style — compared against v1.3.0 stable baseline):
+
+| Operation | v1.3.0 JS Only | v1.5.5 JS Only | Δ JS | v1.3.0 Full Render | v1.5.5 Full Render | Δ Full |
+|---|---|---|---|---|---|---|
+| Create 1,000 | 220.20 ms | 90.10 ms | **–59%** | 603.90 ms | 187.00 ms | **–69%** |
+| Replace 1,000 | 286.50 ms | 87.80 ms | **–69%** | 567.50 ms | 170.80 ms | **–70%** |
+| Update 1/10 | 0.80 ms | 0.50 ms | **–37%** | 40.10 ms | 32.10 ms | **–20%** |
+| Select | 0.30 ms | 0.20 ms | **–33%** | 21.60 ms | 22.40 ms | ~flat |
+| Swap (2↔998) | 53.30 ms | 17.30 ms | **–68%** | 380.50 ms | 131.10 ms | **–66%** |
+| Clear 1,000 | 43.20 ms | 23.40 ms | **–46%** | 307.50 ms | 31.00 ms | **–90%** |
+| Delete (1 row) | 1.90 ms | 0.60 ms | **–68%** | 44.80 ms | 35.50 ms | **–21%** |
+
+Every single operation improved. The most dramatic gains are in bulk operations — Clear Full Render dropped from 307 ms to 31 ms, and Create/Replace/Swap all shed roughly 65–70% of their original cost.
+
+- **perf(template): O(depth) marker resolution with automatic fallback** — `TemplateCache` now stores pre-computed `childNodes` index paths (`commentMarkers`, `attrMarkers`) from the `DocumentFragment` root to each marker, calculated once via `_computePath` when a template literal is first encountered. Every render clone resolves markers via `_walkPath` — a plain `node = node.childNodes[step]` loop — eliminating TreeWalker and `querySelectorAll` from the per-row hot path entirely. When the browser inserts implicit structural nodes (`<tbody>`, SVG whitespace, etc.) that shift indices, `_walkPath` returns `null` and a lazy `_lazyScanComments` / `_lazyScanAttrs` fallback activates transparently; the result is memoized per clone so the scan runs at most once regardless of binding count. Primary driver of the Create/Replace improvements: **–59% / –69% JS-only, –69% / –70% Full Render**.
+- **perf(template): bulk keyed-list clear via `Range.deleteContents()`** — a `<!--nix-kz-->` zone marker is inserted once before the first keyed entry. Clearing all rows issues a single `Range.deleteContents()` instead of N individual `removeChild` calls. Reactive effect cleanup still runs per-entry to unsubscribe signals — DOM ops inside are no-ops since nodes are already detached. **Clear JS-only: 43.20 ms → 23.40 ms (–46%). Clear Full Render: 307.50 ms → 31.00 ms (–90%).**
+- **perf(template): `DocumentFragment` move buffer for keyed reorder** — nodes are extracted from the live DOM via `frag.appendChild` and reinserted with a single `insertBefore`, replacing a `Node[]` array + N individual `insertBefore` calls. Primary driver of the Swap improvement: **JS-only 53.30 ms → 17.30 ms (–68%). Full Render 380.50 ms → 131.10 ms (–66%).**
+- **perf(template): `Set`-based event modifier lookup** — a `Set<string>` is built once at listener registration; per-fire checks (`prevent`, `stop`, `self`, etc.) use `Set.has` O(1) instead of `Array.includes` O(n). Contributes to Update and Delete JS improvements.
+- **perf(template): template parse cache via `WeakMap<TemplateStringsArray>`** — HTML parsing, `buildHTML`, and context detection run once per unique `html\`\`` call site. Subsequent renders clone via `tpl.content.cloneNode(true)`.
+- **refactor(template): `_mountComponent*` helper extraction** — `_mountComponent`, `_mountComponentSilent`, `_mountComponentWithCtx`, and `_mountComponentDeferred` replace ~9 inline repetitions of the push/pop context + lifecycle pattern. `createErrorBoundary` retains its inline block to intercept `errored` between render and mount phases.
+- **refactor(template): misc micro-optimisations** — `COMMENT` constants object; `KEntry` promoted to module level; `skipLeading` → `Set<number>`; `KEY_MAP` moved to module level (was recreated per event binding); `_cssMaxDuration` uses `parseFloat(s.trim())`; `_waitTransitionEnd` simplified to `ms > 0 ? ms + 100 : fallbackMs`; loop variable `i` → `idx` in keyed list map.
+
+## v1.5.4-beta.4
+- **fix(template): null-safe `_walkPath` + lazy fallback scan** — the path-based marker lookup introduced in beta.2 crashed on templates where the browser inserts implicit nodes (`<tbody>`, SVG whitespace, etc.) that shift `childNodes` indices between the original template and its clone. `_walkPath` now returns `null` on out-of-bounds access instead of `undefined`-dereferencing. On any miss, a lazy `_lazyScanComments` / `_lazyScanAttrs` fallback runs once per clone (memoized in `fallbackComments` / `fallbackAttrs`) and is used for that binding only. Simple templates continue to use the O(depth) fast path; complex templates with implicit browser nodes fall back transparently with zero behavioural difference.
+
+## v1.5.4-beta.3
+- **fix(template): revert hard path-cache — replaced with null-safe version** — beta.2 path caching caused `Cannot read properties of undefined (reading 'parentNode')` on real-world project templates. Root cause: `_computePath` recorded indices from `tpl.content` after HTML parsing, but `cloneNode(true)` structural fidelity is not guaranteed when the browser inserts implicit nodes. Reverted to safe TreeWalker/querySelectorAll baseline while the null-safe+fallback approach was developed for beta.4.
+
+## v1.5.4-beta.2
+- **perf(template): pre-computed marker paths eliminate TreeWalker and querySelectorAll from hot render path** — `TemplateCache` now stores `commentMarkers: Map<number, CachedCommentMarker>` and `attrMarkers: Map<number, CachedAttrMarker>`. On first encounter of a template literal, `_computePath` records the `childNodes` index route from the `DocumentFragment` root to each marker node. Every subsequent render clone reaches its markers via `_walkPath` — a simple loop of `node = node.childNodes[step]` — in O(depth) instead of O(all nodes). TreeWalker and querySelectorAll are eliminated from the 1,000-row render hot path entirely. *(Note: this version contained a crash on templates with browser-inserted implicit nodes — fixed in beta.3/beta.4.)*
+
+## v1.5.4-beta.1
+- **perf(template): bulk keyed-list clear + `DocumentFragment` move buffer + `Set` modifier lookup** — three independent optimisations landed together:
+  - `Range.deleteContents()` bulk clear: a `<!--nix-kz-->` zone marker is inserted once before the first keyed entry. Clearing all rows issues one browser operation instead of N `removeChild` calls. JS-only Clear benchmark: **157 ms → 21 ms (–87%)**.
+  - `DocumentFragment` as move buffer for keyed reorder: nodes are extracted from the live DOM via `frag.appendChild` and reinserted with a single `insertBefore`, replacing a `Node[]` array + N individual `insertBefore` calls. Swap JS-only: **20 ms → 18.6 ms**.
+  - `Set`-based modifier lookup: `new Set(mods)` is built once at listener registration; per-fire checks use `Set.has` (O(1)) instead of `Array.includes` (O(n)).
+
+## v1.5.4-beta.0
+- **perf(template): template parse cache + `_mountComponent*` helper extraction** — establishes the performance baseline for the v1.5.4 optimisation series.
+  - `WeakMap<TemplateStringsArray, TemplateCache>` cache: HTML parsing, `buildHTML`, and context detection run once per unique `html\`\`` call site. Subsequent renders clone via `tpl.content.cloneNode(true)`. JS-only Create baseline recorded at **~86 ms** (down from ~78 ms before cache due to TreeWalker/querySelectorAll still running per clone — addressed in beta.2).
+  - Extracted `_mountComponent`, `_mountComponentSilent`, `_mountComponentWithCtx`, and `_mountComponentDeferred` helpers, replacing ~9 inline repetitions of the push/pop context + lifecycle pattern. `createErrorBoundary` retains its inline block intentionally to intercept `errored` between render and mount phases.
+  - Misc micro-opts: `COMMENT` constants object; `KEntry` to module level; `skipLeading` → `Set<number>`; `KEY_MAP` to module level (was recreated per event binding); `_cssMaxDuration` uses `parseFloat(s.trim())`; `_waitTransitionEnd` simplified; loop variable `i` → `idx` in keyed list map.
+
+## v1.5.4
+- **perf(template): bulk keyed-list clear via `Range.deleteContents()`** — clearing all rows (e.g. "Limpiar todo") now issues a single browser DOM operation instead of N individual `removeChild` calls. A `<!--nix-kz-->` zone marker is inserted once before the first keyed entry; on full clear a `Range` spanning that marker to the anchor removes all row DOM atomically. Reactive effect cleanup (`entry.cleanup()`) still runs per-entry to unsubscribe signals — DOM ops inside become no-ops since nodes are already detached. **Clear: 157 ms → 21 ms (–87%).**
+- **perf(template): `DocumentFragment` as move buffer for keyed reorder** — when a keyed entry needs to move (swap, sort), nodes are now collected into a detached `DocumentFragment` via `appendChild` (which extracts them from the live DOM) and reinserted with a single `insertBefore`. Replaces the previous pattern of allocating an intermediate `Node[]` array and issuing N individual `insertBefore` calls. Eliminates the array allocation and halves DOM operations per move. **Swap JS time: 20 ms → 18.6 ms.**
+- **perf(template): `Set`-based modifier lookup in event handlers** — event modifier checks (`prevent`, `stop`, `self`, etc.) previously used `Array.prototype.includes` (O(n)) on every event fire. A `Set<string>` is now built once at listener registration time, reducing per-fire modifier checks to O(1) `Set.has` calls.
+
+## v1.5.3
+- **perf(template): template cache via `WeakMap<TemplateStringsArray>`** — tagged template literals always return the same `strings` reference per call site. HTML parsing (`innerHTML`), context detection, and `buildHTML` string construction now run only once per unique `html\`\`` literal. Subsequent renders clone the cached `HTMLTemplateElement` via `tpl.content.cloneNode(true)` instead of creating a new element and re-parsing HTML.
+- **refactor(template): extract four `_mountComponent*` helpers** — replaced ~9 repetitions of the push/pop context + lifecycle pattern with dedicated helpers: `_mountComponent`, `_mountComponentSilent`, `_mountComponentWithCtx`, and `_mountComponentDeferred`. `createErrorBoundary` intentionally keeps its inline block to intercept the `errored` flag between render and mount phases.
+- **refactor(template): misc micro-optimizations** — `COMMENT` constants object for all comment marker strings; `KEntry` interface promoted to module level; `skipLeading` changed from `Array` to `Set<number>`; `KEY_MAP` moved to module level (was recreated per event binding); `_cssMaxDuration` uses `parseFloat(s.trim())`; `_waitTransitionEnd` wait calculation simplified to `ms > 0 ? ms + 100 : fallbackMs`; loop variable shadowing `i` → `idx` in keyed list map.
+
 ## v1.3.0
 - **feat(router): robust base path support** — the router now natively supports running under a sub-path prefix (like GitHub Pages).
   - Automatically detects the `<base href>` tag injected by Vite when `base: "/slug/"` is configured.

@@ -17,6 +17,7 @@ const COMMENT = {
     TRANSITION: "nix-t",
     KEYED_START: "nix-ks",
     KEYED_END: "nix-ke",
+    KEYED_ZONE: "nix-kz",  // Marks the start of the entire keyed list zone
 } as const;
 
 // --- Public types ---
@@ -1057,6 +1058,10 @@ function activateBindings(
         type Key = string | number;
         let keyedState: Map<Key, KEntry> | null = null;
 
+        // Zone marker: inserted once, before all keyed entries.
+        // Enables a single Range.deleteContents() to bulk-clear all row DOM.
+        let keyedZoneStart: Comment | null = null;
+
         const ctxSnapshot = _captureContextSnapshot();
 
         const dispose = effect(() => {
@@ -1094,14 +1099,44 @@ function activateBindings(
             } else if (isNixComponent(v)) {
                 innerCleanup = _mountComponentWithCtx(v, anchor.parentNode!, anchor, ctxSnapshot);
             } else if (isKeyedList(v)) {
-                if (!keyedState) keyedState = new Map();
+
+                // ── Initialize keyed state + zone marker on first render ──────────
+                if (!keyedState) {
+                    keyedState = new Map();
+                    keyedZoneStart = document.createComment(COMMENT.KEYED_ZONE);
+                    anchor.parentNode!.insertBefore(keyedZoneStart, anchor);
+                }
+
                 const parent = anchor.parentNode!;
                 const newKeyOrder: Key[] = v.items.map(
                     (item, idx) => v.keyFn(item as never, idx)
                 );
                 const newKeySet = new Set(newKeyOrder);
 
-                // 1. Remove entries no longer in the new list
+                // ── OPTIMIZATION 1: Bulk clear when all items are removed ─────────
+                //
+                // When the new list is empty, instead of N individual removeChild
+                // calls (one per node per row), a single Range.deleteContents()
+                // removes all keyed DOM at once in one browser operation.
+                //
+                // entry.cleanup() still runs per entry to dispose reactive effects
+                // (stop signal subscriptions). Since the DOM is already detached at
+                // that point, every `parentNode?.removeChild()` inside each cleanup
+                // becomes a no-op via optional chaining — so there is no DOM cost.
+                if (newKeySet.size === 0 && keyedState.size > 0) {
+                    const range = document.createRange();
+                    range.setStartAfter(keyedZoneStart!);
+                    range.setEndBefore(anchor);
+                    range.deleteContents(); // single DOM operation for all 1000 rows
+
+                    for (const entry of keyedState.values()) {
+                        entry.cleanup(); // disposes effects; DOM ops are no-ops
+                    }
+                    keyedState.clear();
+                    return;
+                }
+
+                // ── 1. Remove entries no longer in the new list ──────────────────
                 for (const [key, entry] of keyedState) {
                     if (!newKeySet.has(key)) {
                         entry.cleanup();
@@ -1116,7 +1151,7 @@ function activateBindings(
                     }
                 }
 
-                // 2. Insert/move items in reverse order using insertBefore
+                // ── 2. Insert/move items in reverse order ─────────────────────────
                 let insertionPoint: Node = anchor;
                 for (let idx = newKeyOrder.length - 1; idx >= 0; idx--) {
                     const key = newKeyOrder[idx];
@@ -1125,19 +1160,30 @@ function activateBindings(
                     if (keyedState.has(key)) {
                         const entry = keyedState.get(key)!;
                         if (entry.end.nextSibling !== insertionPoint) {
-                            const nodesToMove: Node[] = [];
+                            // OPTIMIZATION 2: DocumentFragment as move buffer.
+                            //
+                            // Collects all nodes of the entry (start…end inclusive)
+                            // into a detached DocumentFragment, then reinserts them
+                            // with a single insertBefore.
+                            //
+                            // vs. the previous approach (array + N insertBefore calls):
+                            //   Before: allocate Node[], push N times, N insertBefore
+                            //   After:  N appendChild to frag (extracts from DOM), 1 insertBefore
+                            //
+                            // Net: eliminates the array allocation and halves DOM ops.
+                            const frag = document.createDocumentFragment();
                             let node: Node = entry.start;
                             while (true) {
-                                nodesToMove.push(node);
-                                if (node === entry.end) break;
-                                node = node.nextSibling!;
+                                const next = node === entry.end ? null : node.nextSibling!;
+                                frag.appendChild(node); // extracts node from live DOM
+                                if (!next) break;
+                                node = next;
                             }
-                            for (const n of nodesToMove) {
-                                parent.insertBefore(n, insertionPoint);
-                            }
+                            parent.insertBefore(frag, insertionPoint); // single reinsert
                         }
                         insertionPoint = entry.start;
                     } else {
+                        // New item — render and register
                         const endMarker = document.createComment(COMMENT.KEYED_END);
                         const startMarker = document.createComment(COMMENT.KEYED_START);
                         parent.insertBefore(endMarker, insertionPoint);
@@ -1186,13 +1232,20 @@ function activateBindings(
                 for (const entry of keyedState.values()) {
                     entry.cleanup();
                 }
+                // keyedZoneStart lives inside the outer template's node range and is
+                // removed by the outer _render cleanup — no explicit remove needed here.
                 keyedState = null;
+                keyedZoneStart = null;
             }
         });
     }
 
     return { disposes, postMountHooks };
 }
+
+// =============================================================================
+// --- Template cache ---
+// =============================================================================
 
 interface TemplateCache {
     contexts: BindingContext[];
@@ -1244,8 +1297,7 @@ export function html(
 
         return () => {
             for (let i = disposes.length - 1; i >= 0; i--) {
-                const dispose = disposes[i];
-                dispose();
+                disposes[i]();
             }
             let node = startMarker.nextSibling;
             while (node && node !== before) {
