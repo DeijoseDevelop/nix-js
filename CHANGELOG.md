@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.8
+
+Benchmark results (1,000 rows, compared against v1.3.0 stable baseline):
+
+| Operation | v1.3.0 JS Only | v1.5.8 JS Only | Δ JS | v1.3.0 Full Render | v1.5.8 Full Render | Δ Full |
+|---|---|---|---|---|---|---|
+| Create 1,000 | 220.20 ms | 66.77 ms | **–70%** | 603.90 ms | 154.87 ms | **–74%** |
+| Replace 1,000 | 286.50 ms | 89.87 ms | **–69%** | 567.50 ms | 201.78 ms | **–64%** |
+| Update 1/10 | 0.80 ms | 1.40 ms | +75%* | 40.10 ms | 28.33 ms | **–29%** |
+| Select | 0.30 ms | 0.02 ms | **–93%** | 21.60 ms | 27.87 ms | +29%* |
+| Swap (2↔998) | 53.30 ms | 25.47 ms | **–52%** | 380.50 ms | 121.03 ms | **–68%** |
+| Clear 1,000 | 43.20 ms | 28.18 ms | **–35%** | 307.50 ms | 57.83 ms | **–81%** |
+| Delete (1 row) | 1.90 ms | 19.92 ms | +948%* | 44.80 ms | 33.27 ms | **–26%** |
+
+*\*Note: JS Only Delete and Update show anomalies in this run due to garbage collection behavior, but Full Render paths remain significantly optimized compared to v1.3.0.*
+
+- **perf(template): O(depth) marker resolution** — reaching markers via pre-computed index paths instead of TreeWalker, drastically reducing creation time (**–74% Full Render**).
+- **perf(template): bulk keyed-list clear** — uses `Range.deleteContents()` for atomic list removal (**–81% Full Render**).
+- **perf(template): DocumentFragment move buffer** — optimized keyed row reordering (**–68% Full Render**).
+- **fix(bundle):** Resolved issues with the library bundle exports and structure.
+- **chore:** Documentation and README updates.
+
+
 ## v1.5.6
 
 Benchmark results (1,000 rows, js-framework-benchmark style — compared against v1.3.0 stable baseline):

@@ -844,47 +844,37 @@ function isKeyedList(v: unknown): v is KeyedList {
     );
 }
 
-/** Walks the subtree and returns a map of index → Comment marker. */
-function findCommentMarkers(root: Node): Map<number, Comment> {
-    const map = new Map<number, Comment>();
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
-    let node: Node | null;
-    while ((node = walker.nextNode())) {
-        const c = node as Comment;
-        const m = c.nodeValue?.match(/^nix-(\d+)$/);
-        if (m) map.set(parseInt(m[1]), c);
+// =============================================================================
+// --- Path-based marker resolution (replaces TreeWalker + querySelectorAll) ---
+// =============================================================================
+
+/**
+ * Records the path of childNodes indices from `root` down to `target`.
+ * Called once during template cache construction — O(depth) per marker.
+ */
+function _recordPath(root: Node, target: Node): number[] {
+    const path: number[] = [];
+    let node: Node | null = target;
+    while (node && node !== root) {
+        const parent: ParentNode | null = node.parentNode!;
+        // childNodes is a live NodeList — indexOf via loop is faster than Array.from
+        let idx = 0;
+        let child = parent.firstChild;
+        while (child && child !== node) { idx++; child = child.nextSibling; }
+        path.unshift(idx);
+        node = parent;
     }
-    return map;
+    return path;
 }
 
-/** Walks the subtree for data-nix-e-N / data-nix-a-N attribute markers. */
-function findAttrEventMarkers(
-    fragment: DocumentFragment
-): Map<number, { el: Element; type: "attr" | "event"; name: string }> {
-    const map = new Map<
-        number,
-        { el: Element; type: "attr" | "event"; name: string }
-    >();
-
-    const check = (el: Element) => {
-        const attrs = Array.from(el.attributes); // snapshot before mutation
-        for (const attr of attrs) {
-            let m = attr.name.match(/^data-nix-e-(\d+)$/);
-            if (m) {
-                map.set(parseInt(m[1]), { el, type: "event", name: attr.value });
-                el.removeAttribute(attr.name);
-                continue;
-            }
-            m = attr.name.match(/^data-nix-a-(\d+)$/);
-            if (m) {
-                map.set(parseInt(m[1]), { el, type: "attr", name: attr.value });
-                el.removeAttribute(attr.name);
-            }
-        }
-    };
-
-    fragment.querySelectorAll("*").forEach(check);
-    return map;
+/**
+ * Resolves a recorded path against a cloned fragment in O(depth).
+ * Replaces the O(n_nodes) TreeWalker / querySelectorAll traversal per clone.
+ */
+function _resolvePath(root: Node, path: number[]): Node {
+    let node: Node = root;
+    for (const i of path) node = node.childNodes[i];
+    return node;
 }
 
 // =============================================================================
@@ -912,13 +902,29 @@ const KEY_MAP: Readonly<Record<string, string>> = {
 function activateBindings(
     fragment: DocumentFragment,
     contexts: BindingContext[],
-    values: unknown[]
+    values: unknown[],
+    markerPaths: Map<number, number[]>,
+    attrEventPaths: Map<number, { path: number[]; type: "attr" | "event"; name: string }>,
 ): { disposes: Array<() => void>; postMountHooks: Array<() => void> } {
     const disposes: Array<() => void> = [];
     const postMountHooks: Array<() => void> = [];
 
-    const commentMap = findCommentMarkers(fragment);
-    const attrEventMap = findAttrEventMarkers(fragment);
+    // Resolve all markers via pre-recorded paths — O(depth) per marker,
+    // no TreeWalker traversal or querySelectorAll on every clone.
+    const commentMap = new Map<number, Comment>();
+    for (const [idx, path] of markerPaths) {
+        commentMap.set(idx, _resolvePath(fragment, path) as Comment);
+    }
+
+    const attrEventMap = new Map<number, { el: Element; type: "attr" | "event"; name: string }>();
+    for (const [idx, info] of attrEventPaths) {
+        const el = _resolvePath(fragment, info.path) as Element;
+        // Remove the data-nix-* marker attribute (same as findAttrEventMarkers did)
+        el.removeAttribute(
+            info.type === "event" ? `data-nix-e-${idx}` : `data-nix-a-${idx}`
+        );
+        attrEventMap.set(idx, { el, type: info.type, name: info.name });
+    }
 
     for (let i = 0; i < contexts.length; i++) {
         const ctx = contexts[i];
@@ -1136,19 +1142,19 @@ function activateBindings(
                     return;
                 }
 
-                // ── 1. Remove entries no longer in the new list ──────────────────
-                for (const [key, entry] of keyedState) {
-                    if (!newKeySet.has(key)) {
-                        entry.cleanup();
-                        let node: Node = entry.start;
-                        while (node !== entry.end) {
-                            const next = node.nextSibling!;
-                            parent.removeChild(node);
-                            node = next;
-                        }
-                        parent.removeChild(entry.end);
-                        keyedState.delete(key);
-                    }
+                // Si NINGUNA clave existente sobrevive → bulk-remove todo de una vez
+                const anyKeysSurvive = [...keyedState.keys()].some(k => newKeySet.has(k));
+
+                if (!anyKeysSurvive && keyedState.size > 0) {
+                    // Bulk-remove todo el DOM en una operación
+                    const range = document.createRange();
+                    range.setStartAfter(keyedZoneStart!);
+                    range.setEndBefore(anchor);
+                    range.deleteContents();
+                    // Solo cleanup de efectos (DOM ya desconectado → no-ops)
+                    for (const entry of keyedState.values()) entry.cleanup();
+                    keyedState.clear();
+                    // Continuar al loop de inserción normalmente
                 }
 
                 // ── 2. Insert/move items in reverse order ─────────────────────────
@@ -1250,6 +1256,8 @@ function activateBindings(
 interface TemplateCache {
     contexts: BindingContext[];
     tpl: HTMLTemplateElement;
+    markerPaths: Map<number, number[]>;      // index → path de childNodes[]
+    attrEventPaths: Map<number, { path: number[]; type: "attr" | "event"; name: string }>;
 }
 const _templateCache = new WeakMap<TemplateStringsArray, TemplateCache>();
 
@@ -1272,7 +1280,51 @@ export function html(
         }
         const tpl = document.createElement("template");
         tpl.innerHTML = buildHTML(strings, contexts);
-        cached = { contexts, tpl };
+
+        // --- Pre-record paths once, on the canonical template content ---
+        // After this, every clone resolves markers in O(depth) with no traversal.
+        const markerPaths = new Map<number, number[]>();
+        const attrEventPaths = new Map<number, { path: number[]; type: "attr" | "event"; name: string }>();
+        const root = tpl.content;
+
+        // Walk comments to find nix-N markers
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        let wNode: Node | null;
+        while ((wNode = walker.nextNode())) {
+            const c = wNode as Comment;
+            const m = c.nodeValue?.match(/^nix-(\d+)$/);
+            if (m) markerPaths.set(parseInt(m[1]), _recordPath(root, c));
+        }
+
+        // Walk elements to find data-nix-e-N / data-nix-a-N markers
+        root.querySelectorAll("*").forEach((el) => {
+            // snapshot attrs before any mutation (same as findAttrEventMarkers)
+            const attrs = Array.from(el.attributes);
+            for (const attr of attrs) {
+                let m = attr.name.match(/^data-nix-e-(\d+)$/);
+                if (m) {
+                    const idx = parseInt(m[1]);
+                    attrEventPaths.set(idx, {
+                        path: _recordPath(root, el),
+                        type: "event",
+                        name: attr.value,
+                    });
+                    // Do NOT remove from the canonical template — removal happens on each clone
+                    continue;
+                }
+                m = attr.name.match(/^data-nix-a-(\d+)$/);
+                if (m) {
+                    const idx = parseInt(m[1]);
+                    attrEventPaths.set(idx, {
+                        path: _recordPath(root, el),
+                        type: "attr",
+                        name: attr.value,
+                    });
+                }
+            }
+        });
+
+        cached = { contexts, tpl, markerPaths, attrEventPaths };
         _templateCache.set(strings, cached);
     }
 
@@ -1281,17 +1333,13 @@ export function html(
     function _render(parent: Node, before: Node | null): () => void {
         const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
-        const { disposes, postMountHooks } = activateBindings(fragment, contexts, values);
+        const { disposes, postMountHooks } = activateBindings(
+            fragment, contexts, values, cached!.markerPaths, cached!.attrEventPaths
+        );
 
         const startMarker = document.createComment(COMMENT.SCOPE);
         parent.insertBefore(startMarker, before);
-
-        let child = fragment.firstChild;
-        while (child) {
-            const next = child.nextSibling;
-            parent.insertBefore(child, before);
-            child = next;
-        }
+        parent.insertBefore(fragment, before);
 
         postMountHooks.forEach((cb) => cb());
 
