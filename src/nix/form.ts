@@ -86,6 +86,16 @@ export function extendValidators<E extends Record<string, (...args: any[]) => Va
     return { ...base, ...extensions };
 }
 
+// --- validateOn ---
+
+/**
+ * Controls when validation errors become visible.
+ * - `"blur"` — after the field loses focus (default)
+ * - `"input"` — as soon as the user types
+ * - `"submit"` — only after the first submit attempt
+ */
+export type ValidateOn = "blur" | "input" | "submit";
+
 // --- FieldState ---
 
 /** Public state of a single form field. */
@@ -94,7 +104,7 @@ export interface FieldState<T> {
     value: Signal<T>;
     /**
      * Current error message, or null.
-     * Only non-null after the field has been touched (blur) or dirtied (input).
+     * Visibility depends on `validateOn` option.
      */
     readonly error: Signal<string | null>;
     /** True after the input has lost focus at least once. */
@@ -112,6 +122,10 @@ export interface FieldState<T> {
      * The error clears automatically when the user next edits the field.
      */
     _setExternalError(msg: string | null): void;
+    /** @internal — force error visibility (e.g., on submit). */
+    _forceVisible(): void;
+    /** @internal — dispose computed signals. */
+    _dispose(): void;
 }
 
 // --- useField ---
@@ -119,19 +133,28 @@ export interface FieldState<T> {
 /** Creates a standalone reactive form field with optional validators. */
 export function useField<T>(
     initialValue: T,
-    validators: Validator<T>[] = []
+    fieldValidators: Validator<T>[] = [],
+    validateOn: ValidateOn = "blur",
 ): FieldState<T> {
     const value = signal(initialValue);
     const touched = signal(false);
     const dirty = signal(false);
     const _ext = signal<string | null>(null);
+    // Tracks whether the form has been submitted at least once (injected externally)
+    const _submitted = signal(false);
 
-    // Computed error: external override takes priority, then built-in validators.
-    // Errors are hidden until the field is touched or dirty.
     const error = computed<string | null>(() => {
         if (_ext.value) return _ext.value;
-        if (!touched.value && !dirty.value) return null;
-        for (const v of validators) {
+
+        // Determine whether errors should be visible yet based on validateOn
+        const isVisible =
+            validateOn === "input" ? dirty.value || touched.value :
+                validateOn === "submit" ? _submitted.value :
+            /* blur (default) */      touched.value;
+
+        if (!isVisible) return null;
+
+        for (const v of fieldValidators) {
             const e = v(value.value);
             if (e) return e;
         }
@@ -149,7 +172,7 @@ export function useField<T>(
     const onInput = (e: Event): void => {
         value.value = coerce(e.target);
         dirty.value = true;
-        _ext.value = null; // clear server-side error when user re-types
+        _ext.value = null;
     };
 
     const onBlur = (): void => { touched.value = true; };
@@ -159,14 +182,134 @@ export function useField<T>(
         touched.value = false;
         dirty.value = false;
         _ext.value = null;
+        _submitted.value = false;
     }
 
     function _setExternalError(msg: string | null): void {
         _ext.value = msg;
-        if (msg) touched.value = true; // force error visibility
+        if (msg) touched.value = true;
     }
 
-    return { value, error, touched, dirty, onInput, onBlur, reset, _setExternalError };
+    function _forceVisible(): void {
+        touched.value = true;
+        _submitted.value = true;
+    }
+
+    function _dispose(): void {
+        error.dispose();
+    }
+
+    return { value, error, touched, dirty, onInput, onBlur, reset, _setExternalError, _forceVisible, _dispose };
+}
+
+// --- FieldArrayState ---
+
+/** Public state of a field array (dynamic list of field groups). */
+export interface FieldArrayState<T extends Record<string, unknown>> {
+    /** Reactive list of field group states. */
+    readonly fields: Signal<Array<{ [K in keyof T]: FieldState<T[K]> }>>;
+    /** Appends a new item to the end of the array. */
+    append(value: T): void;
+    /** Removes the item at the given index. */
+    remove(index: number): void;
+    /**
+     * Moves an item from `from` to `to` index.
+     * Items between the two positions shift to fill the gap.
+     */
+    move(from: number, to: number): void;
+    /** Replaces the item at the given index with new values. */
+    replace(index: number, value: T): void;
+    /** Number of items in the array. Reactive. */
+    readonly length: Signal<number>;
+    /** Resets the array to its initial value. */
+    reset(): void;
+    /** @internal */
+    _dispose(): void;
+}
+
+/**
+ * Creates a reactive array of field groups for dynamic list forms.
+ *
+ * @example
+ * const items = useFieldArray([{ name: "" }], {
+ *     name: [required()],
+ * });
+ * items.append({ name: "nuevo" });
+ * items.remove(0);
+ */
+export function useFieldArray<T extends Record<string, unknown>>(
+    initialItems: T[],
+    fieldValidators: { [K in keyof T]?: Validator<T[K]>[] } = {},
+    validateOn: ValidateOn = "blur",
+): FieldArrayState<T> {
+    function makeGroup(item: T): { [K in keyof T]: FieldState<T[K]> } {
+        const group = {} as { [K in keyof T]: FieldState<T[K]> };
+        for (const key in item) {
+            const vs = (fieldValidators[key] ?? []) as Validator<T[typeof key]>[];
+            (group as Record<string, unknown>)[key] = useField(item[key], vs, validateOn);
+        }
+        return group;
+    }
+
+    const fields = signal<Array<{ [K in keyof T]: FieldState<T[K]> }>>(
+        initialItems.map(makeGroup)
+    );
+
+    const length = computed(() => fields.value.length);
+
+    function append(value: T): void {
+        fields.value = [...fields.value, makeGroup(value)];
+    }
+
+    function remove(index: number): void {
+        const current = fields.value;
+        if (index < 0 || index >= current.length) return;
+        // Dispose computed signals of the removed group before discarding
+        for (const key in current[index]) {
+            current[index][key]._dispose();
+        }
+        fields.value = current.filter((_, i) => i !== index);
+    }
+
+    function move(from: number, to: number): void {
+        const current = [...fields.value];
+        if (
+            from < 0 || from >= current.length ||
+            to < 0 || to >= current.length ||
+            from === to
+        ) return;
+        const [item] = current.splice(from, 1);
+        current.splice(to, 0, item);
+        fields.value = current;
+    }
+
+    function replace(index: number, value: T): void {
+        const current = [...fields.value];
+        if (index < 0 || index >= current.length) return;
+        // Dispose old group before replacing
+        for (const key in current[index]) {
+            current[index][key]._dispose();
+        }
+        current[index] = makeGroup(value);
+        fields.value = current;
+    }
+
+    function reset(): void {
+        // Dispose all current groups
+        for (const group of fields.value) {
+            for (const key in group) group[key]._dispose();
+        }
+        fields.value = initialItems.map(makeGroup);
+    }
+
+    function _dispose(): void {
+        for (const group of fields.value) {
+            for (const key in group) group[key]._dispose();
+        }
+        length.dispose();
+    }
+
+    return { fields, append, remove, move, replace, length, reset, _dispose };
 }
 
 // --- FormState ---
@@ -187,12 +330,19 @@ export interface FormState<T extends Record<string, unknown>> {
     readonly valid: Signal<boolean>;
     /** True when at least one field has been modified. */
     readonly dirty: Signal<boolean>;
+    /** True when at least one field has been touched (lost focus). */
+    readonly touched: Signal<boolean>;
+    /** True while the submit callback is executing (async-safe). */
+    readonly isSubmitting: Signal<boolean>;
+    /** Number of times the form has been submitted (including failed validations). */
+    readonly submitCount: Signal<number>;
     /**
      * Wraps a submit callback. Returned handler:
      * 1. Calls `e.preventDefault()`
-     * 2. Touches all fields (revealing validation errors)
+     * 2. Increments `submitCount` and marks all fields as visible
      * 3. Runs `options.validate` if provided (Zod, etc.)
      * 4. Only calls `fn(values)` if all validations pass
+     * 5. Manages `isSubmitting` across async callbacks
      */
     handleSubmit(fn: (values: T) => void | Promise<void>): (e: Event) => void;
     /** Reset all fields to their initial values. */
@@ -200,16 +350,25 @@ export interface FormState<T extends Record<string, unknown>> {
     /**
      * Inject external errors (e.g., from a server response) into specific fields.
      * Each field's error clears automatically the next time the user edits it.
-     *
-     * @example
-     * form.setErrors({ email: "Email already in use" });
      */
     setErrors(errors: FieldErrors<T>): void;
+    /**
+     * Disposes all internal computed signals.
+     * Call in `onUnmount` when the form lives inside a component.
+     */
+    dispose(): void;
 }
 
 export interface FormOptions<T extends Record<string, unknown>> {
     /** Per-field built-in validators. */
     validators?: { [K in keyof T]?: Validator<T[K]>[] };
+    /**
+     * Controls when validation errors become visible.
+     * - `"blur"` — after the field loses focus (default)
+     * - `"input"` — as soon as the user types
+     * - `"submit"` — only after the first submit attempt
+     */
+    validateOn?: ValidateOn;
     /**
      * Optional schema-level validator — runs on submit after built-in validators pass.
      * Return `null` / `undefined` if valid, or a field→error map if not.
@@ -224,18 +383,6 @@ export interface FormOptions<T extends Record<string, unknown>> {
      *     Object.entries(r.error.flatten().fieldErrors)
      *           .map(([k, v]) => [k, v?.[0]])
      *   );
-     * }
-     * ```
-     *
-     * @example Valibot interop
-     * ```typescript
-     * validate(values) {
-     *   const r = safeParse(schema, values);
-     *   if (r.success) return null;
-     *   const errs: Record<string, string> = {};
-     *   for (const issue of r.issues)
-     *     if (issue.path?.[0]?.key) errs[issue.path[0].key as string] = issue.message;
-     *   return errs;
      * }
      * ```
      */
@@ -254,11 +401,16 @@ export function createForm<T extends Record<string, unknown>>(
     initialValues: T,
     options: FormOptions<T> = {}
 ): FormState<T> {
+    const validateOn: ValidateOn = options.validateOn ?? "blur";
+
     const fields = {} as { [K in keyof T]: FieldState<T[K]> };
     for (const key in initialValues) {
-        const validators = (options.validators?.[key] ?? []) as Validator<T[typeof key]>[];
-        (fields as Record<string, unknown>)[key] = useField(initialValues[key], validators);
+        const vs = (options.validators?.[key] ?? []) as Validator<T[typeof key]>[];
+        (fields as Record<string, unknown>)[key] = useField(initialValues[key], vs, validateOn);
     }
+
+    const isSubmitting = signal(false);
+    const submitCount = signal(0);
 
     const values = computed<T>(() => {
         const r = {} as T;
@@ -285,24 +437,42 @@ export function createForm<T extends Record<string, unknown>>(
         return false;
     });
 
+    const touched = computed<boolean>(() => {
+        for (const k in fields) if (fields[k].touched.value) return true;
+        return false;
+    });
+
     function setErrors(errs: FieldErrors<T>): void {
         for (const k in errs) fields[k]?._setExternalError(errs[k] ?? null);
     }
 
     function reset(): void {
         for (const k in fields) fields[k].reset();
+        isSubmitting.value = false;
+        submitCount.value = 0;
+    }
+
+    function dispose(): void {
+        values.dispose();
+        errors.dispose();
+        valid.dispose();
+        dirty.dispose();
+        touched.dispose();
+        for (const k in fields) fields[k]._dispose();
     }
 
     function handleSubmit(fn: (values: T) => void | Promise<void>) {
         return (e: Event): void => {
             e.preventDefault();
 
-            // Touch all fields so validators become visible
-            for (const k in fields) fields[k].touched.value = true;
+            submitCount.value++;
+
+            // Force error visibility on all fields regardless of validateOn
+            for (const k in fields) fields[k]._forceVisible();
 
             const currentValues = values.value;
 
-            // Run schema-level validator (Zod, Valibot, etc.) first
+            // Run schema-level validator (Zod, Valibot, etc.)
             if (options.validate) {
                 const ext = options.validate(currentValues);
                 if (ext) {
@@ -320,12 +490,36 @@ export function createForm<T extends Record<string, unknown>>(
                 }
             }
 
-            // Check built-in validators (already computed via touched=true)
+            // Check built-in validators
             for (const k in fields) if (fields[k].error.value) return;
 
-            fn(currentValues);
+            // All validations passed — call the callback
+            const result = fn(currentValues);
+
+            if (result instanceof Promise) {
+                isSubmitting.value = true;
+
+                result
+                    .finally(() => {
+                        isSubmitting.value = false;
+                    })
+                    .catch(() => { });
+            }
         };
     }
 
-    return { fields, values, errors, valid, dirty, handleSubmit, reset, setErrors };
+    return {
+        fields,
+        values,
+        errors,
+        valid,
+        dirty,
+        touched,
+        isSubmitting,
+        submitCount,
+        handleSubmit,
+        reset,
+        setErrors,
+        dispose,
+    };
 }

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.0
+
+- **feat(form): dynamic field arrays** — added `useFieldArray` hook for managing lists of fields with `append`, `remove`, `move`, and `replace` operations.
+- **feat(form): validation modes** — added `validateOn` option (`blur`, `input`, `submit`) to `useField` and `createForm` for fine-grained control over when errors appear.
+- **feat(form): enhanced state tracking** — added `isSubmitting`, `submitCount`, and a global `touched` signal to `createForm`.
+- **feat(form): memory management** — added `dispose()` methods to `createForm` and `useFieldArray` to explicitly clean up internal computed signals.
+- **feat(form): validation coercion safety** — improved `onInput` event handling to gracefully handle non-input event targets.
+
 ## v1.6.1
 
 - **fix(template): orphaned markers cleanup** — improved error handling during component mounting to ensure internal markers (`<!--nix-ks-->`/`<!--nix-ke-->`) and their content are properly removed from the DOM if an error occurs.

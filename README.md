@@ -1502,12 +1502,24 @@ html`
 | Property | Type | Description |
 |---|---|---|
 | `value` | `Signal<T>` | Current value — read/write |
-| `error` | `Signal<string\|null>` | Validator error, hidden until touched/dirty |
+| `error` | `Signal<string\|null>` | Validator error, hidden based on `validateOn` |
 | `touched` | `Signal<boolean>` | True after first `blur` |
 | `dirty` | `Signal<boolean>` | True after first `input` |
 | `onInput` | `(e: Event) => void` | Attach to `@input` |
 | `onBlur` | `() => void` | Attach to `@blur` |
 | `reset()` | `() => void` | Restore initial state |
+
+#### `validateOn`
+
+Both `useField` and `createForm` accept a `validateOn` option (`blur` | `input` | `submit`):
+
+- **`blur` (default)**: Errors appear only after the input loses focus.
+- **`input`**: Errors appear as soon as the user starts typing.
+- **`submit`**: Errors are hidden until the first `handleSubmit` call.
+
+```typescript
+const name = useField("", [required()], "input");
+```
 
 ### `createForm()`
 
@@ -1524,11 +1536,12 @@ const form = createForm(
       email: [required(), email()],
       age:   [required(), min(18)],
     },
+    validateOn: "blur", // default
   }
 );
 
 function onSubmit(values: typeof form.values.value) {
-  console.log("Submitted:", values);
+  console.log("Submitted:", values); // only called if valid
 }
 
 html`
@@ -1542,17 +1555,70 @@ html`
       ? html`<p class="err">${form.fields.name.error.value}</p>`
       : null}
 
-    <button type="submit">Submit</button>
-    <button type="button" @click=${() => form.reset()}>Reset</button>
+    <button type="submit" disabled=${() => form.isSubmitting.value}>
+      ${() => form.isSubmitting.value ? "Submitting..." : "Submit"}
+    </button>
   </form>
 `
 ```
 
+| Property | Type | Description |
+|---|---|---|
+| `fields` | `Object` | Map of `FieldState` objects |
+| `values` | `Signal<T>` | Reactive read-only snapshot of all values |
+| `valid` | `Signal<boolean>` | True if no visible errors exist |
+| `dirty` | `Signal<boolean>` | True if any field has been modified |
+| `touched` | `Signal<boolean>` | True if any field has lost focus |
+| `isSubmitting` | `Signal<boolean>` | True while async `handleSubmit` is running |
+| `submitCount` | `Signal<number>` | Number of submit attempts |
+| `handleSubmit(fn)` | `Function` | Wraps submit logic with validation |
+| `setErrors(map)` | `Function` | Inject external/server errors |
+| `reset()` | `Function` | Restore all fields to initial values |
+| `dispose()` | `Function` | Cleanup internal computed signals |
+
 `handleSubmit(fn)` automatically:
 1. Calls `e.preventDefault()`
-2. Touches all fields so errors become visible
+2. Increments `submitCount` and forces error visibility
 3. Runs `options.validate` if provided
 4. Only calls `fn(values)` if all validations pass
+5. Manages `isSubmitting` state for async callbacks
+
+### `useFieldArray()`
+
+For managing dynamic lists of field groups (add, remove, reorder).
+
+```typescript
+import { useFieldArray, required } from "@deijose/nix-js";
+
+const items = useFieldArray(
+  [{ name: "Item 1" }],
+  { name: [required()] }
+);
+
+html`
+  ${() => repeat(
+    items.fields.value,
+    (_, i) => i,
+    (group, i) => html`
+      <div>
+        <input value=${() => group.name.value.value} @input=${group.name.onInput} />
+        <button @click=${() => items.remove(i)}>Remove</button>
+      </div>
+    `
+  )}
+  <button @click=${() => items.append({ name: "" })}>Add Item</button>
+`
+```
+
+| Method / Prop | Description |
+|---|---|
+| `fields` | `Signal<FieldGroup[]>` — the reactive list |
+| `append(val)` | Add item at the end |
+| `remove(idx)` | Remove item by index |
+| `move(from, to)`| Reorder items |
+| `replace(idx, val)` | Swap item at index |
+| `length` | `Signal<number>` — current count |
+| `reset()` | Restore initial items |
 
 ### Built-in validators
 
@@ -2227,8 +2293,9 @@ transition(content, {
 
 | Export | Description |
 |--------|-------------|
-| `useField(initial, validators?)` | Manage a single form field with validation |
-| `createForm(state, options?)` | Manage a full form with submit handling |
+| `useField(initial, vs?, mode?)` | Manage a single form field |
+| `createForm(state, opts?)` | Manage a full form |
+| `useFieldArray(items, vs?, mode?)` | Manage dynamic lists of fields |
 | `required(msg?)` | Non-empty value validator |
 | `minLength(n, msg?)` | Minimum string length validator |
 | `maxLength(n, msg?)` | Maximum string length validator |
