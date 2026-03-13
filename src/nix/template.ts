@@ -1217,6 +1217,25 @@ function activateBindings(
                         insertionPoint = startMarker;
                     }
                 }
+
+                // ── 3. Eliminar los items individuales que ya no existen ──────────
+                for (const [key, entry] of keyedState.entries()) {
+                    if (!newKeySet.has(key)) {
+                        let node: Node | null = entry.start;
+                        // Iterar y eliminar desde el marcador de inicio hasta el de fin
+                        while (node) {
+                            const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
+                            if (node.parentNode) {
+                                node.parentNode.removeChild(node);
+                            }
+                            if (!next) break;
+                            node = next;
+                        }
+                        // Limpiar efectos reactivos y sacar del estado
+                        entry.cleanup();
+                        keyedState.delete(key);
+                    }
+                }
             } else if (Array.isArray(v)) {
                 const cleanups: Array<() => void> = [];
                 for (const item of v) {

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.2
+
+- **fix(template): repeat individual item removal** — fixed a bug in the keyed list (`repeat`) implementation where removing a single item from a collection failed to remove its corresponding DOM nodes, causing performance measurement hangs in benchmarks.
+- **docs: README simplification** — streamlined `README.md` for better readability, focusing on a concise overview and linking to full documentation.
+- **chore: version bump to 1.7.2** — updated library and benchmark dependencies.
+
 ## v1.7.1
 
 - **fix(exports): missing useFieldArray** — added `useFieldArray` and its related types to the public library entry points.
