@@ -105,11 +105,13 @@ export function signal<T>(initialValue: T): Signal<T> {
  * and on disposal.
  */
 export function effect(fn: () => void | (() => void)): () => void {
+    let disposed = false;
     let cleanup: (() => void) | void;
     let deps = new Set<Signal<any>>();
     const capturedErrorHandler = activeErrorHandler;
 
     const execute = () => {
+        if (disposed) return;
         if (typeof cleanup === "function") cleanup();
 
         deps.forEach((dep) => dep._removeSub(execute));
@@ -148,6 +150,7 @@ export function effect(fn: () => void | (() => void)): () => void {
     execute();
 
     return () => {
+        disposed = true;
         if (typeof cleanup === "function") cleanup();
         deps.forEach((dep) => dep._removeSub(execute));
         deps.clear();
@@ -155,14 +158,15 @@ export function effect(fn: () => void | (() => void)): () => void {
 }
 
 /** Derived signal that recalculates when its dependencies change. */
-export function computed<T>(fn: () => T): Signal<T> {
+export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
     const s = new Signal<T>(undefined as T);
-
-    effect(() => {
-        s.value = fn();
-    });
-
-    return s;
+    const disposeEffect = effect(() => { s.value = fn(); });
+    const originalDispose = s.dispose.bind(s);
+    s.dispose = () => {
+        disposeEffect();
+        originalDispose();
+    };
+    return s as Signal<T> & { dispose(): void };
 }
 
 /** Groups multiple signal writes so effects flush once at the end. */

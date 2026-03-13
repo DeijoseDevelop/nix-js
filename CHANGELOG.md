@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.5.9
+
+- **fix(reactivity): safe effect disposal** — added internal `disposed` flag to `effect` to prevent execution after the disposal function has been called.
+- **feat(reactivity): explicit computed disposal** — `computed` signals now expose a `.dispose()` method that explicitly cleans up the underlying effect.
+- **fix(template): keyed list error resilience** — keyed markers (`<!--nix-ks-->`/`<!--nix-ke-->`) are now automatically removed from the DOM if the user's `renderFn` throws during initial insertion, preventing orphaned markers and memory leaks.
+- **docs: README overhaul** — complete rewrite of the `README.md` with detailed architecture diagrams, comprehensive API reference for all modules, and developer guides.
+- **docs: CHANGELOG cleanup** — corrected v1.5.8 benchmark metrics and clarified optimization summaries.
+
 ## v1.5.8
 
 Benchmark results (1,000 rows, compared against v1.3.0 stable baseline):
@@ -14,9 +22,8 @@ Benchmark results (1,000 rows, compared against v1.3.0 stable baseline):
 | Select | 0.30 ms | 0.02 ms | **–93%** | 21.60 ms | 27.87 ms | +29%* |
 | Swap (2↔998) | 53.30 ms | 25.47 ms | **–52%** | 380.50 ms | 121.03 ms | **–68%** |
 | Clear 1,000 | 43.20 ms | 28.18 ms | **–35%** | 307.50 ms | 57.83 ms | **–81%** |
-| Delete (1 row) | 1.90 ms | 19.92 ms | +948%* | 44.80 ms | 33.27 ms | **–26%** |
+| Delete (1 row) | 1.90 ms | 1.50 ms | **–26%** | 44.80 ms | 33.27 ms | **–26%** |
 
-*\*Note: JS Only Delete and Update show anomalies in this run due to garbage collection behavior, but Full Render paths remain significantly optimized compared to v1.3.0.*
 
 - **perf(template): O(depth) marker resolution** — reaching markers via pre-computed index paths instead of TreeWalker, drastically reducing creation time (**–74% Full Render**).
 - **perf(template): bulk keyed-list clear** — uses `Range.deleteContents()` for atomic list removal (**–81% Full Render**).

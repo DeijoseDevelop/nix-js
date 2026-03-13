@@ -1195,10 +1195,18 @@ function activateBindings(
                         parent.insertBefore(endMarker, insertionPoint);
                         parent.insertBefore(startMarker, endMarker);
 
-                        const rendered = v.renderFn(item as never, idx);
-                        const itemCleanup = isNixComponent(rendered)
-                            ? _mountComponentWithCtx(rendered, parent, endMarker, ctxSnapshot)
-                            : rendered._render(parent, endMarker);
+                        let itemCleanup: () => void;
+                        try {
+                            const rendered = v.renderFn(item as never, idx);
+                            itemCleanup = isNixComponent(rendered)
+                                ? _mountComponentWithCtx(rendered, parent, endMarker, ctxSnapshot)
+                                : rendered._render(parent, endMarker);
+                        } catch (e) {
+                            // Limpiar los markers huérfanos
+                            startMarker.remove();
+                            endMarker.remove();
+                            throw e;
+                        }
 
                         keyedState.set(key, { start: startMarker, end: endMarker, cleanup: itemCleanup });
                         insertionPoint = startMarker;
