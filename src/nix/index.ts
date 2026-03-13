@@ -15,6 +15,7 @@ export { provide, inject, createInjectionKey } from "./context";
 export type { InjectionKey } from "./context";
 export {
     useField,
+    useFieldArray,
     createForm,
     required,
     minLength,
@@ -27,4 +28,4 @@ export {
     validators,
     extendValidators,
 } from "./form";
-export type { Validator, FieldState, FieldErrors, FormState, FormOptions, ValidatorsBase } from "./form";
+export type { Validator, ValidateOn, FieldState, FieldArrayState, FieldErrors, FormState, FormOptions, ValidatorsBase } from "./form";

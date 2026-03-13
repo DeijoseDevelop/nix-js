@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.1
+
+- **fix(exports): missing useFieldArray** — added `useFieldArray` and its related types to the public library entry points.
+- **feat(store): added $patch and $state** — included `$patch` and `$state` in the store implementation and documentation.
+
 ## v1.7.0
 
 - **feat(form): dynamic field arrays** — added `useFieldArray` hook for managing lists of fields with `append`, `remove`, `move`, and `replace` operations.

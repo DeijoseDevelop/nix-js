@@ -48,6 +48,7 @@ export {
     createInjectionKey,
     // Forms
     useField,
+    useFieldArray,
     createForm,
     required,
     minLength,
@@ -92,7 +93,9 @@ export type {
     InjectionKey,
     // Forms
     Validator,
+    ValidateOn,
     FieldState,
+    FieldArrayState,
     FieldErrors,
     FormState,
     FormOptions,
