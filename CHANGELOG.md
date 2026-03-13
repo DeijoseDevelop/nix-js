@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.1
+
+- **fix(template): orphaned markers cleanup** — improved error handling during component mounting to ensure internal markers (`<!--nix-ks-->`/`<!--nix-ke-->`) and their content are properly removed from the DOM if an error occurs.
+- **docs: fix documentation URL** — corrected the live demo link in `README.md`.
+
 ## v1.6.0
 
 - **feat(store): state snapshot** — added `$state` property to stores to provide a read-only snapshot of the current state.

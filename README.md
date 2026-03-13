@@ -10,7 +10,7 @@
 
 > A lightweight, fully reactive micro-framework for building modern web UIs — no virtual DOM, no compiler, no build-time magic. Just signals, tagged templates, and pure TypeScript.
 >
-> **[→ Documentation & Live Demo](https://nix-js-landing-c2yq.vercel.app/)**
+> **[→ Documentation & Live Demo](https://nix-js-landing.vercel.app/)**
 
 ---
 

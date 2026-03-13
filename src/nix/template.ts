@@ -1202,7 +1202,12 @@ function activateBindings(
                                 ? _mountComponentWithCtx(rendered, parent, endMarker, ctxSnapshot)
                                 : rendered._render(parent, endMarker);
                         } catch (e) {
-                            // Limpiar los markers huérfanos
+                            let node: Node | null = startMarker.nextSibling;
+                            while (node && node !== endMarker) {
+                                const next = node.nextSibling;
+                                parent.removeChild(node);
+                                node = next;
+                            }
                             startMarker.remove();
                             endMarker.remove();
                             throw e;
