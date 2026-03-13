@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.6.0
+
+- **feat(store): state snapshot** — added `$state` property to stores to provide a read-only snapshot of the current state.
+- **feat(store): batch updates** — added `$patch` method to perform multiple state changes atomically.
+- **feat(store): reserved keys protection** — prevented using reserved names (like `$patch`, `$state`, `$reset`) as state keys or action names.
+
 ## v1.5.9
 
 - **fix(reactivity): safe effect disposal** — added internal `disposed` flag to `effect` to prevent execution after the disposal function has been called.

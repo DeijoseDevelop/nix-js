@@ -993,6 +993,10 @@ const theme = createStore({ dark: true, fontSize: 16 });
 theme.dark.value = false;           // write
 theme.fontSize.value;               // read
 theme.$reset();                     // restore all signals to initial values
+
+// New in v1.6.0:
+theme.$state;                       // reactive read-only snapshot: { dark: false, fontSize: 16 }
+theme.$patch({ dark: true });       // batch update multiple signals
 ```
 
 **With actions:**
@@ -1022,8 +1026,12 @@ cart.items.value;   // []
 // StoreSignals<T> — the signals object
 type StoreSignals<T> = { readonly [K in keyof T]: Signal<T[K]> };
 
-// Store<T, A> — signals + actions + $reset
-type Store<T, A> = StoreSignals<T> & A & { $reset(): void };
+// Store<T, A> — signals + actions + $reset + $patch + $state
+type Store<T, A> = StoreSignals<T> & A & {
+  readonly $state: T;
+  $reset(): void;
+  $patch(partial: Partial<T>): void;
+};
 ```
 
 ---
@@ -2185,7 +2193,7 @@ transition(content, {
 | Export | Description |
 |--------|-------------|
 | `createStore(state, actions?)` | Create a reactive global store |
-| `Store<T, A>` | Type of the returned store |
+| `Store<T, A>` | Type of the returned store. Includes `$state`, `$patch`, and `$reset`. |
 | `StoreSignals<T>` | Signal-mapped type of a state shape |
 
 ### Router
