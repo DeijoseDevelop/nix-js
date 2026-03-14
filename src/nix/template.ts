@@ -857,7 +857,6 @@ function _recordPath(root: Node, target: Node): number[] {
     let node: Node | null = target;
     while (node && node !== root) {
         const parent: ParentNode | null = node.parentNode!;
-        // childNodes is a live NodeList — indexOf via loop is faster than Array.from
         let idx = 0;
         let child = parent.firstChild;
         while (child && child !== node) { idx++; child = child.nextSibling; }
@@ -868,12 +867,17 @@ function _recordPath(root: Node, target: Node): number[] {
 }
 
 /**
- * Resolves a recorded path against a cloned fragment in O(depth).
- * Replaces the O(n_nodes) TreeWalker / querySelectorAll traversal per clone.
+ * Resolves a recorded path against a cloned fragment.
+ * Uses firstChild/nextSibling iteration which is faster than childNodes[i].
  */
 function _resolvePath(root: Node, path: number[]): Node {
     let node: Node = root;
-    for (const i of path) node = node.childNodes[i];
+    for (let i = 0; i < path.length; i++) {
+        const targetIdx = path[i];
+        let current = node.firstChild!;
+        for (let j = 0; j < targetIdx; j++) current = current.nextSibling!;
+        node = current;
+    }
     return node;
 }
 
@@ -903,38 +907,30 @@ function activateBindings(
     fragment: DocumentFragment,
     contexts: BindingContext[],
     values: unknown[],
-    markerPaths: Map<number, number[]>,
-    attrEventPaths: Map<number, { path: number[]; type: "attr" | "event"; name: string }>,
+    pathMap: Array<{ path: number[]; name?: string } | null>,
 ): { disposes: Array<() => void>; postMountHooks: Array<() => void> } {
     const disposes: Array<() => void> = [];
     const postMountHooks: Array<() => void> = [];
 
-    // Resolve all markers via pre-recorded paths — O(depth) per marker,
-    // no TreeWalker traversal or querySelectorAll on every clone.
-    const commentMap = new Map<number, Comment>();
-    for (const [idx, path] of markerPaths) {
-        commentMap.set(idx, _resolvePath(fragment, path) as Comment);
+    // FASE 1: LECTURA. 
+    const resolvedNodes = new Array<Node | null>(contexts.length);
+    for (let i = 0; i < contexts.length; i++) {
+        const info = pathMap[i];
+        resolvedNodes[i] = info ? _resolvePath(fragment, info.path) : null;
     }
 
-    const attrEventMap = new Map<number, { el: Element; type: "attr" | "event"; name: string }>();
-    for (const [idx, info] of attrEventPaths) {
-        const el = _resolvePath(fragment, info.path) as Element;
-        // Remove the data-nix-* marker attribute (same as findAttrEventMarkers did)
-        el.removeAttribute(
-            info.type === "event" ? `data-nix-e-${idx}` : `data-nix-a-${idx}`
-        );
-        attrEventMap.set(idx, { el, type: info.type, name: info.name });
-    }
-
+    // FASE 2: MUTACIÓN
     for (let i = 0; i < contexts.length; i++) {
         const ctx = contexts[i];
         const value = values[i];
+        const info = pathMap[i];
+        if (!info) continue;
+
+        const el = resolvedNodes[i]!;
 
         // --- Events ---
         if (ctx.type === "event") {
-            const info = attrEventMap.get(i);
-            if (!info) continue;
-            const { el, name: eventName } = info;
+            const eventName = info.name!;
             const rawHandler = value as EventListener;
             const mods = ctx.modifiers;
 
@@ -956,7 +952,6 @@ function activateBindings(
                         if (!KEY_MAP[mod] && mod.length === 1 && ke.key.toLowerCase() !== mod) return;
                     }
                 }
-
                 rawHandler(e);
             };
 
@@ -967,20 +962,17 @@ function activateBindings(
 
         // --- Attributes ---
         if (ctx.type === "attr") {
-            const info = attrEventMap.get(i);
-            if (!info) continue;
-            const { el, name: attrName } = info;
+            const attrName = info.name!;
+            const element = el as Element;
 
-            // --- ref attribute ---
             if (attrName === "ref") {
-                (value as NixRef<Element>).el = el as Element;
+                (value as NixRef<Element>).el = element;
                 disposes.push(() => { (value as NixRef<Element>).el = null; });
                 continue;
             }
 
-            // --- show / hide attribute ---
             if (attrName === "show" || attrName === "hide") {
-                const htmlEl = el as HTMLElement;
+                const htmlEl = element as HTMLElement;
                 let originalDisplay: string | null = null;
 
                 if (typeof value === "function") {
@@ -995,40 +987,39 @@ function activateBindings(
                     disposes.push(dispose);
                 } else {
                     const shouldShow = attrName === "show" ? Boolean(value) : !Boolean(value);
-                    if (!shouldShow) (el as HTMLElement).style.display = "none";
+                    if (!shouldShow) htmlEl.style.display = "none";
                 }
                 continue;
             }
 
-            const isDomProp = (attrName === "value" || attrName === "checked" || attrName === "selected") && attrName in el;
+            const isDomProp = (attrName === "value" || attrName === "checked" || attrName === "selected") && attrName in element;
 
             if (typeof value === "function") {
                 const dispose = effect(() => {
                     const v = (value as () => unknown)();
                     if (isDomProp) {
-                        (el as unknown as Record<string, unknown>)[attrName] = v ?? "";
+                        (element as any)[attrName] = v ?? "";
                     } else if (v == null || v === false) {
-                        el.removeAttribute(attrName);
+                        element.removeAttribute(attrName);
                     } else {
-                        el.setAttribute(attrName, String(v));
+                        element.setAttribute(attrName, String(v));
                     }
                 });
                 disposes.push(dispose);
             } else {
                 if (isDomProp) {
-                    (el as unknown as Record<string, unknown>)[attrName] = value ?? "";
+                    (element as any)[attrName] = value ?? "";
                 } else if (value != null && value !== false) {
-                    el.setAttribute(attrName, String(value));
+                    element.setAttribute(attrName, String(value));
                 }
             }
             continue;
         }
 
         // --- Nodes ---
-        const anchor = commentMap.get(i);
+        const anchor = el as Comment;
         if (!anchor) continue;
 
-        // Static value (string/number/NixTemplate/NixComponent)
         if (typeof value !== "function") {
             if (isNixComponent(value)) {
                 _mountComponentDeferred(value, anchor.parentNode!, anchor, postMountHooks, disposes);
@@ -1057,15 +1048,11 @@ function activateBindings(
             continue;
         }
 
-        // Dynamic value (function)
         let textNode: Text | null = null;
         let innerCleanup: (() => void) | null = null;
 
         type Key = string | number;
         let keyedState: Map<Key, KEntry> | null = null;
-
-        // Zone marker: inserted once, before all keyed entries.
-        // Enables a single Range.deleteContents() to bulk-clear all row DOM.
         let keyedZoneStart: Comment | null = null;
 
         const ctxSnapshot = _captureContextSnapshot();
@@ -1073,7 +1060,6 @@ function activateBindings(
         const dispose = effect(() => {
             const v = (value as () => unknown)();
 
-            // Fast path: reactive text update
             if (typeof v === "string" || typeof v === "number") {
                 if (innerCleanup) {
                     innerCleanup();
@@ -1088,7 +1074,6 @@ function activateBindings(
                 return;
             }
 
-            // For other types, always rebuild
             if (textNode) {
                 textNode.parentNode?.removeChild(textNode);
                 textNode = null;
@@ -1099,14 +1084,13 @@ function activateBindings(
             }
 
             if (v == null || v === false) {
-                // Nothing to render
+                // Empty
             } else if (isNixTemplate(v)) {
                 innerCleanup = v._render(anchor.parentNode!, anchor);
             } else if (isNixComponent(v)) {
                 innerCleanup = _mountComponentWithCtx(v, anchor.parentNode!, anchor, ctxSnapshot);
             } else if (isKeyedList(v)) {
 
-                // ── Initialize keyed state + zone marker on first render ──────────
                 if (!keyedState) {
                     keyedState = new Map();
                     keyedZoneStart = document.createComment(COMMENT.KEYED_ZONE);
@@ -1119,121 +1103,121 @@ function activateBindings(
                 );
                 const newKeySet = new Set(newKeyOrder);
 
-                // ── OPTIMIZATION 1: Bulk clear when all items are removed ─────────
-                //
-                // When the new list is empty, instead of N individual removeChild
-                // calls (one per node per row), a single Range.deleteContents()
-                // removes all keyed DOM at once in one browser operation.
-                //
-                // entry.cleanup() still runs per entry to dispose reactive effects
-                // (stop signal subscriptions). Since the DOM is already detached at
-                // that point, every `parentNode?.removeChild()` inside each cleanup
-                // becomes a no-op via optional chaining — so there is no DOM cost.
-                if (newKeySet.size === 0 && keyedState.size > 0) {
-                    const range = document.createRange();
-                    range.setStartAfter(keyedZoneStart!);
-                    range.setEndBefore(anchor);
-                    range.deleteContents(); // single DOM operation for all 1000 rows
-
-                    for (const entry of keyedState.values()) {
-                        entry.cleanup(); // disposes effects; DOM ops are no-ops
+                let anyKeysSurvive = false;
+                if (keyedState.size > 0) {
+                    for (const k of keyedState.keys()) {
+                        if (newKeySet.has(k)) {
+                            anyKeysSurvive = true;
+                            break;
+                        }
                     }
-                    keyedState.clear();
+                }
+
+                // ── 1. Bulking & First render ─────────────────────────────────────
+                if (!anyKeysSurvive) {
+                    if (keyedState.size > 0) {
+                        const range = document.createRange();
+                        range.setStartAfter(keyedZoneStart!);
+                        range.setEndBefore(anchor);
+                        range.deleteContents();
+                        for (const entry of keyedState.values()) entry.cleanup();
+                        keyedState.clear();
+                    }
+
+                    if (newKeyOrder.length > 0) {
+                        const frag = document.createDocumentFragment();
+                        for (let i = 0; i < newKeyOrder.length; i++) {
+                            const key = newKeyOrder[i];
+                            const item = v.items[i];
+                            const start = document.createComment(COMMENT.KEYED_START);
+                            const end = document.createComment(COMMENT.KEYED_END);
+                            
+                            // 1. Adjuntamos AMBOS marcadores al fragmento primero
+                            frag.appendChild(start);
+                            frag.appendChild(end);
+
+                            // 2. Pasamos 'end' en lugar de 'null' para que la limpieza no se desborde
+                            const rendered = v.renderFn(item as never, i);
+                            const cleanup = isNixComponent(rendered)
+                                ? _mountComponentWithCtx(rendered, frag, end, ctxSnapshot)
+                                : rendered._render(frag, end);
+
+                            // La línea frag.appendChild(end); que tenías aquí abajo se elimina
+                            keyedState.set(key, { start, end, cleanup });
+                        }
+                        parent.insertBefore(frag, anchor);
+                    }
                     return;
                 }
 
-                // Si NINGUNA clave existente sobrevive → bulk-remove todo de una vez
-                const anyKeysSurvive = [...keyedState.keys()].some(k => newKeySet.has(k));
-
-                if (!anyKeysSurvive && keyedState.size > 0) {
-                    // Bulk-remove todo el DOM en una operación
-                    const range = document.createRange();
-                    range.setStartAfter(keyedZoneStart!);
-                    range.setEndBefore(anchor);
-                    range.deleteContents();
-                    // Solo cleanup de efectos (DOM ya desconectado → no-ops)
-                    for (const entry of keyedState.values()) entry.cleanup();
-                    keyedState.clear();
-                    // Continuar al loop de inserción normalmente
+                // ── 2. Individual removals ───────────────────────────────────────
+                for (const [key, entry] of keyedState.entries()) {
+                    if (!newKeySet.has(key)) {
+                        entry.cleanup(); 
+                        // Fix de memoria O(1) pero iterativo en el DOM para evitar fugas
+                        let node: Node | null = entry.start;
+                        while (node) {
+                            const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
+                            node.parentNode?.removeChild(node);
+                            if (!next) break;
+                            node = next;
+                        }
+                        keyedState.delete(key);
+                    }
                 }
 
-                // ── 2. Insert/move items in reverse order ─────────────────────────
+                // ── 3. Insert/move items ──────────────────────────────────────────
                 let insertionPoint: Node = anchor;
                 for (let idx = newKeyOrder.length - 1; idx >= 0; idx--) {
                     const key = newKeyOrder[idx];
-                    const item = v.items[idx];
 
                     if (keyedState.has(key)) {
                         const entry = keyedState.get(key)!;
                         if (entry.end.nextSibling !== insertionPoint) {
-                            // OPTIMIZATION 2: DocumentFragment as move buffer.
-                            //
-                            // Collects all nodes of the entry (start…end inclusive)
-                            // into a detached DocumentFragment, then reinserts them
-                            // with a single insertBefore.
-                            //
-                            // vs. the previous approach (array + N insertBefore calls):
-                            //   Before: allocate Node[], push N times, N insertBefore
-                            //   After:  N appendChild to frag (extracts from DOM), 1 insertBefore
-                            //
-                            // Net: eliminates the array allocation and halves DOM ops.
-                            const frag = document.createDocumentFragment();
-                            let node: Node = entry.start;
-                            while (true) {
-                                const next = node === entry.end ? null : node.nextSibling!;
-                                frag.appendChild(node); // extracts node from live DOM
+                            // DOM FIX: Usar insertBefore directo
+                            let node: Node | null = entry.start;
+                            while (node) {
+                                const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
+                                parent.insertBefore(node, insertionPoint);
                                 if (!next) break;
                                 node = next;
                             }
-                            parent.insertBefore(frag, insertionPoint); // single reinsert
                         }
                         insertionPoint = entry.start;
                     } else {
-                        // New item — render and register
-                        const endMarker = document.createComment(COMMENT.KEYED_END);
-                        const startMarker = document.createComment(COMMENT.KEYED_START);
-                        parent.insertBefore(endMarker, insertionPoint);
-                        parent.insertBefore(startMarker, endMarker);
-
-                        let itemCleanup: () => void;
-                        try {
-                            const rendered = v.renderFn(item as never, idx);
-                            itemCleanup = isNixComponent(rendered)
-                                ? _mountComponentWithCtx(rendered, parent, endMarker, ctxSnapshot)
-                                : rendered._render(parent, endMarker);
-                        } catch (e) {
-                            let node: Node | null = startMarker.nextSibling;
-                            while (node && node !== endMarker) {
-                                const next = node.nextSibling;
-                                parent.removeChild(node);
-                                node = next;
-                            }
-                            startMarker.remove();
-                            endMarker.remove();
-                            throw e;
+                        let startIdx = idx;
+                        while (startIdx > 0 && !keyedState.has(newKeyOrder[startIdx - 1])) {
+                            startIdx--;
                         }
 
-                        keyedState.set(key, { start: startMarker, end: endMarker, cleanup: itemCleanup });
-                        insertionPoint = startMarker;
-                    }
-                }
+                        const frag = document.createDocumentFragment();
+                        const newEntries: Array<{ key: Key; start: Comment; end: Comment; cleanup: () => void }> = [];
 
-                // ── 3. Eliminar los items individuales que ya no existen ──────────
-                for (const [key, entry] of keyedState.entries()) {
-                    if (!newKeySet.has(key)) {
-                        let node: Node | null = entry.start;
-                        // Iterar y eliminar desde el marcador de inicio hasta el de fin
-                        while (node) {
-                            const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
-                            if (node.parentNode) {
-                                node.parentNode.removeChild(node);
-                            }
-                            if (!next) break;
-                            node = next;
+                        for (let i = startIdx; i <= idx; i++) {
+                            const k = newKeyOrder[i];
+                            const it = v.items[i];
+                            const sMarker = document.createComment(COMMENT.KEYED_START);
+                            const eMarker = document.createComment(COMMENT.KEYED_END);
+                            
+                            // 1. Adjuntamos AMBOS marcadores primero
+                            frag.appendChild(sMarker);
+                            frag.appendChild(eMarker);
+
+                            // 2. Pasamos 'eMarker' en lugar de 'null'
+                            const rendered = v.renderFn(it as never, i);
+                            const cleanup = isNixComponent(rendered)
+                                ? _mountComponentWithCtx(rendered, frag, eMarker, ctxSnapshot)
+                                : rendered._render(frag, eMarker);
+
+                            // La línea frag.appendChild(eMarker); que tenías aquí abajo se elimina
+                            newEntries.push({ key: k, start: sMarker, end: eMarker, cleanup });
                         }
-                        // Limpiar efectos reactivos y sacar del estado
-                        entry.cleanup();
-                        keyedState.delete(key);
+
+                        parent.insertBefore(frag, insertionPoint);
+                        for (const e of newEntries) keyedState.set(e.key, e);
+
+                        insertionPoint = newEntries[0].start;
+                        idx = startIdx;
                     }
                 }
             } else if (Array.isArray(v)) {
@@ -1270,8 +1254,6 @@ function activateBindings(
                 for (const entry of keyedState.values()) {
                     entry.cleanup();
                 }
-                // keyedZoneStart lives inside the outer template's node range and is
-                // removed by the outer _render cleanup — no explicit remove needed here.
                 keyedState = null;
                 keyedZoneStart = null;
             }
@@ -1288,8 +1270,7 @@ function activateBindings(
 interface TemplateCache {
     contexts: BindingContext[];
     tpl: HTMLTemplateElement;
-    markerPaths: Map<number, number[]>;      // index → path de childNodes[]
-    attrEventPaths: Map<number, { path: number[]; type: "attr" | "event"; name: string }>;
+    pathMap: Array<{ path: number[]; name?: string } | null>;
 }
 const _templateCache = new WeakMap<TemplateStringsArray, TemplateCache>();
 
@@ -1315,8 +1296,7 @@ export function html(
 
         // --- Pre-record paths once, on the canonical template content ---
         // After this, every clone resolves markers in O(depth) with no traversal.
-        const markerPaths = new Map<number, number[]>();
-        const attrEventPaths = new Map<number, { path: number[]; type: "attr" | "event"; name: string }>();
+        const pathMap = new Array<{ path: number[]; name?: string } | null>(contexts.length).fill(null);
         const root = tpl.content;
 
         // Walk comments to find nix-N markers
@@ -1325,48 +1305,50 @@ export function html(
         while ((wNode = walker.nextNode())) {
             const c = wNode as Comment;
             const m = c.nodeValue?.match(/^nix-(\d+)$/);
-            if (m) markerPaths.set(parseInt(m[1]), _recordPath(root, c));
+            if (m) {
+                const idx = parseInt(m[1]);
+                pathMap[idx] = { path: _recordPath(root, c) };
+            }
         }
 
         // Walk elements to find data-nix-e-N / data-nix-a-N markers
         root.querySelectorAll("*").forEach((el) => {
-            // snapshot attrs before any mutation (same as findAttrEventMarkers)
+            // snapshot attrs before any mutation
             const attrs = Array.from(el.attributes);
             for (const attr of attrs) {
                 let m = attr.name.match(/^data-nix-e-(\d+)$/);
                 if (m) {
                     const idx = parseInt(m[1]);
-                    attrEventPaths.set(idx, {
+                    pathMap[idx] = {
                         path: _recordPath(root, el),
-                        type: "event",
                         name: attr.value,
-                    });
-                    // Do NOT remove from the canonical template — removal happens on each clone
+                    };
+                    el.removeAttribute(attr.name); // Clean source template
                     continue;
                 }
                 m = attr.name.match(/^data-nix-a-(\d+)$/);
                 if (m) {
                     const idx = parseInt(m[1]);
-                    attrEventPaths.set(idx, {
+                    pathMap[idx] = {
                         path: _recordPath(root, el),
-                        type: "attr",
                         name: attr.value,
-                    });
+                    };
+                    el.removeAttribute(attr.name); // Clean source template
                 }
             }
         });
 
-        cached = { contexts, tpl, markerPaths, attrEventPaths };
+        cached = { contexts, tpl, pathMap };
         _templateCache.set(strings, cached);
     }
 
-    const { contexts, tpl } = cached;
+    const { contexts, tpl, pathMap } = cached;
 
     function _render(parent: Node, before: Node | null): () => void {
         const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
         const { disposes, postMountHooks } = activateBindings(
-            fragment, contexts, values, cached!.markerPaths, cached!.attrEventPaths
+            fragment, contexts, values, pathMap
         );
 
         const startMarker = document.createComment(COMMENT.SCOPE);

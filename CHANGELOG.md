@@ -2,11 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
-## v1.7.2
+## v1.7.3
 
-- **fix(template): repeat individual item removal** — fixed a bug in the keyed list (`repeat`) implementation where removing a single item from a collection failed to remove its corresponding DOM nodes, causing performance measurement hangs in benchmarks.
-- **docs: README simplification** — streamlined `README.md` for better readability, focusing on a concise overview and linking to full documentation.
-- **chore: version bump to 1.7.2** — updated library and benchmark dependencies.
+Benchmark results (1,000 rows, compared against v1.3.0 stable baseline):
+
+| Operation | v1.3.0 JS Only | v1.7.3 JS Only | Δ JS | v1.3.0 Full Render | v1.7.3 Full Render | Δ Full |
+|---|---|---|---|---|---|---|
+| Create 1,000 | 220.2 ms | 20.3 ms | **–90%** | 603.9 ms | 100.6 ms | **–83%** |
+| Replace 1,000 | 286.5 ms | 26.2 ms | **–90%** | 567.5 ms | 110.8 ms | **–80%** |
+| Update 1/10 | 0.8 ms | 0.4 ms | **–50%** | 40.1 ms | 31.3 ms | **–22%** |
+| Select | 0.3 ms | 0.1 ms | **–66%** | 21.6 ms | 23.2 ms | +7% |
+| Swap (2↔998) | 53.3 ms | 15.6 ms | **–70%** | 380.5 ms | 93.0 ms | **–75%** |
+| Clear 1,000 | 43.2 ms | 17.2 ms | **–60%** | 307.5 ms | 33.1 ms | **–89%** |
+| Delete (1 row) | 1.9 ms | 0.9 ms | **–52%** | 44.8 ms | 27.7 ms | **–38%** |
+
+- **perf(template): optimized marker resolution** — refactored DOM marker location to use pre-calculated paths and sibling-walk traversal, eliminating expensive `TreeWalker` or `querySelectorAll` calls during component cloning.
+- **perf(template): bulk keyed insertion** — implemented `DocumentFragment` grouping for contiguous new items in keyed lists, significantly improving performance for "Create" and "Append" operations in benchmarks.
+- **perf(template): cleaner clones** — source templates are now cleaned of `data-nix-*` marker attributes after paths are recorded, resulting in faster `cloneNode` operations and lighter DOM.
+- **fix(template): repeat individual item removal** — fixed a bug in the keyed list (`repeat`) implementation where removing a single item from a collection failed to remove its corresponding DOM nodes.
+- **docs: README simplification** — streamlined `README.md` for better readability.
+- **chore: version bump to 1.7.3** — updated library and benchmark dependencies.
 
 ## v1.7.1
 
