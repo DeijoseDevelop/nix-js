@@ -899,6 +899,71 @@ const KEY_MAP: Readonly<Record<string, string>> = {
 };
 
 // =============================================================================
+// --- Global Event Delegation ---
+// =============================================================================
+
+const DELEGABLE_EVENTS = new Set([
+    "click", "dblclick", "mousedown", "mouseup", 
+    "keydown", "keyup", "input", "change", "submit"
+]);
+const _delegatedRegistry = new Set<string>();
+
+/**
+ * Manejador global único para eventos delegables.
+ * Atrapa el evento en el document y sube por el árbol ejecutando los handlers
+ * cacheados en las propiedades de los nodos.
+ */
+function _globalEventHandler(e: Event) {
+    let target = e.target as Node | null;
+    const propName = `__nix_${e.type}`;
+
+    // Interceptamos stopPropagation para que respete nuestros modificadores
+    // sin romper el flujo global del document.
+    const originalStop = e.stopPropagation;
+    let stopped = false;
+    e.stopPropagation = () => {
+        stopped = true;
+        originalStop.call(e);
+    };
+
+    while (target && target !== document) {
+        const handler = (target as any)[propName] as EventListener | undefined;
+        if (handler) {
+            handler(e);
+            if (stopped) break;
+        }
+        target = target.parentNode;
+    }
+
+    e.stopPropagation = originalStop; // Restauramos
+}
+
+// =============================================================================
+// --- DOM Write Batching (Microtask Queue) ---
+// =============================================================================
+
+const _domWriteQueue = new Set<() => void>();
+let _isDomWriteScheduled = false;
+
+/**
+ * Encola una mutación del DOM para que se ejecute en la siguiente microtarea.
+ * Evita el Layout Thrashing agrupando múltiples escrituras en un solo frame.
+ */
+function queueDOMWrite(task: () => void) {
+    _domWriteQueue.add(task);
+    if (!_isDomWriteScheduled) {
+        _isDomWriteScheduled = true;
+        queueMicrotask(() => {
+            for (const t of _domWriteQueue) {
+                t();
+            }
+            _domWriteQueue.clear();
+            _isDomWriteScheduled = false;
+        });
+    }
+}
+
+// =============================================================================
 // --- Binding activation ---
 // =============================================================================
 
@@ -942,6 +1007,8 @@ function activateBindings(
             const handler: EventListener = (e: Event) => {
                 if (mods.includes("prevent")) e.preventDefault();
                 if (mods.includes("stop")) e.stopPropagation();
+                // Si el evento fue delegado, e.currentTarget será 'document',
+                // por eso excluimos '.self' de la delegación más abajo.
                 if (mods.includes("self") && e.target !== e.currentTarget) return;
 
                 if ("key" in e) {
@@ -955,8 +1022,29 @@ function activateBindings(
                 rawHandler(e);
             };
 
-            el.addEventListener(eventName, handler, listenerOpts);
-            disposes.push(() => el.removeEventListener(eventName, handler, listenerOpts));
+            // NUEVO: Estrategia de Delegación
+            // Excluimos eventos con modificadores especiales que dependen del ciclo de vida exacto del nodo
+            const canDelegate = 
+                DELEGABLE_EVENTS.has(eventName) && 
+                !listenerOpts.capture && 
+                !listenerOpts.once && 
+                !mods.includes("self");
+
+            if (canDelegate) {
+                // Registrar el evento globalmente solo una vez por tipo
+                if (!_delegatedRegistry.has(eventName)) {
+                    document.addEventListener(eventName, _globalEventHandler);
+                    _delegatedRegistry.add(eventName);
+                }
+                
+                // En lugar de addEventListener, guardamos el handler en una propiedad rápida del nodo
+                (el as any)[`__nix_${eventName}`] = handler;
+                disposes.push(() => { (el as any)[`__nix_${eventName}`] = null; });
+            } else {
+                // Degradación elegante: Método tradicional para eventos no delegables (scroll, mouseenter, etc.)
+                el.addEventListener(eventName, handler, listenerOpts);
+                disposes.push(() => el.removeEventListener(eventName, handler, listenerOpts));
+            }
             continue;
         }
 
@@ -1053,26 +1141,40 @@ function activateBindings(
 
         type Key = string | number;
         let keyedState: Map<Key, KEntry> | null = null;
+        let prevKeyOrder: Key[] = [];
         let keyedZoneStart: Comment | null = null;
 
         const ctxSnapshot = _captureContextSnapshot();
+
+        let _textQueued = false;
+        let _pendingText = "";
 
         const dispose = effect(() => {
             const v = (value as () => unknown)();
 
             if (typeof v === "string" || typeof v === "number") {
-                if (innerCleanup) {
-                    innerCleanup();
-                    innerCleanup = null;
-                }
-                if (!textNode) {
-                    textNode = document.createTextNode(String(v));
-                    anchor.parentNode!.insertBefore(textNode, anchor);
-                } else {
-                    textNode.nodeValue = String(v);
+                _pendingText = String(v);
+                if (!_textQueued) {
+                    _textQueued = true;
+                    queueDOMWrite(() => {
+                        _textQueued = false;
+                        if (innerCleanup) {
+                            innerCleanup();
+                            innerCleanup = null;
+                        }
+                        if (!textNode) {
+                            textNode = document.createTextNode(_pendingText);
+                            anchor.parentNode!.insertBefore(textNode, anchor);
+                        } else {
+                            textNode.nodeValue = _pendingText;
+                        }
+                    });
                 }
                 return;
             }
+
+            // Si pasa de texto a un componente/lista, cancelamos cualquier update de texto pendiente
+            _textQueued = false; 
 
             if (textNode) {
                 textNode.parentNode?.removeChild(textNode);
@@ -1101,8 +1203,9 @@ function activateBindings(
                 const newKeyOrder: Key[] = v.items.map(
                     (item, idx) => v.keyFn(item as never, idx)
                 );
-                const newKeySet = new Set(newKeyOrder);
 
+                // === EL FIX: Detectar si ES un Reemplazo Total ===
+                const newKeySet = new Set(newKeyOrder);
                 let anyKeysSurvive = false;
                 if (keyedState.size > 0) {
                     for (const k of keyedState.keys()) {
@@ -1113,13 +1216,14 @@ function activateBindings(
                     }
                 }
 
-                // ── 1. Bulking & First render ─────────────────────────────────────
+                // ── 1. Renderizado Inicial o Reemplazo Total (FAST PATH O(1)) ──────
                 if (!anyKeysSurvive) {
                     if (keyedState.size > 0) {
+                        // Borrado ultra rápido a nivel de motor C++ del navegador
                         const range = document.createRange();
                         range.setStartAfter(keyedZoneStart!);
                         range.setEndBefore(anchor);
-                        range.deleteContents();
+                        range.deleteContents(); 
                         for (const entry of keyedState.values()) entry.cleanup();
                         keyedState.clear();
                     }
@@ -1131,30 +1235,44 @@ function activateBindings(
                             const item = v.items[i];
                             const start = document.createComment(COMMENT.KEYED_START);
                             const end = document.createComment(COMMENT.KEYED_END);
-                            
-                            // 1. Adjuntamos AMBOS marcadores al fragmento primero
+
                             frag.appendChild(start);
                             frag.appendChild(end);
 
-                            // 2. Pasamos 'end' en lugar de 'null' para que la limpieza no se desborde
                             const rendered = v.renderFn(item as never, i);
                             const cleanup = isNixComponent(rendered)
                                 ? _mountComponentWithCtx(rendered, frag, end, ctxSnapshot)
                                 : rendered._render(frag, end);
 
-                            // La línea frag.appendChild(end); que tenías aquí abajo se elimina
                             keyedState.set(key, { start, end, cleanup });
                         }
-                        parent.insertBefore(frag, anchor);
+                        parent.insertBefore(frag, anchor); // Inserción masiva única
                     }
+                    prevKeyOrder = newKeyOrder;
                     return;
                 }
 
-                // ── 2. Individual removals ───────────────────────────────────────
-                for (const [key, entry] of keyedState.entries()) {
-                    if (!newKeySet.has(key)) {
-                        entry.cleanup(); 
-                        // Fix de memoria O(1) pero iterativo en el DOM para evitar fugas
+                // ── 2. Preparar Reconciliación con LIS ──────────────────────────────
+                const keyToNewIndex = new Map<Key, number>();
+                // ... (el código de LIS sigue exactamente igual desde aquí)
+                for (let i = 0; i < newKeyOrder.length; i++) {
+                    keyToNewIndex.set(newKeyOrder[i], i);
+                }
+
+                // Rastrea el índice original de los nuevos nodos. Un 0 significa nodo nuevo.
+                const newIndexToOldIndexMap = new Int32Array(newKeyOrder.length);
+                let moved = false;
+                let maxNewIndexSoFar = 0;
+
+                // Eliminaciones y llenado del mapa de índices
+                for (let i = 0; i < prevKeyOrder.length; i++) {
+                    const key = prevKeyOrder[i];
+                    const newIndex = keyToNewIndex.get(key);
+
+                    if (newIndex === undefined) {
+                        // Nodo eliminado
+                        const entry = keyedState.get(key)!;
+                        entry.cleanup();
                         let node: Node | null = entry.start;
                         while (node) {
                             const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
@@ -1163,63 +1281,69 @@ function activateBindings(
                             node = next;
                         }
                         keyedState.delete(key);
+                    } else {
+                        // Nodo sobrevive. +1 para evitar conflictos con el 0 (nodo nuevo)
+                        newIndexToOldIndexMap[newIndex] = i + 1;
+                        if (newIndex >= maxNewIndexSoFar) {
+                            maxNewIndexSoFar = newIndex;
+                        } else {
+                            moved = true; // Se detectó un cruce, necesitaremos mover nodos
+                        }
                     }
                 }
 
-                // ── 3. Insert/move items ──────────────────────────────────────────
+                // ── 3. Aplicar Movimientos o Inserciones (de atrás hacia adelante) ──
+                // Si hubo desorden, calculamos la Subsecuencia Creciente Más Larga (nuestra ancla)
+                const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : [];
+                let j = increasingNewIndexSequence.length - 1;
                 let insertionPoint: Node = anchor;
-                for (let idx = newKeyOrder.length - 1; idx >= 0; idx--) {
-                    const key = newKeyOrder[idx];
 
-                    if (keyedState.has(key)) {
+                for (let i = newKeyOrder.length - 1; i >= 0; i--) {
+                    const key = newKeyOrder[i];
+                    const isNew = newIndexToOldIndexMap[i] === 0;
+
+                    if (isNew) {
+                        // Es un nodo completamente nuevo
+                        const it = v.items[i];
+                        const sMarker = document.createComment(COMMENT.KEYED_START);
+                        const eMarker = document.createComment(COMMENT.KEYED_END);
+                        const frag = document.createDocumentFragment();
+
+                        frag.appendChild(sMarker);
+                        frag.appendChild(eMarker);
+
+                        const rendered = v.renderFn(it as never, i);
+                        const cleanup = isNixComponent(rendered)
+                            ? _mountComponentWithCtx(rendered, frag, eMarker, ctxSnapshot)
+                            : rendered._render(frag, eMarker);
+
+                        keyedState.set(key, { start: sMarker, end: eMarker, cleanup });
+                        parent.insertBefore(frag, insertionPoint);
+                        insertionPoint = sMarker;
+                    } else {
+                        // El nodo ya existía, revisar si necesitamos moverlo
                         const entry = keyedState.get(key)!;
-                        if (entry.end.nextSibling !== insertionPoint) {
-                            // DOM FIX: Usar insertBefore directo
-                            let node: Node | null = entry.start;
-                            while (node) {
-                                const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
-                                parent.insertBefore(node, insertionPoint);
-                                if (!next) break;
-                                node = next;
+                        if (moved) {
+                            if (j < 0 || i !== increasingNewIndexSequence[j]) {
+                                // No está en la secuencia ancla, debemos moverlo
+                                let node: Node | null = entry.start;
+                                while (node) {
+                                    const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
+                                    parent.insertBefore(node, insertionPoint);
+                                    if (!next) break;
+                                    node = next;
+                                }
+                            } else {
+                                // Pertenece a la subsecuencia creciente, ¡SE QUEDA QUIETO!
+                                j--;
                             }
                         }
                         insertionPoint = entry.start;
-                    } else {
-                        let startIdx = idx;
-                        while (startIdx > 0 && !keyedState.has(newKeyOrder[startIdx - 1])) {
-                            startIdx--;
-                        }
-
-                        const frag = document.createDocumentFragment();
-                        const newEntries: Array<{ key: Key; start: Comment; end: Comment; cleanup: () => void }> = [];
-
-                        for (let i = startIdx; i <= idx; i++) {
-                            const k = newKeyOrder[i];
-                            const it = v.items[i];
-                            const sMarker = document.createComment(COMMENT.KEYED_START);
-                            const eMarker = document.createComment(COMMENT.KEYED_END);
-                            
-                            // 1. Adjuntamos AMBOS marcadores primero
-                            frag.appendChild(sMarker);
-                            frag.appendChild(eMarker);
-
-                            // 2. Pasamos 'eMarker' en lugar de 'null'
-                            const rendered = v.renderFn(it as never, i);
-                            const cleanup = isNixComponent(rendered)
-                                ? _mountComponentWithCtx(rendered, frag, eMarker, ctxSnapshot)
-                                : rendered._render(frag, eMarker);
-
-                            // La línea frag.appendChild(eMarker); que tenías aquí abajo se elimina
-                            newEntries.push({ key: k, start: sMarker, end: eMarker, cleanup });
-                        }
-
-                        parent.insertBefore(frag, insertionPoint);
-                        for (const e of newEntries) keyedState.set(e.key, e);
-
-                        insertionPoint = newEntries[0].start;
-                        idx = startIdx;
                     }
                 }
+
+                // Actualizar el estado previo para el siguiente render
+                prevKeyOrder = newKeyOrder;
             } else if (Array.isArray(v)) {
                 const cleanups: Array<() => void> = [];
                 for (const item of v) {
@@ -1261,6 +1385,55 @@ function activateBindings(
     }
 
     return { disposes, postMountHooks };
+}
+
+// =============================================================================
+// --- Reconciliación Heurística (Longest Increasing Subsequence) ---
+// =============================================================================
+
+/**
+ * Retorna los índices de la Subsecuencia Creciente Más Larga.
+ * Utilizado para minimizar operaciones DOM durante el diffing de listas.
+ */
+function getSequence(arr: Int32Array | number[]): number[] {
+    const p = arr.slice();
+    const result = [0];
+    let i, j, u, v, c;
+    const len = arr.length;
+    for (i = 0; i < len; i++) {
+        const arrI = arr[i];
+        if (arrI !== 0) {
+            j = result[result.length - 1];
+            if (arr[j] < arrI) {
+                p[i] = j;
+                result.push(i);
+                continue;
+            }
+            u = 0;
+            v = result.length - 1;
+            while (u < v) {
+                c = (u + v) >> 1;
+                if (arr[result[c]] < arrI) {
+                    u = c + 1;
+                } else {
+                    v = c;
+                }
+            }
+            if (arrI < arr[result[u]]) {
+                if (u > 0) {
+                    p[i] = result[u - 1];
+                }
+                result[u] = i;
+            }
+        }
+    }
+    u = result.length;
+    v = result[u - 1];
+    while (u-- > 0) {
+        result[u] = v;
+        v = p[v];
+    }
+    return result;
 }
 
 // =============================================================================
