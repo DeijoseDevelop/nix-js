@@ -735,45 +735,58 @@ type BindingContext =
  * Determines the binding context (node, event, or attribute) for an interpolated
  * value based on the preceding template string.
  *
- * Note: Partial attribute interpolation is not supported
- * (e.g. `class="prefix-${cls}"` won't work — compute the full string outside).
+ * (Optimized: Removed all Regular Expressions for maximum parsing speed).
  */
 function detectContext(prevString: string): BindingContext {
     const lastClose = prevString.lastIndexOf(">");
     const lastOpen = prevString.lastIndexOf("<");
 
+    // Si el último cierre es después (o igual) a la apertura, estamos fuera de un tag.
     if (lastOpen <= lastClose) {
         return { type: "node" };
     }
 
+    // El contenido del tag incompleto (ej. "div class='x' @click=")
     const tagContent = prevString.slice(lastOpen + 1);
 
-    const eventMatch = tagContent.match(/@([\w:.-]+)=["']?$/);
-    if (eventMatch) {
-        const full = eventMatch[1];
-        const parts = full.split(".");
-        const eventName = parts[0];
-        const modifiers = parts.slice(1);
+    // Buscar si termina en "=" (ignorando comillas finales de apertura)
+    let eqIdx = tagContent.lastIndexOf("=");
+    if (eqIdx === -1) {
+        return { type: "node" }; // Fallback seguro
+    }
+
+    const hadOpenQuote = 
+        tagContent.endsWith('"') || 
+        tagContent.endsWith("'") || 
+        tagContent[tagContent.length - 1] === '"' || 
+        tagContent[tagContent.length - 1] === "'";
+
+    // Retroceder para encontrar dónde empieza el nombre del atributo o evento
+    let startIdx = eqIdx - 1;
+    while (startIdx >= 0 && /\S/.test(tagContent[startIdx])) {
+        startIdx--;
+    }
+    startIdx++; // Avanzar al primer caracter no-espacio
+
+    const fullAttr = tagContent.slice(startIdx, eqIdx);
+
+    if (fullAttr[0] === "@") {
+        // Es un Evento
+        const parts = fullAttr.slice(1).split(".");
         return {
             type: "event",
-            eventName,
-            modifiers,
-            hadOpenQuote:
-                eventMatch[0].endsWith('"') || eventMatch[0].endsWith("'"),
+            eventName: parts[0],
+            modifiers: parts.slice(1),
+            hadOpenQuote,
         };
     }
 
-    const attrMatch = tagContent.match(/([\w:.-]+)=["']?$/);
-    if (attrMatch) {
-        return {
-            type: "attr",
-            attrName: attrMatch[1],
-            hadOpenQuote:
-                attrMatch[0].endsWith('"') || attrMatch[0].endsWith("'"),
-        };
-    }
-
-    return { type: "node" };
+    // Es un Atributo
+    return {
+        type: "attr",
+        attrName: fullAttr,
+        hadOpenQuote,
+    };
 }
 
 // =============================================================================
@@ -844,42 +857,6 @@ function isKeyedList(v: unknown): v is KeyedList {
     );
 }
 
-// =============================================================================
-// --- Path-based marker resolution (replaces TreeWalker + querySelectorAll) ---
-// =============================================================================
-
-/**
- * Records the path of childNodes indices from `root` down to `target`.
- * Called once during template cache construction — O(depth) per marker.
- */
-function _recordPath(root: Node, target: Node): number[] {
-    const path: number[] = [];
-    let node: Node | null = target;
-    while (node && node !== root) {
-        const parent: ParentNode | null = node.parentNode!;
-        let idx = 0;
-        let child = parent.firstChild;
-        while (child && child !== node) { idx++; child = child.nextSibling; }
-        path.unshift(idx);
-        node = parent;
-    }
-    return path;
-}
-
-/**
- * Resolves a recorded path against a cloned fragment.
- * Uses firstChild/nextSibling iteration which is faster than childNodes[i].
- */
-function _resolvePath(root: Node, path: number[]): Node {
-    let node: Node = root;
-    for (let i = 0; i < path.length; i++) {
-        const targetIdx = path[i];
-        let current = node.firstChild!;
-        for (let j = 0; j < targetIdx; j++) current = current.nextSibling!;
-        node = current;
-    }
-    return node;
-}
 
 // =============================================================================
 // --- Keyboard modifier map (module-level — not recreated per binding) ---
@@ -972,16 +949,38 @@ function activateBindings(
     fragment: DocumentFragment,
     contexts: BindingContext[],
     values: unknown[],
-    pathMap: Array<{ path: number[]; name?: string } | null>,
+    pathMap: Array<{ nodeIndex: number; name?: string } | null>,
 ): { disposes: Array<() => void>; postMountHooks: Array<() => void> } {
     const disposes: Array<() => void> = [];
     const postMountHooks: Array<() => void> = [];
 
-    // FASE 1: LECTURA. 
+    // FASE 1: LECTURA (TreeWalker de Pasada Única O(N))
     const resolvedNodes = new Array<Node | null>(contexts.length);
+    
+    // 1. Encontrar cuál es el nodo más profundo al que necesitamos llegar
+    let maxNodeIndex = -1;
+    for (let i = 0; i < contexts.length; i++) {
+        if (pathMap[i] && pathMap[i]!.nodeIndex > maxNodeIndex) {
+            maxNodeIndex = pathMap[i]!.nodeIndex;
+        }
+    }
+
+    // 2. Recorrer el fragmento UNA sola vez y almacenar referencias planas
+    const flatNodes: Node[] = [fragment]; 
+    if (maxNodeIndex > 0) {
+        const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
+        let currentIndex = 0;
+        let currentNode: Node | null;
+        while (currentIndex < maxNodeIndex && (currentNode = walker.nextNode())) {
+            currentIndex++;
+            flatNodes.push(currentNode);
+        }
+    }
+
+    // 3. Mapeo instantáneo O(1)
     for (let i = 0; i < contexts.length; i++) {
         const info = pathMap[i];
-        resolvedNodes[i] = info ? _resolvePath(fragment, info.path) : null;
+        resolvedNodes[i] = info ? flatNodes[info.nodeIndex] : null;
     }
 
     // FASE 2: MUTACIÓN
@@ -1443,7 +1442,7 @@ function getSequence(arr: Int32Array | number[]): number[] {
 interface TemplateCache {
     contexts: BindingContext[];
     tpl: HTMLTemplateElement;
-    pathMap: Array<{ path: number[]; name?: string } | null>;
+    pathMap: Array<{ nodeIndex: number; name?: string } | null>;
 }
 const _templateCache = new WeakMap<TemplateStringsArray, TemplateCache>();
 
@@ -1468,48 +1467,51 @@ export function html(
         tpl.innerHTML = buildHTML(strings, contexts);
 
         // --- Pre-record paths once, on the canonical template content ---
-        // After this, every clone resolves markers in O(depth) with no traversal.
-        const pathMap = new Array<{ path: number[]; name?: string } | null>(contexts.length).fill(null);
+        // Construimos el mapa de índices planos (O(N) single-pass)
+        const pathMap = new Array<{ nodeIndex: number; name?: string } | null>(contexts.length).fill(null);
         const root = tpl.content;
 
-        // Walk comments to find nix-N markers
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_COMMENT);
+        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
+        let nodeIndex = 0;
         let wNode: Node | null;
+
         while ((wNode = walker.nextNode())) {
-            const c = wNode as Comment;
-            const m = c.nodeValue?.match(/^nix-(\d+)$/);
-            if (m) {
-                const idx = parseInt(m[1]);
-                pathMap[idx] = { path: _recordPath(root, c) };
+            nodeIndex++;
+            
+            if (wNode.nodeType === 8) { // 8 = COMMENT_NODE
+                const val = wNode.nodeValue;
+                if (val && val.startsWith("nix-")) {
+                    const idx = parseInt(val.slice(4), 10);
+                    if (!isNaN(idx)) {
+                        pathMap[idx] = { nodeIndex };
+                    }
+                }
+            } else if (wNode.nodeType === 1) { // 1 = ELEMENT_NODE
+                const el = wNode as Element;
+                // Extraemos a Array estático porque elminaremos atributos en el bucle
+                const attrs = Array.from(el.attributes);
+                for (let i = 0; i < attrs.length; i++) {
+                    const attr = attrs[i];
+                    const name = attr.name;
+                    
+                    if (name.startsWith("data-nix-e-")) {
+                        const idx = parseInt(name.slice(11), 10);
+                        if (!isNaN(idx)) {
+                            pathMap[idx] = { nodeIndex, name: attr.value };
+                            el.removeAttribute(name);
+                        }
+                        continue;
+                    }
+                    if (name.startsWith("data-nix-a-")) {
+                        const idx = parseInt(name.slice(11), 10);
+                        if (!isNaN(idx)) {
+                            pathMap[idx] = { nodeIndex, name: attr.value };
+                            el.removeAttribute(name);
+                        }
+                    }
+                }
             }
         }
-
-        // Walk elements to find data-nix-e-N / data-nix-a-N markers
-        root.querySelectorAll("*").forEach((el) => {
-            // snapshot attrs before any mutation
-            const attrs = Array.from(el.attributes);
-            for (const attr of attrs) {
-                let m = attr.name.match(/^data-nix-e-(\d+)$/);
-                if (m) {
-                    const idx = parseInt(m[1]);
-                    pathMap[idx] = {
-                        path: _recordPath(root, el),
-                        name: attr.value,
-                    };
-                    el.removeAttribute(attr.name); // Clean source template
-                    continue;
-                }
-                m = attr.name.match(/^data-nix-a-(\d+)$/);
-                if (m) {
-                    const idx = parseInt(m[1]);
-                    pathMap[idx] = {
-                        path: _recordPath(root, el),
-                        name: attr.value,
-                    };
-                    el.removeAttribute(attr.name); // Clean source template
-                }
-            }
-        });
 
         cached = { contexts, tpl, pathMap };
         _templateCache.set(strings, cached);
