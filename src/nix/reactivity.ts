@@ -1,10 +1,17 @@
 // --- Dependency tracking ---
 
-let activeEffect: (() => void) | null = null;
-const effectStack: ((() => void) | null)[] = [];
+interface _EffectCtx {
+    effect: (() => void) | null;
+    deps: Set<Signal<any>> | null;
+}
 
+// Pool de objetos reutilizables para evitar allocations en cada execute()
+const _ctxPool: _EffectCtx[] = [];
+const _ctxStack: _EffectCtx[] = [];
+
+// Contexto activo actual
+let activeEffect: (() => void) | null = null;
 let activeDeps: Set<Signal<any>> | null = null;
-const depsStack: (Set<Signal<any>> | null)[] = [];
 
 // --- Error boundary support ---
 
@@ -29,12 +36,15 @@ export function _popErrorHandler(): void {
 // --- Batching ---
 
 let batchLevel = 0;
-const pendingEffects = new Set<() => void>();
+const _pendingEffectsSet = new Set<() => void>();  // solo para dedup O(1)
+const _pendingEffectsArr: (() => void)[] = []; 
 
 // --- Effect recursion guard ---
 
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
+
+const _notifyBuf: (() => void)[] = [];
 
 // --- Signal ---
 
@@ -79,13 +89,20 @@ export class Signal<T> {
 
     private _notify(): void {
         if (batchLevel > 0) {
-            for (const s of this._subs) pendingEffects.add(s);
-        } else {
-            // Evitamos la sintaxis spread [...] que aloca memoria lenta en V8
-            const subs = Array.from(this._subs);
-            for (let i = 0; i < subs.length; i++) {
-                subs[i]();
+            for (const s of this._subs) {
+                if (!_pendingEffectsSet.has(s)) {
+                    _pendingEffectsSet.add(s);
+                    _pendingEffectsArr.push(s);
+                }
             }
+            return;
+        }
+        // Llenar el buffer, ejecutar, limpiar — cero allocations
+        let len = 0;
+        for (const s of this._subs) _notifyBuf[len++] = s;
+        for (let i = 0; i < len; i++) {
+            _notifyBuf[i]!();
+            _notifyBuf[i] = null!; // liberar referencia para GC
         }
     }
 
@@ -126,16 +143,23 @@ export function effect(fn: () => void | (() => void)): () => void {
         newDeps = temp;
         newDeps.clear();
 
-        effectStack.push(activeEffect);
-        depsStack.push(activeDeps);
+        const ctx = _ctxPool.length > 0 ? _ctxPool.pop()! : { effect: null, deps: null };
+        ctx.effect = activeEffect;
+        ctx.deps = activeDeps;
+        _ctxStack.push(ctx);
         activeEffect = execute;
-        activeDeps = newDeps; // activeDeps ahora apunta al buffer limpio
+        activeDeps = newDeps;
 
         effectDepth++;
         if (effectDepth > MAX_EFFECT_DEPTH) {
             effectDepth = 0;
-            activeEffect = effectStack.pop() || null;
-            activeDeps = depsStack.pop() || null;
+            // Restaurar desde el stack unificado
+            const restored = _ctxStack.pop()!;
+            activeEffect = restored.effect;
+            activeDeps = restored.deps;
+            restored.effect = null;
+            restored.deps = null;
+            _ctxPool.push(restored);
             throw new Error(
                 "[Nix] Maximum effect re-execution depth exceeded (possible infinite loop)."
             );
@@ -151,13 +175,20 @@ export function effect(fn: () => void | (() => void)): () => void {
             }
         } finally {
             effectDepth--;
-            activeEffect = effectStack.pop() || null;
-            activeDeps = depsStack.pop() || null;
+            const restored = _ctxStack.pop()!;
+            activeEffect = restored.effect;
+            activeDeps = restored.deps;
+            restored.effect = null;   // limpiar referencias para GC
+            restored.deps = null;
+            _ctxPool.push(restored);  // devolver al pool para reutilizar
+
             
             // Cleanup phase: Desuscribirse de señales que estaban en 'deps' pero NO en 'newDeps'
-            for (const oldDep of deps) {
-                if (!newDeps.has(oldDep)) {
-                    oldDep._removeSub(execute);
+            if (deps.size !== newDeps.size) {
+                for (const oldDep of deps) {
+                    if (!newDeps.has(oldDep)) {
+                        oldDep._removeSub(execute);
+                    }
                 }
             }
         }
@@ -197,12 +228,11 @@ export function batch(fn: () => void): void {
         fn();
     } finally {
         batchLevel--;
-        if (batchLevel === 0 && pendingEffects.size > 0) {
-            // Iteración O(N) directa sin crear Arrays temporales [...pendingEffects]
-            for (const effectRun of pendingEffects) {
-                effectRun();
-            }
-            pendingEffects.clear();
+        if (batchLevel === 0 && _pendingEffectsArr.length > 0) {
+            const len = _pendingEffectsArr.length;
+            for (let i = 0; i < len; i++) _pendingEffectsArr[i]();
+            _pendingEffectsArr.length = 0;  // reset O(1) sin GC — key del cambio
+            _pendingEffectsSet.clear();
         }
     }
 }

@@ -1,4 +1,4 @@
-import { effect, _pushErrorHandler, _popErrorHandler } from "./reactivity";
+import { effect, _pushErrorHandler, _popErrorHandler, batch } from "./reactivity";
 import { isNixComponent } from "./lifecycle";
 import type { NixComponent } from "./lifecycle";
 import {
@@ -890,10 +890,8 @@ const _delegatedRegistry = new Set<string>();
  * Atrapa el evento en el document y sube por el árbol ejecutando los handlers
  * cacheados en las propiedades de los nodos.
  */
-function _globalEventHandler(e: Event) {
+function _globalEventHandlerCore(e: Event, propName: string, modsName: string): void {
     let target = e.target as Node | null;
-    const propName = `__nix_${e.type}`;
-    const modsName = `__nix_${e.type}_mods`;
 
     const originalStop = e.stopPropagation;
     let stopped = false;
@@ -935,6 +933,11 @@ function _globalEventHandler(e: Event) {
 
     e.stopPropagation = originalStop;
 }
+
+// NOTE: _delegatedHandlers entries are intentionally permanent —
+// delegated listeners on document live for the application lifetime.
+// If a global teardown() is ever needed, iterate this map to removeEventListener.
+const _delegatedHandlers = new Map<string, (e: Event) => void>();
 
 // =============================================================================
 // --- DOM Write Batching (Microtask Queue) ---
@@ -987,14 +990,14 @@ function activateBindings(
     }
 
     // 2. Recorrer el fragmento UNA sola vez y almacenar referencias planas
-    const flatNodes: Node[] = [fragment]; 
+    const flatNodes = new Array<Node>(maxNodeIndex + 1);
+    flatNodes[0] = fragment;
     if (maxNodeIndex > 0) {
         const walker = document.createTreeWalker(fragment, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
-        let currentIndex = 0;
+        let fi = 1;
         let currentNode: Node | null;
-        while (currentIndex < maxNodeIndex && (currentNode = walker.nextNode())) {
-            currentIndex++;
-            flatNodes.push(currentNode);
+        while (fi <= maxNodeIndex && (currentNode = walker.nextNode())) {
+            flatNodes[fi++] = currentNode;
         }
     }
 
@@ -1026,19 +1029,26 @@ function activateBindings(
 
             if (canDelegate) {
                 if (!_delegatedRegistry.has(eventName)) {
-                    document.addEventListener(eventName, _globalEventHandler);
+                    // Precalculamos las strings UNA sola vez y las capturamos en el closure
+                    const propName = `__nix_${eventName}`;
+                    const modsName = `__nix_${eventName}_mods`;
+                    const boundHandler = (e: Event) => _globalEventHandlerCore(e, propName, modsName);
+                    _delegatedHandlers.set(eventName, boundHandler);
+                    document.addEventListener(eventName, boundHandler);
                     _delegatedRegistry.add(eventName);
                 }
                 
-                // Guardamos el handler crudo y los modificadores directamente en el nodo
-                (el as any)[`__nix_${eventName}`] = rawHandler;
+                // Las strings de acceso al nodo también se precalculan aquí (una vez por binding)
+                const nodePropName = `__nix_${eventName}`;
+                const nodeModsName = `__nix_${eventName}_mods`;
+                (el as any)[nodePropName] = rawHandler;
                 if (mods.length > 0) {
-                    (el as any)[`__nix_${eventName}_mods`] = mods;
+                    (el as any)[nodeModsName] = mods;
                 }
                 
                 disposes.push(() => { 
-                    (el as any)[`__nix_${eventName}`] = null; 
-                    (el as any)[`__nix_${eventName}_mods`] = null;
+                    (el as any)[nodePropName] = null; 
+                    (el as any)[nodeModsName] = null;
                 });
             } else {
                 // Degradación elegante
@@ -1286,23 +1296,25 @@ function activateBindings(
 
                     if (newKeyOrder.length > 0) {
                         const frag = document.createDocumentFragment();
-                        for (let i = 0; i < newKeyOrder.length; i++) {
-                            const key = newKeyOrder[i];
-                            const item = v.items[i];
-                            // ANTES: document.createComment(...)
-                            const start = document.createTextNode("");
-                            const end = document.createTextNode("");
+                        batch(() => {
+                            for (let i = 0; i < newKeyOrder.length; i++) {
+                                const key = newKeyOrder[i];
+                                const item = v.items[i];
+                                // ANTES: document.createComment(...)
+                                const start = document.createTextNode("");
+                                const end = document.createTextNode("");
 
-                            frag.appendChild(start);
-                            frag.appendChild(end);
+                                frag.appendChild(start);
+                                frag.appendChild(end);
 
-                            const rendered = v.renderFn(item as never, i);
-                            const cleanup = isNixComponent(rendered)
-                                ? _mountComponentWithCtx(rendered, frag, end, ctxSnapshot)
-                                : rendered._render(frag, end);
+                                const rendered = v.renderFn(item as never, i);
+                                const cleanup = isNixComponent(rendered)
+                                    ? _mountComponentWithCtx(rendered, frag, end, ctxSnapshot)
+                                    : rendered._render(frag, end);
 
-                            keyedState.set(key, { start, end, cleanup });
-                        }
+                                keyedState?.set(key, { start, end, cleanup });
+                            }
+                        });
                         parent.insertBefore(frag, anchor); // Inserción masiva única
                     }
                     prevKeyOrder = newKeyOrder;

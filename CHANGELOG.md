@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## v1.7.4
+## v1.7.5
 
 - **perf(template): heuristic reconciliation with LIS** — implemented the Longest Increasing Subsequence (LIS) algorithm for keyed list diffing (`repeat`), minimizing DOM moves during complex list reordering.
 - **perf(template): regex-free parsing** — refactored `detectContext` to use manual string scanning instead of Regular Expressions, achieving maximum parsing speed during template initialization.
