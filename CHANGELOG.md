@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.4
+
+- **perf(template): heuristic reconciliation with LIS** — implemented the Longest Increasing Subsequence (LIS) algorithm for keyed list diffing (`repeat`), minimizing DOM moves during complex list reordering.
+- **perf(template): regex-free parsing** — refactored `detectContext` to use manual string scanning instead of Regular Expressions, achieving maximum parsing speed during template initialization.
+- **perf(template): single-pass flat marker resolution** — refactored marker resolution to use a single-pass `TreeWalker` that builds a flat index map, replacing recursive path-based resolution for even faster component cloning.
+- **perf(reactivity): high-performance dependency tracking** — implemented double-buffering for effect dependencies to avoid `new Set()` allocations per execution, and replaced expensive array spreads with optimized loops.
+- **perf(template): batched DOM updates** — implemented microtask-based DOM write batching for text nodes and attributes, grouping multiple reactive updates into a single frame to prevent Layout Thrashing.
+- **perf(template): table-friendly TextNode markers** — replaced expensive Comment markers with lightweight empty TextNodes in critical areas (like keyed lists and scopes), significantly improving browser layout speed and compatibility inside `<table>` elements.
+- **feat(template): enhanced global event delegation** — refined the global event manager to handle complex modifiers (`.stop`, `.prevent`, `.self`, keys) at the delegation level, reducing memory usage from individual listeners.
+- **perf(reactivity): V8-friendly computed signals** — optimized `computed` signals by avoiding `.bind()` and using direct `.call()` for faster execution in modern engines.
+
 ## v1.7.3
 
 Benchmark results (1,000 rows, compared against v1.3.0 stable baseline):

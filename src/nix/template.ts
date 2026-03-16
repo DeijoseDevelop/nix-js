@@ -801,13 +801,13 @@ function buildHTML(
     strings: readonly string[],
     contexts: BindingContext[]
 ): string {
-    const skipLeading = new Set<number>();
+    const skipLeading = new Uint8Array(strings.length);
     let result = "";
 
     for (let i = 0; i < strings.length; i++) {
         let s = strings[i];
 
-        if (skipLeading.has(i) && (s[0] === '"' || s[0] === "'")) {
+        if (skipLeading[i] === 1 && (s[0] === '"' || s[0] === "'")) {
             s = s.slice(1);
         }
 
@@ -822,12 +822,12 @@ function buildHTML(
                     : ctx.eventName;
                 const cut = `@${full}=`.length + (ctx.hadOpenQuote ? 1 : 0);
                 result += s.slice(0, -cut) + ` data-nix-e-${i}="${ctx.eventName}"`;
-                if (ctx.hadOpenQuote) skipLeading.add(i + 1);
+                if (ctx.hadOpenQuote) skipLeading[i + 1] = 1;
             } else {
                 const cut =
                     `${ctx.attrName}=`.length + (ctx.hadOpenQuote ? 1 : 0);
                 result += s.slice(0, -cut) + ` data-nix-a-${i}="${ctx.attrName}"`;
-                if (ctx.hadOpenQuote) skipLeading.add(i + 1);
+                if (ctx.hadOpenQuote) skipLeading[i + 1] = 1;
             }
         } else {
             result += s;
@@ -893,9 +893,8 @@ const _delegatedRegistry = new Set<string>();
 function _globalEventHandler(e: Event) {
     let target = e.target as Node | null;
     const propName = `__nix_${e.type}`;
+    const modsName = `__nix_${e.type}_mods`;
 
-    // Interceptamos stopPropagation para que respete nuestros modificadores
-    // sin romper el flujo global del document.
     const originalStop = e.stopPropagation;
     let stopped = false;
     e.stopPropagation = () => {
@@ -906,13 +905,35 @@ function _globalEventHandler(e: Event) {
     while (target && target !== document) {
         const handler = (target as any)[propName] as EventListener | undefined;
         if (handler) {
+            const mods = (target as any)[modsName] as string[] | undefined;
+            if (mods) {
+                if (mods.includes("prevent")) e.preventDefault();
+                if (mods.includes("stop")) e.stopPropagation();
+                if (mods.includes("self") && e.target !== target) {
+                    target = target.parentNode;
+                    continue;
+                }
+                if ("key" in e) {
+                    const ke = e as KeyboardEvent;
+                    let keyMatch = true;
+                    for (const mod of mods) {
+                        const mapped = KEY_MAP[mod];
+                        if (mapped !== undefined && ke.key !== mapped) { keyMatch = false; break; }
+                        if (!mapped && mod.length === 1 && ke.key.toLowerCase() !== mod) { keyMatch = false; break; }
+                    }
+                    if (!keyMatch) {
+                        target = target.parentNode;
+                        continue;
+                    }
+                }
+            }
             handler(e);
             if (stopped) break;
         }
         target = target.parentNode;
     }
 
-    e.stopPropagation = originalStop; // Restauramos
+    e.stopPropagation = originalStop;
 }
 
 // =============================================================================
@@ -998,49 +1019,40 @@ function activateBindings(
             const rawHandler = value as EventListener;
             const mods = ctx.modifiers;
 
-            const listenerOpts: AddEventListenerOptions = {};
-            if (mods.includes("once")) listenerOpts.once = true;
-            if (mods.includes("capture")) listenerOpts.capture = true;
-            if (mods.includes("passive")) listenerOpts.passive = true;
-
-            const handler: EventListener = (e: Event) => {
-                if (mods.includes("prevent")) e.preventDefault();
-                if (mods.includes("stop")) e.stopPropagation();
-                // Si el evento fue delegado, e.currentTarget será 'document',
-                // por eso excluimos '.self' de la delegación más abajo.
-                if (mods.includes("self") && e.target !== e.currentTarget) return;
-
-                if ("key" in e) {
-                    const ke = e as KeyboardEvent;
-                    for (const mod of mods) {
-                        const mapped = KEY_MAP[mod];
-                        if (mapped !== undefined && ke.key !== mapped) return;
-                        if (!KEY_MAP[mod] && mod.length === 1 && ke.key.toLowerCase() !== mod) return;
-                    }
-                }
-                rawHandler(e);
-            };
-
-            // NUEVO: Estrategia de Delegación
-            // Excluimos eventos con modificadores especiales que dependen del ciclo de vida exacto del nodo
             const canDelegate = 
                 DELEGABLE_EVENTS.has(eventName) && 
-                !listenerOpts.capture && 
-                !listenerOpts.once && 
-                !mods.includes("self");
+                !mods.includes("capture") && 
+                !mods.includes("once");
 
             if (canDelegate) {
-                // Registrar el evento globalmente solo una vez por tipo
                 if (!_delegatedRegistry.has(eventName)) {
                     document.addEventListener(eventName, _globalEventHandler);
                     _delegatedRegistry.add(eventName);
                 }
                 
-                // En lugar de addEventListener, guardamos el handler en una propiedad rápida del nodo
-                (el as any)[`__nix_${eventName}`] = handler;
-                disposes.push(() => { (el as any)[`__nix_${eventName}`] = null; });
+                // Guardamos el handler crudo y los modificadores directamente en el nodo
+                (el as any)[`__nix_${eventName}`] = rawHandler;
+                if (mods.length > 0) {
+                    (el as any)[`__nix_${eventName}_mods`] = mods;
+                }
+                
+                disposes.push(() => { 
+                    (el as any)[`__nix_${eventName}`] = null; 
+                    (el as any)[`__nix_${eventName}_mods`] = null;
+                });
             } else {
-                // Degradación elegante: Método tradicional para eventos no delegables (scroll, mouseenter, etc.)
+                // Degradación elegante
+                const listenerOpts: AddEventListenerOptions = {
+                    once: mods.includes("once"),
+                    capture: mods.includes("capture"),
+                    passive: mods.includes("passive")
+                };
+                const handler = (e: Event) => {
+                    if (mods.includes("prevent")) e.preventDefault();
+                    if (mods.includes("stop")) e.stopPropagation();
+                    if (mods.includes("self") && e.target !== e.currentTarget) return;
+                    rawHandler(e);
+                };
                 el.addEventListener(eventName, handler, listenerOpts);
                 disposes.push(() => el.removeEventListener(eventName, handler, listenerOpts));
             }
@@ -1063,13 +1075,28 @@ function activateBindings(
                 let originalDisplay: string | null = null;
 
                 if (typeof value === "function") {
+                    let queued = false;
+                    let pendingVisible = false;
+                    let isFirstRun = true; // NUEVO: Detector de montaje inicial
+                    
                     const dispose = effect(() => {
-                        const visible = Boolean((value as () => unknown)());
-                        const shouldShow = attrName === "show" ? visible : !visible;
-                        if (originalDisplay === null) {
-                            originalDisplay = htmlEl.style.display || "";
+                        pendingVisible = Boolean((value as () => unknown)());
+                        const update = () => {
+                            queued = false;
+                            const shouldShow = attrName === "show" ? pendingVisible : !pendingVisible;
+                            if (originalDisplay === null) {
+                                originalDisplay = htmlEl.style.display || "";
+                            }
+                            htmlEl.style.display = shouldShow ? originalDisplay : "none";
+                        };
+
+                        if (isFirstRun) {
+                            isFirstRun = false;
+                            update(); // Síncrono en memoria (Súper rápido)
+                        } else if (!queued) {
+                            queued = true;
+                            queueDOMWrite(update); // Asíncrono para actualizaciones
                         }
-                        htmlEl.style.display = shouldShow ? originalDisplay : "none";
                     });
                     disposes.push(dispose);
                 } else {
@@ -1082,14 +1109,30 @@ function activateBindings(
             const isDomProp = (attrName === "value" || attrName === "checked" || attrName === "selected") && attrName in element;
 
             if (typeof value === "function") {
+                let queued = false;
+                let pendingValue: unknown;
+                let isFirstRun = true; // NUEVO
+                
                 const dispose = effect(() => {
-                    const v = (value as () => unknown)();
-                    if (isDomProp) {
-                        (element as any)[attrName] = v ?? "";
-                    } else if (v == null || v === false) {
-                        element.removeAttribute(attrName);
-                    } else {
-                        element.setAttribute(attrName, String(v));
+                    pendingValue = (value as () => unknown)();
+                    const update = () => {
+                        queued = false;
+                        const v = pendingValue;
+                        if (isDomProp) {
+                            (element as any)[attrName] = v ?? "";
+                        } else if (v == null || v === false) {
+                            element.removeAttribute(attrName);
+                        } else {
+                            element.setAttribute(attrName, String(v));
+                        }
+                    };
+
+                    if (isFirstRun) {
+                        isFirstRun = false;
+                        update(); // Síncrono en memoria
+                    } else if (!queued) {
+                        queued = true;
+                        queueDOMWrite(update); // Asíncrono para actualizaciones
                     }
                 });
                 disposes.push(dispose);
@@ -1104,8 +1147,13 @@ function activateBindings(
         }
 
         // --- Nodes ---
-        const anchor = el as Comment;
-        if (!anchor) continue;
+        const originalAnchor = el as Comment;
+        if (!originalAnchor) continue;
+
+        // EL FIX DEL RENDERIZADO: Cambiamos el comentario por un TextNode vacío.
+        // Esto salva el motor de Layout del navegador, especialmente dentro de Tablas.
+        const anchor = document.createTextNode("");
+        originalAnchor.parentNode!.replaceChild(anchor, originalAnchor);
 
         if (typeof value !== "function") {
             if (isNixComponent(value)) {
@@ -1147,33 +1195,41 @@ function activateBindings(
 
         let _textQueued = false;
         let _pendingText = "";
+        let _isFirstText = true; // NUEVO
 
         const dispose = effect(() => {
             const v = (value as () => unknown)();
 
             if (typeof v === "string" || typeof v === "number") {
                 _pendingText = String(v);
-                if (!_textQueued) {
+                
+                const update = () => {
+                    _textQueued = false;
+                    if (innerCleanup) {
+                        innerCleanup();
+                        innerCleanup = null;
+                    }
+                    if (!textNode) {
+                        textNode = document.createTextNode(_pendingText);
+                        anchor.parentNode!.insertBefore(textNode, anchor);
+                    } else {
+                        textNode.nodeValue = _pendingText;
+                    }
+                };
+
+                if (_isFirstText) {
+                    _isFirstText = false;
+                    update(); // Síncrono en memoria
+                } else if (!_textQueued) {
                     _textQueued = true;
-                    queueDOMWrite(() => {
-                        _textQueued = false;
-                        if (innerCleanup) {
-                            innerCleanup();
-                            innerCleanup = null;
-                        }
-                        if (!textNode) {
-                            textNode = document.createTextNode(_pendingText);
-                            anchor.parentNode!.insertBefore(textNode, anchor);
-                        } else {
-                            textNode.nodeValue = _pendingText;
-                        }
-                    });
+                    queueDOMWrite(update); // Asíncrono para actualizaciones
                 }
                 return;
             }
 
-            // Si pasa de texto a un componente/lista, cancelamos cualquier update de texto pendiente
+            // Si pasa de texto a un componente/lista, cancelamos banderas
             _textQueued = false; 
+            _isFirstText = false;
 
             if (textNode) {
                 textNode.parentNode?.removeChild(textNode);
@@ -1194,7 +1250,8 @@ function activateBindings(
 
                 if (!keyedState) {
                     keyedState = new Map();
-                    keyedZoneStart = document.createComment(COMMENT.KEYED_ZONE);
+                    // ANTES: document.createComment(COMMENT.KEYED_ZONE)
+                    keyedZoneStart = document.createTextNode(""); 
                     anchor.parentNode!.insertBefore(keyedZoneStart, anchor);
                 }
 
@@ -1232,8 +1289,9 @@ function activateBindings(
                         for (let i = 0; i < newKeyOrder.length; i++) {
                             const key = newKeyOrder[i];
                             const item = v.items[i];
-                            const start = document.createComment(COMMENT.KEYED_START);
-                            const end = document.createComment(COMMENT.KEYED_END);
+                            // ANTES: document.createComment(...)
+                            const start = document.createTextNode("");
+                            const end = document.createTextNode("");
 
                             frag.appendChild(start);
                             frag.appendChild(end);
@@ -1304,8 +1362,9 @@ function activateBindings(
                     if (isNew) {
                         // Es un nodo completamente nuevo
                         const it = v.items[i];
-                        const sMarker = document.createComment(COMMENT.KEYED_START);
-                        const eMarker = document.createComment(COMMENT.KEYED_END);
+                        // ANTES: document.createComment(...)
+                        const sMarker = document.createTextNode("");
+                        const eMarker = document.createTextNode("");
                         const frag = document.createDocumentFragment();
 
                         frag.appendChild(sMarker);
@@ -1526,7 +1585,8 @@ export function html(
             fragment, contexts, values, pathMap
         );
 
-        const startMarker = document.createComment(COMMENT.SCOPE);
+        // ANTES: document.createComment(COMMENT.SCOPE);
+        const startMarker = document.createTextNode("");
         parent.insertBefore(startMarker, before);
         parent.insertBefore(fragment, before);
 

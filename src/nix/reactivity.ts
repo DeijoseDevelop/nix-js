@@ -78,12 +78,14 @@ export class Signal<T> {
     }
 
     private _notify(): void {
-        const subs = [...this._subs];
-
         if (batchLevel > 0) {
-            subs.forEach((s) => pendingEffects.add(s));
+            for (const s of this._subs) pendingEffects.add(s);
         } else {
-            subs.forEach((s) => s());
+            // Evitamos la sintaxis spread [...] que aloca memoria lenta en V8
+            const subs = Array.from(this._subs);
+            for (let i = 0; i < subs.length; i++) {
+                subs[i]();
+            }
         }
     }
 
@@ -107,20 +109,27 @@ export function signal<T>(initialValue: T): Signal<T> {
 export function effect(fn: () => void | (() => void)): () => void {
     let disposed = false;
     let cleanup: (() => void) | void;
+    
+    // Opt: Double buffering para evitar crear `new Set()` en cada ejecución
     let deps = new Set<Signal<any>>();
+    let newDeps = new Set<Signal<any>>();
+    
     const capturedErrorHandler = activeErrorHandler;
 
     const execute = () => {
         if (disposed) return;
         if (typeof cleanup === "function") cleanup();
 
-        deps.forEach((dep) => dep._removeSub(execute));
-        deps = new Set();
+        // Intercambiamos los buffers. 'deps' ahora tiene los viejos, 'newDeps' está limpio para recolectar.
+        const temp = deps;
+        deps = newDeps;
+        newDeps = temp;
+        newDeps.clear();
 
         effectStack.push(activeEffect);
         depsStack.push(activeDeps);
         activeEffect = execute;
-        activeDeps = deps;
+        activeDeps = newDeps; // activeDeps ahora apunta al buffer limpio
 
         effectDepth++;
         if (effectDepth > MAX_EFFECT_DEPTH) {
@@ -144,6 +153,13 @@ export function effect(fn: () => void | (() => void)): () => void {
             effectDepth--;
             activeEffect = effectStack.pop() || null;
             activeDeps = depsStack.pop() || null;
+            
+            // Cleanup phase: Desuscribirse de señales que estaban en 'deps' pero NO en 'newDeps'
+            for (const oldDep of deps) {
+                if (!newDeps.has(oldDep)) {
+                    oldDep._removeSub(execute);
+                }
+            }
         }
     };
 
@@ -152,7 +168,11 @@ export function effect(fn: () => void | (() => void)): () => void {
     return () => {
         disposed = true;
         if (typeof cleanup === "function") cleanup();
-        deps.forEach((dep) => dep._removeSub(execute));
+        // Al desechar, usamos newDeps porque es el que quedó activo después del último execute
+        for (const dep of newDeps) {
+            dep._removeSub(execute);
+        }
+        newDeps.clear();
         deps.clear();
     };
 }
@@ -161,10 +181,11 @@ export function effect(fn: () => void | (() => void)): () => void {
 export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
     const s = new Signal<T>(undefined as T);
     const disposeEffect = effect(() => { s.value = fn(); });
-    const originalDispose = s.dispose.bind(s);
+    const originalDispose = s.dispose;
+    
     s.dispose = () => {
         disposeEffect();
-        originalDispose();
+        originalDispose.call(s); // Opt: Evitar el uso lento de .bind()
     };
     return s as Signal<T> & { dispose(): void };
 }
@@ -176,10 +197,12 @@ export function batch(fn: () => void): void {
         fn();
     } finally {
         batchLevel--;
-        if (batchLevel === 0) {
-            const pending = [...pendingEffects];
+        if (batchLevel === 0 && pendingEffects.size > 0) {
+            // Iteración O(N) directa sin crear Arrays temporales [...pendingEffects]
+            for (const effectRun of pendingEffects) {
+                effectRun();
+            }
             pendingEffects.clear();
-            pending.forEach((f) => f());
         }
     }
 }
