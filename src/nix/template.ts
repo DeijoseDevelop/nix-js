@@ -734,8 +734,6 @@ type BindingContext =
 /**
  * Determines the binding context (node, event, or attribute) for an interpolated
  * value based on the preceding template string.
- *
- * (Optimized: Removed all Regular Expressions for maximum parsing speed).
  */
 function detectContext(prevString: string): BindingContext {
     const lastClose = prevString.lastIndexOf(">");
@@ -1087,7 +1085,7 @@ function activateBindings(
                 if (typeof value === "function") {
                     let queued = false;
                     let pendingVisible = false;
-                    let isFirstRun = true; // NUEVO: Detector de montaje inicial
+                    let isFirstRun = true;
                     
                     const dispose = effect(() => {
                         pendingVisible = Boolean((value as () => unknown)());
@@ -1121,7 +1119,7 @@ function activateBindings(
             if (typeof value === "function") {
                 let queued = false;
                 let pendingValue: unknown;
-                let isFirstRun = true; // NUEVO
+                let isFirstRun = true;
                 
                 const dispose = effect(() => {
                     pendingValue = (value as () => unknown)();
@@ -1160,8 +1158,6 @@ function activateBindings(
         const originalAnchor = el as Comment;
         if (!originalAnchor) continue;
 
-        // EL FIX DEL RENDERIZADO: Cambiamos el comentario por un TextNode vacío.
-        // Esto salva el motor de Layout del navegador, especialmente dentro de Tablas.
         const anchor = document.createTextNode("");
         originalAnchor.parentNode!.replaceChild(anchor, originalAnchor);
 
@@ -1205,7 +1201,7 @@ function activateBindings(
 
         let _textQueued = false;
         let _pendingText = "";
-        let _isFirstText = true; // NUEVO
+        let _isFirstText = true;
 
         const dispose = effect(() => {
             const v = (value as () => unknown)();
@@ -1260,7 +1256,6 @@ function activateBindings(
 
                 if (!keyedState) {
                     keyedState = new Map();
-                    // ANTES: document.createComment(COMMENT.KEYED_ZONE)
                     keyedZoneStart = document.createTextNode(""); 
                     anchor.parentNode!.insertBefore(keyedZoneStart, anchor);
                 }
@@ -1270,7 +1265,7 @@ function activateBindings(
                     (item, idx) => v.keyFn(item as never, idx)
                 );
 
-                // === EL FIX: Detectar si ES un Reemplazo Total ===
+                // Detect if it is a total replacement
                 const newKeySet = new Set(newKeyOrder);
                 let anyKeysSurvive = false;
                 if (keyedState.size > 0) {
@@ -1282,7 +1277,7 @@ function activateBindings(
                     }
                 }
 
-                // ── 1. Renderizado Inicial o Reemplazo Total (FAST PATH O(1)) ──────
+                // 1. Initial Render or Total Replacement (O(1) path)
                 if (!anyKeysSurvive) {
                     if (keyedState.size > 0) {
                         // Borrado ultra rápido a nivel de motor C++ del navegador
@@ -1300,7 +1295,6 @@ function activateBindings(
                             for (let i = 0; i < newKeyOrder.length; i++) {
                                 const key = newKeyOrder[i];
                                 const item = v.items[i];
-                                // ANTES: document.createComment(...)
                                 const start = document.createTextNode("");
                                 const end = document.createTextNode("");
 
@@ -1321,9 +1315,8 @@ function activateBindings(
                     return;
                 }
 
-                // ── 2. Preparar Reconciliación con LIS ──────────────────────────────
+                // 2. Prepare Reconciliation with LIS
                 const keyToNewIndex = new Map<Key, number>();
-                // ... (el código de LIS sigue exactamente igual desde aquí)
                 for (let i = 0; i < newKeyOrder.length; i++) {
                     keyToNewIndex.set(newKeyOrder[i], i);
                 }
@@ -1361,7 +1354,7 @@ function activateBindings(
                     }
                 }
 
-                // ── 3. Aplicar Movimientos o Inserciones (de atrás hacia adelante) ──
+                // Apply Movements or Insertions (backwards)
                 // Si hubo desorden, calculamos la Subsecuencia Creciente Más Larga (nuestra ancla)
                 const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : [];
                 let j = increasingNewIndexSequence.length - 1;
@@ -1374,7 +1367,6 @@ function activateBindings(
                     if (isNew) {
                         // Es un nodo completamente nuevo
                         const it = v.items[i];
-                        // ANTES: document.createComment(...)
                         const sMarker = document.createTextNode("");
                         const eMarker = document.createTextNode("");
                         const frag = document.createDocumentFragment();
@@ -1597,7 +1589,6 @@ export function html(
             fragment, contexts, values, pathMap
         );
 
-        // ANTES: document.createComment(COMMENT.SCOPE);
         const startMarker = document.createTextNode("");
         parent.insertBefore(startMarker, before);
         parent.insertBefore(fragment, before);

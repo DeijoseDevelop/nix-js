@@ -44,7 +44,8 @@ const _pendingEffectsArr: (() => void)[] = [];
 const MAX_EFFECT_DEPTH = 100;
 let effectDepth = 0;
 
-const _notifyBuf: (() => void)[] = [];
+const _notifyBuf: ((() => void) | null)[] = [];
+let _notifyBase = 0;
 
 // --- Signal ---
 
@@ -97,12 +98,18 @@ export class Signal<T> {
             }
             return;
         }
-        // Llenar el buffer, ejecutar, limpiar — cero allocations
+        const base = _notifyBase;
         let len = 0;
-        for (const s of this._subs) _notifyBuf[len++] = s;
-        for (let i = 0; i < len; i++) {
-            _notifyBuf[i]!();
-            _notifyBuf[i] = null!; // liberar referencia para GC
+        for (const s of this._subs) _notifyBuf[base + len++] = s;
+        _notifyBase = base + len;
+        try {
+            for (let i = 0; i < len; i++) {
+                const fn = _notifyBuf[base + i];
+                _notifyBuf[base + i] = null!;
+                fn?.();
+            }
+        } finally {
+            _notifyBase = base;
         }
     }
 
@@ -184,11 +191,9 @@ export function effect(fn: () => void | (() => void)): () => void {
 
             
             // Cleanup phase: Desuscribirse de señales que estaban en 'deps' pero NO en 'newDeps'
-            if (deps.size !== newDeps.size) {
-                for (const oldDep of deps) {
-                    if (!newDeps.has(oldDep)) {
-                        oldDep._removeSub(execute);
-                    }
+            for (const oldDep of deps) {
+                if (!newDeps.has(oldDep)) {
+                    oldDep._removeSub(execute);
                 }
             }
         }

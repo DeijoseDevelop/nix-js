@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { signal } from "../nix/reactivity";
+import { nextTick, signal } from "../nix/reactivity";
 import { html, ref, showWhen, repeat } from "../nix/template";
 
 // ── html`` tag ────────────────────────────────────────────────────────────────
@@ -16,40 +16,47 @@ describe("html`…`", () => {
         expect(el.querySelector("p")!.textContent).toBe("Hello");
     });
 
-    it("mounts dynamic text via getter function", () => {
+    it("mounts dynamic text via getter function", async () => {
         const s = signal("A");
         const el = document.createElement("div");
         html`<span>${() => s.value}</span>`.mount(el);
         expect(el.querySelector("span")!.textContent).toBe("A");
         s.value = "B";
+        await nextTick();
         expect(el.querySelector("span")!.textContent).toBe("B");
     });
 
-    it("reactively updates attributes", () => {
+    it("reactively updates attributes", async () => {
         const cls = signal("red");
         const el = document.createElement("div");
         html`<span class=${() => cls.value}>x</span>`.mount(el);
         expect(el.querySelector("span")!.className).toBe("red");
         cls.value = "blue";
+        await nextTick();
         expect(el.querySelector("span")!.className).toBe("blue");
     });
 
-    it("handles boolean attributes", () => {
+    it("handles boolean attributes", async () => {
         const disabled = signal(true);
         const el = document.createElement("div");
         html`<button disabled=${() => disabled.value}>click</button>`.mount(el);
         const btn = el.querySelector("button")!;
         expect(btn.disabled).toBe(true);
         disabled.value = false;
+        await nextTick();
         expect(btn.disabled).toBe(false);
     });
 
     it("attaches event listeners with @event syntax", () => {
         const handler = vi.fn();
         const el = document.createElement("div");
+        document.body.appendChild(el); // <--- AÑADIR AL DOM
+        
         html`<button @click=${handler}>ok</button>`.mount(el);
         el.querySelector("button")!.click();
+        
         expect(handler).toHaveBeenCalledOnce();
+        document.body.removeChild(el); // <--- LIMPIAR
     });
 
     it("mounts with CSS selector string", () => {
@@ -96,13 +103,14 @@ describe("html`…`", () => {
         expect(el.querySelector("span")!.textContent).toBe("no");
     });
 
-    it("renders reactive style strings", () => {
+    it("renders reactive style strings", async () => {
         const color = signal("red");
         const el = document.createElement("div");
         html`<p style=${() => "color:" + color.value}>x</p>`.mount(el);
         const p = el.querySelector("p")!;
         expect(p.getAttribute("style")).toContain("red");
         color.value = "blue";
+        await nextTick();
         expect(p.getAttribute("style")).toContain("blue");
     });
 });

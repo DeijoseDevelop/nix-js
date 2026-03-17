@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.7.7
+
+- **perf(reactivity): double-buffered notification queue** — implemented a double-buffering scheme for the notification system, reducing array allocations and overhead during complex dependency cycles.
+- **fix(test): async verification stability** — improved unit test reliability by ensuring proper microtask synchronization (`nextTick`) and DOM isolation in reactive tests.
+- **chore: ecosystem-wide version bump** — synchronized all packages, templates, and benchmark apps to v1.7.7.
+
 ## v1.7.6
 
 - **perf(template): heuristic reconciliation with LIS** — implemented the Longest Increasing Subsequence (LIS) algorithm for keyed list diffing (`repeat`), minimizing DOM moves during complex list reordering.
