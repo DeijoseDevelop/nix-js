@@ -11,27 +11,41 @@ type AsyncState<T> =
     | { status: "error"; error: unknown };
 
 export interface SuspenseOptions {
-    /** Template shown while the promise is pending. */
     fallback?: NixTemplate;
-    /** Factory receiving the error, returns the error template. */
     errorFallback?: (err: unknown) => NixTemplate;
-    /** If `true`, shows fallback during re-fetches instead of stale content. */
     resetOnRefresh?: boolean;
-    /** Signal that triggers a re-fetch when its value changes. DOM is reused. */
     invalidate?: Signal<unknown>;
-    /**
-     * Optional cache key. When provided, resolved data is cached globally
-     * so that subsequent mounts with the same key render cached data instantly,
-     * similar to `createQuery` caching behaviour.
-     */
     cacheKey?: string;
+    staleTime?: number;
+}
+
+export type QueryStatus = "pending" | "success" | "error";
+
+export interface QueryResult<T> {
+    /** Reactive signal with the current fetch status. */
+    readonly status: Signal<QueryStatus>;
+    /** Reactive signal with the resolved data. `undefined` while pending. */
+    readonly data: Signal<T | undefined>;
+    /** Reactive signal with the captured error. `undefined` if no error. */
+    readonly error: Signal<unknown>;
+    /** Clears the cache for this key and re-fetches immediately. */
+    refetch(): void;
+}
+
+export interface QueryOptions {
     /**
-     * Time in milliseconds that cached data is considered fresh.
-     * While fresh, no background refetch happens on mount.
-     * Only used when `cacheKey` is set.
-     * @default 0  (always stale — refetch in background on every mount)
+     * Time in ms that cached data is considered fresh.
+     * While fresh, mounting will not trigger a background refetch.
+     * @default 0
      */
     staleTime?: number;
+    /**
+     * - `"always"` — background refetch on every mount (default).
+     * - `"stale"`  — refetch only when data has exceeded `staleTime`.
+     * - `false`    — never refetch on mount; only via `refetch()` or `invalidateQueries()`.
+     * @default "always"
+     */
+    refetchOnMount?: "always" | "stale" | false;
 }
 
 // --- Default fallbacks ---
@@ -62,19 +76,13 @@ function defaultErrorTemplate(err: unknown): NixTemplate {
 
 interface CacheEntry<T = unknown> {
     data: T;
-    /** Timestamp (Date.now()) when the data was last resolved. */
     fetchedAt: number;
-    /** Number of active subscribers. Used for garbage-collection. */
     subscribers: number;
 }
 
-/** @internal Global cache of resolved query data. */
 const _queryCache = new Map<string, CacheEntry>();
 
-/** Default cache time: entries with 0 subscribers are removed after this period (ms). */
-const DEFAULT_CACHE_TIME = 5 * 60 * 1000; // 5 minutes
-
-/** @internal GC interval handle. */
+const DEFAULT_CACHE_TIME = 5 * 60 * 1000;
 let _gcTimer: ReturnType<typeof setInterval> | null = null;
 let _cacheTime = DEFAULT_CACHE_TIME;
 
@@ -87,20 +95,17 @@ function _startGC(): void {
                 _queryCache.delete(key);
             }
         }
-        // Stop GC when cache is empty
         if (_queryCache.size === 0 && _gcTimer !== null) {
             clearInterval(_gcTimer);
             _gcTimer = null;
         }
-    }, 60_000); // check every minute
+    }, 60_000);
 }
 
-/** @internal Read the cache entry for a key, if it exists. */
 function _getCacheEntry<T>(key: string): CacheEntry<T> | undefined {
     return _queryCache.get(key) as CacheEntry<T> | undefined;
 }
 
-/** @internal Write resolved data into the cache for a key. */
 function _setCacheEntry<T>(key: string, data: T): void {
     const existing = _queryCache.get(key);
     _queryCache.set(key, {
@@ -111,19 +116,16 @@ function _setCacheEntry<T>(key: string, data: T): void {
     _startGC();
 }
 
-/** @internal Increment subscriber count for a cache key. */
 function _subscribe(key: string): void {
     const entry = _queryCache.get(key);
     if (entry) entry.subscribers++;
 }
 
-/** @internal Decrement subscriber count for a cache key. */
 function _unsubscribe(key: string): void {
     const entry = _queryCache.get(key);
     if (entry) entry.subscribers = Math.max(0, entry.subscribers - 1);
 }
 
-/** @internal Check whether cached data for a key is still fresh. */
 function _isFresh(key: string, staleTime: number): boolean {
     const entry = _queryCache.get(key);
     if (!entry) return false;
@@ -131,9 +133,8 @@ function _isFresh(key: string, staleTime: number): boolean {
 }
 
 /**
- * Clear the query cache.
- * - Call with no arguments to clear **all** cached data.
- * - Pass a specific `key` to clear only that entry.
+ * Clears one or all entries from the global query cache.
+ * Passing no argument clears everything.
  */
 export function clearQueryCache(key?: string): void {
     if (key !== undefined) {
@@ -144,8 +145,8 @@ export function clearQueryCache(key?: string): void {
 }
 
 /**
- * Set the global cache time (how long unused entries persist).
- * @param ms  Time in milliseconds. Pass `Infinity` to keep entries forever.
+ * Sets how long cache entries with zero subscribers are kept alive.
+ * @param ms Milliseconds. Pass `Infinity` to keep entries forever.
  */
 export function setQueryCacheTime(ms: number): void {
     _cacheTime = ms;
@@ -155,19 +156,11 @@ export function setQueryCacheTime(ms: number): void {
 
 /**
  * Runs an async function and renders based on its state (pending/resolved/error).
- * Equivalent to the Suspense pattern in other frameworks.
  *
- * Pass `invalidate` to re-fetch without destroying the DOM:
  * ```ts
  * const refresh = signal(0);
  * suspend(() => fetchData(), render, { invalidate: refresh });
- * // later: refresh.update(n => n + 1);
- * ```
- *
- * Pass `cacheKey` to enable caching — subsequent mounts render cached data
- * instantly without a loading spinner:
- * ```ts
- * suspend(() => fetchProfile(), render, { cacheKey: "profile" });
+ * refresh.update(n => n + 1);
  * ```
  */
 export function suspend<T>(
@@ -193,7 +186,6 @@ export function suspend<T>(
 
         constructor() {
             super();
-            // If cached data exists, start in resolved state
             const cached = cacheKey ? _getCacheEntry<T>(cacheKey) : undefined;
             this._state = signal<AsyncState<T>>(
                 cached ? { status: "resolved", data: cached.data } : { status: "pending" }
@@ -206,19 +198,17 @@ export function suspend<T>(
             const cached = cacheKey ? _getCacheEntry<T>(cacheKey) : undefined;
 
             if (cached && _isFresh(cacheKey!, staleTime)) {
-                // Data is fresh — no refetch needed
+                // fresh — skip
             } else if (cached) {
-                // Data exists but is stale — background refetch (no loading spinner)
                 this._fetch();
             } else {
-                // No cached data — full fetch with loading state
                 this._run();
             }
 
             if (invalidate) {
                 let first = true;
                 this._disposeWatcher = effect(() => {
-                    invalidate.value; // subscribe
+                    invalidate.value;
                     if (first) { first = false; return; }
                     if (cacheKey) _queryCache.delete(cacheKey);
                     this._run();
@@ -231,7 +221,6 @@ export function suspend<T>(
             };
         }
 
-        /** Full run: may show loading state. */
         private _run(): void {
             if (resetOnRefresh || this._state.peek().status === "pending") {
                 this._state.value = { status: "pending" };
@@ -239,7 +228,6 @@ export function suspend<T>(
             this._fetch();
         }
 
-        /** Background fetch: does not reset to pending. */
         private _fetch(): void {
             asyncFn().then(
                 (data) => {
@@ -265,168 +253,134 @@ export function suspend<T>(
 
 // --- createQuery() / invalidateQueries() ---
 
-/** @internal Global registry of active queries by key. */
-const _queryRegistry = new Map<string, Set<() => void>>();
+const _queryRegistry = new Map<string, Set<WeakRef<() => void>>>();
+
+const _registryCleanup = new FinalizationRegistry<{ key: string; ref: WeakRef<() => void> }>(
+    ({ key, ref }) => {
+        const handlers = _queryRegistry.get(key);
+        if (!handlers) return;
+        handlers.delete(ref);
+        if (handlers.size === 0) _queryRegistry.delete(key);
+    }
+);
 
 /**
- * Force all active `createQuery()` instances with the given key to re-fetch.
- * Also clears the cached data for this key so subsequent mounts will refetch.
+ * Forces all active `createQuery()` instances with the given key to re-fetch.
+ * Clears the cached data so subsequent mounts also fetch fresh data.
+ * Instances that have been garbage-collected are pruned automatically.
  */
 export function invalidateQueries(key: string): void {
-    // Clear cache so new mounts don't use stale data
     _queryCache.delete(key);
-
     const handlers = _queryRegistry.get(key);
-    if (handlers) {
-        for (const refetch of handlers) refetch();
+    if (!handlers) return;
+    for (const ref of handlers) {
+        const fn = ref.deref();
+        if (fn) {
+            fn();
+        } else {
+            handlers.delete(ref);
+        }
     }
-}
-
-export interface QueryOptions {
-    /** Template shown while the promise is pending. */
-    fallback?: NixTemplate;
-    /** Factory receiving the error, returns the error template. */
-    errorFallback?: (err: unknown) => NixTemplate;
-    /** If `true`, shows fallback during re-fetches instead of stale content. */
-    resetOnRefresh?: boolean;
-    /**
-     * Time in ms that cached data is considered fresh.
-     * While fresh, mounting the query will **not** refetch — it renders cached
-     * data instantly. Set to `Infinity` to never auto-refetch.
-     * @default 0  (always stale — background refetch on every mount)
-     */
-    staleTime?: number;
-    /**
-     * Controls whether a background refetch happens when the component mounts.
-     * - `"always"` — always refetch on mount (default; stale data shown instantly
-     *     while the refetch runs in the background).
-     * - `"stale"` — refetch only if cached data has exceeded `staleTime`.
-     * - `false` — never refetch on mount; only manual `invalidateQueries()` refetches.
-     * @default "always"
-     */
-    refetchOnMount?: "always" | "stale" | false;
+    if (handlers.size === 0) _queryRegistry.delete(key);
 }
 
 /**
- * Key-based async data fetching with **built-in caching** and global
- * cache invalidation, similar to React Query / TanStack Query.
+ * Key-based async data fetching with global cache and invalidation.
+ * Returns reactive signals — render them directly in your component.
  *
- * Cached data is stored globally by `key`. When a component using
- * `createQuery` mounts:
- * 1. If cached data exists, it is rendered **immediately** (no loading spinner).
- * 2. A background refetch runs (unless the data is still "fresh" per `staleTime`).
- * 3. When the refetch resolves, the UI updates seamlessly.
+ * Cache persists across route changes. Navigating back renders cached
+ * data instantly, then background-refetches if stale.
  *
  * ```ts
- * createQuery("reservations", () => api.getAll(), (data) => html`...`);
+ * class PostsPage extends NixComponent {
+ *   private q = createQuery("posts", () => api.getPosts());
  *
- * // After a mutation — clears cache & all active instances re-fetch:
- * invalidateQueries("reservations");
+ *   render() {
+ *     return html`
+ *       ${() => this.q.status.value === "pending" && html`<p>Loading…</p>`}
+ *       ${() => this.q.status.value === "error"   && html`<p>Error</p>`}
+ *       ${() => this.q.status.value === "success" && html`
+ *         <ul>${() => repeat(this.q.data.value!, r => r.id,
+ *           r => html`<li>${() => r.name}</li>`)}</ul>
+ *       `}
+ *     `;
+ *   }
+ * }
+ *
+ * // After a mutation:
+ * invalidateQueries("posts");
  * ```
  */
 export function createQuery<T>(
     key: string,
     asyncFn: () => Promise<T>,
-    renderFn: (data: T) => NixTemplate | NixComponent,
     options: QueryOptions = {}
-): NixComponent {
-    const {
-        fallback,
-        errorFallback,
-        resetOnRefresh = false,
-        staleTime = 0,
-        refetchOnMount = "always",
-    } = options;
+): QueryResult<T> {
+    const { staleTime = 0, refetchOnMount = "always" } = options;
 
-    const resolvedFallback = fallback ?? defaultLoadingFallback();
-    const resolvedErrorFallback = errorFallback ?? defaultErrorTemplate;
+    const cached = _getCacheEntry<T>(key);
+    const status = signal<QueryStatus>(cached ? "success" : "pending");
+    const data   = signal<T | undefined>(cached?.data);
+    const error  = signal<unknown>(undefined);
 
-    class QueryComponent extends NixComponent {
-        private _state: Signal<AsyncState<T>>;
-
-        constructor() {
-            super();
-            // Hydrate from cache if available
-            const cached = _getCacheEntry<T>(key);
-            this._state = signal<AsyncState<T>>(
-                cached ? { status: "resolved", data: cached.data } : { status: "pending" }
-            );
-        }
-
-        onMount(): (() => void) | void {
-            // Register in global invalidation registry
-            if (!_queryRegistry.has(key)) {
-                _queryRegistry.set(key, new Set());
+    const _fetch = (): void => {
+        asyncFn().then(
+            (result) => {
+                _setCacheEntry(key, result);
+                data.value   = result;
+                error.value  = undefined;
+                status.value = "success";
+            },
+            (err) => {
+                error.value  = err;
+                status.value = "error";
             }
-            const handlers = _queryRegistry.get(key)!;
-            const refetch = () => this._run();
-            handlers.add(refetch);
+        );
+    };
 
-            // Track subscriber for GC
-            _subscribe(key);
-
-            const cached = _getCacheEntry<T>(key);
-            const fresh = _isFresh(key, staleTime);
-
-            if (!cached) {
-                // No cache — full fetch with loading state
-                this._run();
-            } else if (refetchOnMount === false) {
-                // Never refetch on mount
-            } else if (refetchOnMount === "stale" && fresh) {
-                // Data is still fresh — skip refetch
-            } else if (refetchOnMount === "always" && fresh && staleTime > 0) {
-                // Data is fresh and user explicitly set a staleTime — skip refetch
-            } else {
-                // Background refetch (cached data already shown)
-                this._fetch();
-            }
-
-            return () => {
-                handlers.delete(refetch);
-                if (handlers.size === 0) _queryRegistry.delete(key);
-                _unsubscribe(key);
-            };
+    const _run = (): void => {
+        if (status.peek() === "pending") {
+            data.value  = undefined;
+            error.value = undefined;
         }
+        _fetch();
+    };
 
-        /** Full run: may show loading state depending on resetOnRefresh. */
-        private _run(): void {
-            if (resetOnRefresh || this._state.peek().status === "pending") {
-                this._state.value = { status: "pending" };
-            }
-            this._fetch();
-        }
+    if (!_queryRegistry.has(key)) _queryRegistry.set(key, new Set());
+    const handlers = _queryRegistry.get(key)!;
+    const ref = new WeakRef(_run);
+    handlers.add(ref);
+    _registryCleanup.register(_run, { key, ref });
 
-        /** Background fetch: does not reset to pending; updates cache on success. */
-        private _fetch(): void {
-            asyncFn().then(
-                (data) => {
-                    _setCacheEntry(key, data);
-                    this._state.value = { status: "resolved", data };
-                },
-                (err) => { this._state.value = { status: "error", error: err }; }
-            );
-        }
-
-        render(): NixTemplate {
-            return html`<div class="nix-query" style="display:contents">${() => {
-                const s = this._state.value;
-                if (s.status === "pending") return resolvedFallback;
-                if (s.status === "error") return resolvedErrorFallback(s.error);
-                return renderFn(s.data);
-            }}</div>`;
-        }
+    const fresh = _isFresh(key, staleTime);
+    if (!cached) {
+        _run();
+    } else if (refetchOnMount === false) {
+        // skip
+    } else if (refetchOnMount === "stale" && fresh) {
+        // skip
+    } else if (refetchOnMount === "always" && fresh && staleTime > 0) {
+        // skip
+    } else {
+        _fetch();
     }
 
-    return new QueryComponent();
+    return {
+        status,
+        data,
+        error,
+        refetch: () => {
+            _queryCache.delete(key);
+            _run();
+        },
+    };
 }
 
 // --- lazy() ---
 
 /**
  * Wraps a dynamic import for lazy-loading route components.
- * The module is loaded once (cached). Compatible with `RouteRecord.component`.
- * The imported module must use a default export.
+ * The module is loaded once and cached. The imported module must use a default export.
  */
 export function lazy(
     importFn: () => Promise<{ default: new () => NixComponent }>,
