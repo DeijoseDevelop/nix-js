@@ -4,7 +4,7 @@
   "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
   "license": "MIT",
   "author": "Deiver Vasquez",
-  "homepage": "https://nix-js-landing.vercel.app/",
+  "homepage": "https://nix-js.dev/",
   "repository": {
     "type": "git",
     "url": "https://github.com/DeijoseDevelop/nix-js.git"
