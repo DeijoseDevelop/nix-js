@@ -156,3 +156,53 @@ describe("mount()", () => {
         expect(() => mount(html`<p>x</p>`, "#nonexistent-4129")).toThrow();
     });
 });
+
+describe("mount() with NixComponent", () => {
+    it("throws an error if the container selector is not found", () => {
+        class DummyComp extends NixComponent {
+            render() { return html`<div></div>`; }
+        }
+
+        expect(() => {
+            mount(new DummyComp(), "#this-id-does-not-exist-12345");
+        }).toThrow(/container not found/);
+    });
+
+    it("throws an error if onMount fails and there is no onError handler", () => {
+        class ThrowingComp extends NixComponent {
+            onMount() {
+                throw new Error("mount crashed");
+            }
+            render() { return html`<div></div>`; }
+        }
+
+        const el = document.createElement("div");
+
+        expect(() => {
+            mount(new ThrowingComp(), el);
+        }).toThrow("mount crashed");
+    });
+
+    it("delegates error to onError if onMount fails", () => {
+        const errorSpy = vi.fn();
+
+        class HandledThrowingComp extends NixComponent {
+            onMount() {
+                throw new Error("mount crashed handled");
+            }
+            onError(err: unknown) {
+                errorSpy(err);
+            }
+            render() { return html`<div></div>`; }
+        }
+
+        const el = document.createElement("div");
+
+        expect(() => {
+            mount(new HandledThrowingComp(), el);
+        }).not.toThrow(); // El error no debe escapar
+
+        expect(errorSpy).toHaveBeenCalledOnce();
+        expect(errorSpy.mock.calls[0][0].message).toBe("mount crashed handled");
+    });
+});

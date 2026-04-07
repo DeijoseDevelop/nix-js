@@ -15,7 +15,12 @@ export function queueDOMWrite(task: () => void): void {
         _isDomWriteScheduled = true;
         queueMicrotask(() => {
             for (const t of _domWriteQueue) {
-                t();
+                try {
+                    t();
+                } catch (e) {
+                    // Evitamos que un error rompa el hilo entero
+                    console.error("[Nix.js] Error in DOM write task:", e);
+                }
             }
             _domWriteQueue.clear();
             _isDomWriteScheduled = false;

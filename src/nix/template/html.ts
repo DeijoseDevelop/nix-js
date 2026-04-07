@@ -140,8 +140,11 @@ export function html(
         );
 
         const startMarker = document.createTextNode("");
+        const endMarker = document.createTextNode("")
+
         parent.insertBefore(startMarker, before);
         parent.insertBefore(fragment, before);
+        parent.insertBefore(endMarker, before);
 
         postMountHooks.forEach((cb) => cb());
 
@@ -150,12 +153,13 @@ export function html(
                 disposes[i]();
             }
             let node = startMarker.nextSibling;
-            while (node && node !== before) {
+            while (node && node !== endMarker) {
                 const next = node.nextSibling;
                 node.parentNode?.removeChild(node);
                 node = next;
             }
             startMarker.parentNode?.removeChild(startMarker);
+            endMarker.parentNode?.removeChild(endMarker);
         };
     }
 

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.8.1
+
+- **fix(template): DOM write microtask safety** — added a `try/catch` wrapper inside the `queueDOMWrite` microtask loop. Prevents unhandled render errors from terminating the entire UI rendering queue.
+- **fix(template): boundary marker unmounts** — introduced an explicit `endMarker` text node during HTML component mounting. Component teardown now safely halts at its own boundary rather than traversing up to unrelated DOM anchor siblings.
+- **fix(async): global query cache stability** — hardened `createQuery` internal cache logic. Memory cleanup (`clearQueryCache`) now aggressively terminates the global Garbage Collector timer, and subscriber reference counting remains accurate even when subscriptions start during inflight requests.
+- **test: coverage reporting** — introduced `@vitest/coverage-v8` and extensive boundary testing across routing (`RouterView`, `Link`, popstate logic) and components (`mount()` edge cases). 
+
 ## v1.8.0
 
 - **refactor(template): modularized template runtime internals** — replaced the monolithic `src/nix/template.ts` implementation with a split module layout under `src/nix/template/` (`bindings`, `html`, `portal`, `transitions`, and supporting utilities/types) to improve maintainability and internal separation of concerns while preserving the public API.

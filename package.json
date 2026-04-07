@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -51,10 +51,12 @@
     "build:lib": "vite build --config vite.lib.config.ts && tsc --project tsconfig.lib.json && terser dist/lib/nix-js.js -c -m -o dist/lib/nix-js.js && terser dist/lib/nix-js.cjs -c -m -o dist/lib/nix-js.cjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "coverage": "vitest run --coverage",
     "prepublishOnly": "bun run build:lib && cp README.md .readme-full.md && cp .readme-npm.md README.md",
     "postpublish": "mv .readme-full.md README.md"
   },
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.3",
     "happy-dom": "^20.8.3",
     "terser": "^5.46.0",
     "typescript": "~5.9.3",

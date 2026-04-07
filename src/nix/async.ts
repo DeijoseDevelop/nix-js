@@ -75,7 +75,7 @@ function defaultErrorTemplate(err: unknown): NixTemplate {
 // --- Global Query Cache ---
 
 interface CacheEntry<T = unknown> {
-    data: T;
+    data?: T; // Ahora es opcional
     fetchedAt: number;
     subscribers: number;
 }
@@ -103,7 +103,10 @@ function _startGC(): void {
 }
 
 function _getCacheEntry<T>(key: string): CacheEntry<T> | undefined {
-    return _queryCache.get(key) as CacheEntry<T> | undefined;
+    const entry = _queryCache.get(key);
+    // Solo retornamos hit si ya llegó la data real (fetchedAt > 0)
+    if (entry && entry.fetchedAt > 0) return entry as CacheEntry<T>;
+    return undefined;
 }
 
 function _setCacheEntry<T>(key: string, data: T): void {
@@ -111,6 +114,7 @@ function _setCacheEntry<T>(key: string, data: T): void {
     _queryCache.set(key, {
         data,
         fetchedAt: Date.now(),
+        // Conservamos los subscriptores que se registraron mientras cargaba
         subscribers: existing?.subscribers ?? 0,
     });
     _startGC();
@@ -118,7 +122,12 @@ function _setCacheEntry<T>(key: string, data: T): void {
 
 function _subscribe(key: string): void {
     const entry = _queryCache.get(key);
-    if (entry) entry.subscribers++;
+    if (entry) {
+        entry.subscribers++;
+    } else {
+        // Creamos un cascarón temporal para no perder la cuenta de subscriptores
+        _queryCache.set(key, { fetchedAt: 0, subscribers: 1 } as CacheEntry<any>);
+    }
 }
 
 function _unsubscribe(key: string): void {
@@ -141,6 +150,11 @@ export function clearQueryCache(key?: string): void {
         _queryCache.delete(key);
     } else {
         _queryCache.clear();
+        // Detenemos el timer global para evitar fugas de memoria entre tests
+        if (_gcTimer !== null) {
+            clearInterval(_gcTimer);
+            _gcTimer = null;
+        }
     }
 }
 
@@ -187,8 +201,12 @@ export function suspend<T>(
         constructor() {
             super();
             const cached = cacheKey ? _getCacheEntry<T>(cacheKey) : undefined;
+
+            // Validamos que cached.data no sea undefined para calmar a TypeScript
             this._state = signal<AsyncState<T>>(
-                cached ? { status: "resolved", data: cached.data } : { status: "pending" }
+                cached && cached.data !== undefined
+                    ? { status: "resolved", data: cached.data }
+                    : { status: "pending" }
             );
         }
 
@@ -320,19 +338,19 @@ export function createQuery<T>(
 
     const cached = _getCacheEntry<T>(key);
     const status = signal<QueryStatus>(cached ? "success" : "pending");
-    const data   = signal<T | undefined>(cached?.data);
-    const error  = signal<unknown>(undefined);
+    const data = signal<T | undefined>(cached?.data);
+    const error = signal<unknown>(undefined);
 
     const _fetch = (): void => {
         asyncFn().then(
             (result) => {
                 _setCacheEntry(key, result);
-                data.value   = result;
-                error.value  = undefined;
+                data.value = result;
+                error.value = undefined;
                 status.value = "success";
             },
             (err) => {
-                error.value  = err;
+                error.value = err;
                 status.value = "error";
             }
         );
@@ -340,7 +358,7 @@ export function createQuery<T>(
 
     const _run = (): void => {
         if (status.peek() === "pending") {
-            data.value  = undefined;
+            data.value = undefined;
             error.value = undefined;
         }
         _fetch();

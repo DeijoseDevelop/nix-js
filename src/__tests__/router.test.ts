@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { html } from "../nix/template";
-import { createRouter, useRouter, RouterView, _resetRouter } from "../nix/router";
+import { createRouter, useRouter, RouterView, Link, _resetRouter } from "../nix/router";
 import type { NavigationGuard } from "../nix/router";
 
 // Reset router singleton before each test to avoid warnings
@@ -564,5 +564,183 @@ describe("afterEach()", () => {
         r.afterEach(() => { secondCalled = true; });
         expect(() => r.navigate("/a")).not.toThrow();
         expect(secondCalled).toBe(true);
+    });
+});
+
+// ── Router Options (Base Path) ────────────────────────────────────────────────
+
+describe("Base path options", () => {
+    it("respects explicit base option and prepends it to pushState", () => {
+        const r = createRouter(
+            [{ path: "/", component: () => html`<p>home</p>` }, { path: "/test", component: () => html`<p>test</p>` }],
+            { base: "/my-app" }
+        );
+        expect(r.base).toBe("/my-app");
+
+        const pushStateSpy = vi.spyOn(history, "pushState").mockImplementation(() => { });
+        r.navigate("/test");
+        expect(pushStateSpy).toHaveBeenCalledWith(null, "", "/my-app/test");
+        pushStateSpy.mockRestore();
+    });
+
+    it("auto-detects base from document <base> tag", () => {
+        const baseEl = document.createElement("base");
+        baseEl.href = "/auto-base/";
+        document.head.appendChild(baseEl);
+
+        const r = createRouter([{ path: "/", component: () => html`<p>home</p>` }]);
+        expect(r.base).toBe("/auto-base");
+
+        document.head.removeChild(baseEl);
+    });
+});
+
+// ── useRouter Errors ──────────────────────────────────────────────────────────
+
+describe("useRouter errors", () => {
+    it("throws if called before createRouter", () => {
+        _resetRouter();
+        expect(() => useRouter()).toThrow(/No active router/);
+    });
+});
+
+// ── RouterView Edge Cases ─────────────────────────────────────────────────────
+
+describe("RouterView edge cases", () => {
+    it("renders 404 block if no route is matched", () => {
+        const r = createRouter([]);
+        r.navigate("/unknown");
+
+        const el = document.createElement("div");
+        html`<div>${new RouterView()}</div>`.mount(el);
+
+        expect(el.textContent).toContain("404");
+        expect(el.textContent).toContain("/unknown");
+    });
+
+    it("renders empty span if depth exceeds matched component chain", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` }
+        ]);
+        r.navigate("/");
+
+        const el = document.createElement("div");
+        // Requerimos profundidad 1, pero solo hay un componente raíz (profundidad 0)
+        html`<div>${new RouterView(1)}</div>`.mount(el);
+
+        expect(el.innerHTML).toContain("<span></span>");
+    });
+});
+
+// ── Link Component ────────────────────────────────────────────────────────────
+
+describe("Link component", () => {
+    it("renders an anchor tag with correct href", () => {
+        createRouter([{ path: "/", component: () => html`<p>home</p>` }]);
+        const link = new Link("/about", "About Us");
+
+        const el = document.createElement("div");
+        link.render().mount(el);
+
+        const a = el.querySelector("a")!;
+        expect(a.getAttribute("href")).toBe("/about");
+        expect(a.textContent).toBe("About Us");
+    });
+
+    it("prepends base path to href", () => {
+        createRouter([{ path: "/", component: () => html`<p>home</p>` }], { base: "/base" });
+        const link = new Link("/about", "About");
+
+        const el = document.createElement("div");
+        link.render().mount(el);
+
+        const a = el.querySelector("a")!;
+        expect(a.getAttribute("href")).toBe("/base/about");
+    });
+
+    it("prevents default and navigates on click", () => {
+        const r = createRouter([{ path: "/", component: () => html`<p>home</p>` }]);
+        const navSpy = vi.spyOn(r, "navigate").mockImplementation(() => { });
+
+        const link = new Link("/about", "About");
+        const el = document.createElement("div");
+
+        // 1. OBLIGATORIO: Adjuntarlo al body para que la DELEGACIÓN DE EVENTOS de Nix.js funcione
+        document.body.appendChild(el);
+        link.render().mount(el);
+
+        const a = el.querySelector("a")!;
+
+        // 2. Usamos un evento normal y dejamos que el DOM maneje el state interno
+        const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+
+        a.dispatchEvent(event);
+
+        // 3. Comprobamos la propiedad nativa defaultPrevented
+        expect(event.defaultPrevented).toBe(true);
+        expect(navSpy).toHaveBeenCalledWith("/about");
+
+        navSpy.mockRestore();
+        document.body.removeChild(el); // Limpiar el DOM
+    });
+
+    it("styles as active when router matches link path", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/active", component: () => html`<p>active</p>` }
+        ]);
+        r.navigate("/active");
+
+        const linkActive = new Link("/active", "Active");
+        const linkInactive = new Link("/other", "Other");
+
+        const el = document.createElement("div");
+        linkActive.render().mount(el);
+        linkInactive.render().mount(el);
+
+        const aActive = el.querySelectorAll("a")[0];
+        const aInactive = el.querySelectorAll("a")[1];
+
+        // Verifica si aplica colores (Vitest/JSDOM los transforma a rgb)
+        expect(aActive.style.color).toMatch(/rgb\(56, 189, 248\)|#38bdf8/);
+        expect(aInactive.style.color).toMatch(/rgb\(163, 163, 163\)|#a3a3a3/);
+    });
+});
+
+// ── Popstate Edge Cases ───────────────────────────────────────────────────────
+
+describe("Popstate edge cases", () => {
+    it("swallows exceptions in afterEach during popstate", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/test", component: () => html`<p>test</p>` }
+        ]);
+        r.navigate("/");
+        r.navigate("/test");
+
+        r.afterEach(() => { throw new Error("popstate hook crash"); });
+
+        // Simular navegación hacia atrás con popstate
+        expect(() => {
+            window.dispatchEvent(new PopStateEvent("popstate"));
+        }).not.toThrow();
+    });
+
+    it("aborts popstate navigation and restores URL if guard returns false", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/test", component: () => html`<p>test</p>` }
+        ]);
+        r.navigate("/");
+
+        const pushStateSpy = vi.spyOn(history, "pushState").mockImplementation(() => { });
+        // El guard prohibirá la navegación del popstate
+        r.beforeEach(() => false);
+
+        window.dispatchEvent(new PopStateEvent("popstate"));
+
+        // Debe re-pushear el estado anterior para restaurar la URL visualmente
+        expect(pushStateSpy).toHaveBeenCalled();
+        pushStateSpy.mockRestore();
     });
 });
