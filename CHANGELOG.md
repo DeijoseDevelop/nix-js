@@ -12,7 +12,7 @@ All notable changes to this project will be documented in this file.
 ## v1.8.0
 
 - **refactor(template): modularized template runtime internals** — replaced the monolithic `src/nix/template.ts` implementation with a split module layout under `src/nix/template/` (`bindings`, `html`, `portal`, `transitions`, and supporting utilities/types) to improve maintainability and internal separation of concerns while preserving the public API.
-- **test: expanded test suite** — significantly increased automated testing coverage across the framework to effectively double the number of tests (now 413 tests passing in total), ensuring a high level of confidence for future changes.
+- **test: expanded test suite** — significantly increased automated testing coverage across the framework to effectively double the number of tests (now 462 tests passing, reaching 97% code coverage), ensuring a high level of confidence for future changes.
 - **chore(release): version bump to 1.8.0** — updated package version metadata for the new npm release.
 - **docs(npm): bundle badge refresh** — adjusted npm-facing README badge from `~8 KB` to `~10 KB` min+gzip to match the current published artifact.
 
