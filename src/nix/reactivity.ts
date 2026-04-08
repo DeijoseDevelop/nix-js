@@ -37,7 +37,7 @@ export function _popErrorHandler(): void {
 
 let batchLevel = 0;
 const _pendingEffectsSet = new Set<() => void>();  // solo para dedup O(1)
-const _pendingEffectsArr: (() => void)[] = []; 
+const _pendingEffectsArr: (() => void)[] = [];
 
 // --- Effect recursion guard ---
 
@@ -149,11 +149,11 @@ export function signal<T>(initialValue: T): Signal<T> {
 export function effect(fn: () => void | (() => void)): () => void {
     let disposed = false;
     let cleanup: (() => void) | void;
-    
+
     // Opt: Double buffering para evitar crear `new Set()` en cada ejecución
     let deps = new Set<Signal<any>>();
     let newDeps = new Set<Signal<any>>();
-    
+
     const capturedErrorHandler = activeErrorHandler;
 
     const execute = () => {
@@ -205,7 +205,7 @@ export function effect(fn: () => void | (() => void)): () => void {
             restored.deps = null;
             _ctxPool.push(restored);  // devolver al pool para reutilizar
 
-            
+
             // Cleanup phase: Desuscribirse de señales que estaban en 'deps' pero NO en 'newDeps'
             for (const oldDep of deps) {
                 if (!newDeps.has(oldDep)) {
@@ -266,7 +266,7 @@ export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
     });
 
     const originalDispose = s.dispose;
-    
+
     s.dispose = () => {
         disposed = true;
         disposeEffect?.();

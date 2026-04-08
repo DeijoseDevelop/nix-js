@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { html } from "../nix/template";
 import { mount } from "../nix/component";
 import { suspend, lazy } from "../nix/async";
@@ -41,6 +41,18 @@ describe("suspend", () => {
 
         await new Promise(r => setTimeout(r, 10));
         expect(el.querySelector(".err")!.textContent).toBe("fail");
+    });
+
+    it("uses default error fallback and stringifies non-Error values", async () => {
+        const comp = suspend(
+            () => Promise.reject(404),
+            () => html`<p>ok</p>`
+        );
+        const el = document.createElement("div");
+        mount(comp, el);
+
+        await new Promise(r => setTimeout(r, 10));
+        expect(el.textContent).toContain("404");
     });
 
     it("uses default fallback when none provided", () => {
@@ -89,6 +101,48 @@ describe("suspend", () => {
         expect(callCount).toBe(1);
     });
 
+    it("evicts suspense cache entries via GC when unused", async () => {
+        vi.useFakeTimers();
+        try {
+            let count = 0;
+            const key = "gc-key";
+
+            const comp1 = suspend(
+                () => { count++; return Promise.resolve(`v${count}`); },
+                (data) => html`<p>${data}</p>`,
+                { cacheKey: key, staleTime: 1_000_000 }
+            );
+
+            const el1 = document.createElement("div");
+            const h1 = mount(comp1, el1);
+            await Promise.resolve();
+            await Promise.resolve();
+            expect(count).toBe(1);
+
+            h1.unmount();
+
+            // Advance enough time for cache TTL + GC interval.
+            await vi.advanceTimersByTimeAsync(6 * 60 * 1000);
+
+            const comp2 = suspend(
+                () => { count++; return Promise.resolve(`v${count}`); },
+                (data) => html`<p>${data}</p>`,
+                { cacheKey: key, staleTime: 1_000_000 }
+            );
+
+            const el2 = document.createElement("div");
+            const h2 = mount(comp2, el2);
+            await Promise.resolve();
+            await Promise.resolve();
+
+            // If GC removed cache entry, a new fetch is required.
+            expect(count).toBe(2);
+            h2.unmount();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("usa caché global si se proporciona un cacheKey", async () => {
         let count = 0;
         const comp1 = suspend(
@@ -115,6 +169,59 @@ describe("suspend", () => {
         // Cache hit! No debería haber incrementado count
         expect(count).toBe(1);
     });
+
+    it("stale cache triggers fetch path on mount", async () => {
+        let count = 0;
+        const key = "stale-cache-key";
+
+        const comp1 = suspend(
+            () => { count++; return Promise.resolve(`v${count}`); },
+            (data) => html`<p class="data">${data}</p>`,
+            { cacheKey: key, staleTime: 1 }
+        );
+
+        const el1 = document.createElement("div");
+        const h1 = mount(comp1, el1);
+        await new Promise(r => setTimeout(r, 10));
+        expect(count).toBe(1);
+        h1.unmount();
+
+        await new Promise(r => setTimeout(r, 5));
+
+        const comp2 = suspend(
+            () => { count++; return Promise.resolve(`v${count}`); },
+            (data) => html`<p class="data">${data}</p>`,
+            { cacheKey: key, staleTime: 1 }
+        );
+
+        const el2 = document.createElement("div");
+        mount(comp2, el2);
+        await new Promise(r => setTimeout(r, 10));
+        expect(count).toBe(2);
+    });
+
+    it("runs unmount cleanup for invalidate watcher and cache subscribers", async () => {
+        let count = 0;
+        const refresh = signal(0);
+        const comp = suspend(
+            () => { count++; return Promise.resolve("ok"); },
+            (data) => html`<p class="data">${data}</p>`,
+            { invalidate: refresh, cacheKey: "cleanup-key", staleTime: 10_000 }
+        );
+
+        const el = document.createElement("div");
+        const handle = mount(comp, el);
+        await new Promise(r => setTimeout(r, 10));
+        expect(count).toBe(1);
+
+        handle.unmount();
+
+        // The invalidate effect should be disposed after unmount.
+        refresh.update(n => n + 1);
+        await new Promise(r => setTimeout(r, 10));
+        expect(count).toBe(1);
+    });
+
 });
 
 describe("lazy()", () => {
