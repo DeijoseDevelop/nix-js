@@ -25,6 +25,8 @@ export interface RouteRecord {
     path: string;
     /** Factory returning the view for this route level. */
     component: () => NixTemplate | NixComponent;
+    /** Optional arbitrary metadata for guards, layouts, and auth checks. */
+    meta?: Record<string, unknown>;
     /** Child routes. Paths are joined with the parent. */
     children?: RouteRecord[];
     /** Route-level guard. Runs only when entering this specific route. */
@@ -35,6 +37,27 @@ export interface RouteRecord {
  * Callback for `afterEach` hooks — receives the committed `to` and `from` paths.
  */
 export type AfterEachHook = (to: string, from: string) => void;
+
+/** Serializable scroll position used by the router for history restoration. */
+export interface ScrollPosition {
+    left: number;
+    top: number;
+}
+
+/**
+ * Scroll behavior callback.
+ * - `savedPosition` is non-null on popstate (back/forward) when a saved position exists.
+ * - Return `{ left, top }` to scroll there.
+ * - Return `false` or `undefined` to skip router scrolling.
+ */
+export type ScrollBehavior = (
+    to: string,
+    from: string,
+    savedPosition: ScrollPosition | null,
+) => ScrollPosition | false | void;
+
+/** Router URL mode strategy. */
+export type RouterMode = "history" | "hash";
 
 /**
  * Result of `router.resolve(path)` — inspect what would match without navigating.
@@ -68,6 +91,14 @@ export interface RouterOptions {
      * createRouter(routes, { base: "/my-app/" });
      */
     base?: string;
+    /** URL handling mode. `history` by default. */
+    mode?: RouterMode;
+    /**
+     * Optional custom scroll behavior for navigation.
+     * If omitted, router scrolls to top on push/replace and restores saved
+     * positions on back/forward when available.
+     */
+    scrollBehavior?: ScrollBehavior;
 }
 
 export interface Router {
@@ -112,13 +143,16 @@ interface FlatRoute {
     fullPath: string;
     segments: Segment[];
     chain: Array<() => NixTemplate | NixComponent>;
+    meta?: Record<string, unknown>;
     beforeEnter?: NavigationGuard;
+    record: RouteRecord;
 }
 
 interface RouterInternal extends Router {
     _flat: FlatRoute[];
     _guards: NavigationGuard[];
     _base: string;
+    _mode: RouterMode;
 }
 
 /** Module-level singleton — the last router created with `createRouter()`. */
@@ -126,11 +160,38 @@ let _currentRouter: RouterInternal | null = null;
 /** Cleanup function for the current router's popstate listener. */
 let _currentPopstateCleanup: (() => void) | null = null;
 
+const SCROLL_STATE_KEY = "__nix_scroll";
+
 function getRouter(): RouterInternal {
     if (!_currentRouter) {
         throw new Error("[Nix] No active router. Call createRouter() first.");
     }
     return _currentRouter;
+}
+
+function getCurrentScrollPosition(): ScrollPosition {
+    return {
+        left: window.scrollX ?? window.pageXOffset ?? 0,
+        top: window.scrollY ?? window.pageYOffset ?? 0,
+    };
+}
+
+function readScrollPositionFromState(state: unknown): ScrollPosition | null {
+    if (!state || typeof state !== "object") return null;
+    const raw = (state as Record<string, unknown>)[SCROLL_STATE_KEY];
+    if (!raw || typeof raw !== "object") return null;
+    const left = (raw as Record<string, unknown>).left;
+    const top = (raw as Record<string, unknown>).top;
+    if (typeof left !== "number" || typeof top !== "number") return null;
+    return { left, top };
+}
+
+function withScrollPositionInState(state: unknown, pos: ScrollPosition): Record<string, unknown> {
+    const base = state && typeof state === "object"
+        ? { ...(state as Record<string, unknown>) }
+        : {};
+    base[SCROLL_STATE_KEY] = { left: pos.left, top: pos.top };
+    return base;
 }
 
 // --- Internal helpers ---
@@ -187,7 +248,14 @@ function flattenRoutes(
         const fullPath = joinPaths(parentPath, route.path);
         const chain = [...parentChain, route.component];
         const segments = parseSegments(fullPath);
-        result.push({ fullPath, segments, chain, beforeEnter: route.beforeEnter });
+        result.push({
+            fullPath,
+            segments,
+            chain,
+            meta: route.meta,
+            beforeEnter: route.beforeEnter,
+            record: route,
+        });
         if (route.children?.length) {
             result.push(...flattenRoutes(route.children, fullPath, chain));
         }
@@ -308,36 +376,99 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     const _base = options?.base != null
         ? normalizeBase(options.base)
         : detectBase();
+    const _mode: RouterMode = options?.mode ?? "history";
+    const _isHashMode = _mode === "hash";
+    const _scrollBehavior = options?.scrollBehavior;
+    const _hashScrollPositions = new Map<string, ScrollPosition>();
+    let _ignoreNextHashChange = false;
 
-    /**
-     * Reads `window.location.pathname` and strips the base prefix,
-     * returning the app-level path (e.g. `/home` instead of `/my-app/home`).
-     */
-    function getPathname(): string {
-        const raw = window.location.pathname || "/";
-        if (_base && raw.startsWith(_base)) {
-            const stripped = raw.slice(_base.length);
-            return stripped === "" ? "/" : stripped;
+    function normalizeAppPath(raw: string): string {
+        if (!raw) return "/";
+        return raw.startsWith("/") ? raw : "/" + raw;
+    }
+
+    function stripBase(rawPath: string): string {
+        const path = normalizeAppPath(rawPath || "/");
+        if (_base && path.startsWith(_base)) {
+            const stripped = path.slice(_base.length);
+            return stripped === "" ? "/" : normalizeAppPath(stripped);
         }
-        return raw;
+        return path;
     }
 
-    /**
-     * Prepends the base to an app-level path so it can be used in
-     * `pushState` / `replaceState` / `<a href>`.
-     */
-    function toFullPath(appPath: string): string {
-        if (!_base) return appPath;
-        return _base + (appPath.startsWith("/") ? appPath : "/" + appPath);
+    function withBase(appPath: string): string {
+        const p = normalizeAppPath(appPath);
+        if (!_base) return p;
+        return (_base + p).replace(/\/+/g, "/") || "/";
     }
 
-    const initialPath = getPathname();
+    function readHashLocation(): { pathname: string; search: string } {
+        let raw = window.location.hash || "";
+        if (raw.startsWith("#")) raw = raw.slice(1);
+        if (!raw) return { pathname: "/", search: "" };
+        if (!raw.startsWith("/")) raw = "/" + raw;
+        const qIdx = raw.indexOf("?");
+        const pathname = qIdx === -1 ? raw : raw.slice(0, qIdx);
+        const search = qIdx === -1 ? "" : raw.slice(qIdx);
+        return { pathname: stripBase(pathname), search };
+    }
+
+    function readLocation(): { pathname: string; search: string } {
+        if (_isHashMode) return readHashLocation();
+        return {
+            pathname: stripBase(window.location.pathname || "/"),
+            search: window.location.search || "",
+        };
+    }
+
+    function buildUrl(pathname: string, stringQuery: Record<string, string>): string {
+        const fullPath = withBase(pathname) + buildQueryString(stringQuery);
+        return _isHashMode ? "#" + fullPath : fullPath;
+    }
+
+    function routeKey(pathname: string, stringQuery: Record<string, string>): string {
+        return normalizeAppPath(pathname) + buildQueryString(stringQuery);
+    }
+
+    const initialLoc = readLocation();
+    const initialPath = initialLoc.pathname;
+    const initialQuery = parseQuery(initialLoc.search);
     const flat = flattenRoutes(routes);
     const initialMatch = matchFlat(initialPath, flat);
 
     const current = signal(initialPath);
     const params = signal<Record<string, string>>(initialMatch?.params ?? {});
-    const query = signal<Record<string, string>>(parseQuery(window.location.search));
+    const query = signal<Record<string, string>>(initialQuery);
+
+    if (_isHashMode) {
+        _hashScrollPositions.set(routeKey(initialPath, initialQuery), getCurrentScrollPosition());
+    } else {
+        // Ensure the current history entry has a serializable scroll position snapshot.
+        history.replaceState(withScrollPositionInState(history.state, getCurrentScrollPosition()), "");
+    }
+
+    function _scrollTo(pos: ScrollPosition): void {
+        window.scrollTo(pos.left, pos.top);
+    }
+
+    function _applyScroll(to: string, from: string, savedPosition: ScrollPosition | null): void {
+        if (_scrollBehavior) {
+            const result = _scrollBehavior(to, from, savedPosition);
+            if (result === false || result == null) return;
+            _scrollTo(result);
+            return;
+        }
+        _scrollTo(savedPosition ?? { left: 0, top: 0 });
+    }
+
+    function _saveCurrentEntryScroll(pathname: string, stringQuery: Record<string, string>): void {
+        const pos = getCurrentScrollPosition();
+        if (_isHashMode) {
+            _hashScrollPositions.set(routeKey(pathname, stringQuery), pos);
+            return;
+        }
+        history.replaceState(withScrollPositionInState(history.state, pos), "");
+    }
 
     // --- Guards & afterEach hooks ---
     const _guards: NavigationGuard[] = [];
@@ -396,7 +527,8 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         queryObj?: Record<string, string | number | boolean | null | undefined>,
     ): { pathname: string; stringQuery: Record<string, string> } {
         const qIdx = path.indexOf("?");
-        const pathname = qIdx === -1 ? path : path.slice(0, qIdx);
+        const rawPath = qIdx === -1 ? path : path.slice(0, qIdx);
+        const pathname = normalizeAppPath(rawPath || "/");
         const inlineQ = qIdx === -1 ? {} : parseQuery(path.slice(qIdx));
         const finalQuery = queryObj ? { ...inlineQ, ...queryObj } : inlineQ;
         const stringQuery: Record<string, string> = {};
@@ -406,19 +538,22 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         return { pathname, stringQuery };
     }
 
-    // --- Popstate handler ---
-    // Clean up any previous router's popstate listener
+    // --- Route-change listener ---
+    // Clean up any previous router listener
     if (_currentPopstateCleanup) {
         _currentPopstateCleanup();
         _currentPopstateCleanup = null;
     }
 
-    const onPopstate = () => {
-        const p = getPathname();
+    const handleRouteChange = (
+        p: string,
+        newQuery: Record<string, string>,
+        savedPos: ScrollPosition | null,
+        onCancelRestore: (from: string, fromQuery: Record<string, string>) => void,
+    ) => {
         const from = current.value;
-        const fromQuery = query.value;   // used to restore URL if guard cancels
+        const fromQuery = { ...query.value }; // used to restore URL if guard cancels
         const m = matchFlat(p, flat);
-        const newQuery = parseQuery(window.location.search);
 
         _runGuards(
             p,
@@ -428,38 +563,100 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
                 params.value = m?.params ?? {};
                 query.value = newQuery;
                 current.value = p;
+                _applyScroll(p, from, savedPos);
                 // Fire afterEach hooks for popstate navigations
                 for (const hook of _afterHooks) {
                     try { hook(p, from); } catch { /* ignore */ }
                 }
             },
-            () => {
-                // Guard cancelled popstate: restore previous URL without triggering another popstate
-                history.pushState(null, "", toFullPath(from) + buildQueryString(fromQuery));
-            },
+            () => onCancelRestore(from, fromQuery),
         );
     };
 
-    window.addEventListener("popstate", onPopstate);
-    _currentPopstateCleanup = () => window.removeEventListener("popstate", onPopstate);
+    if (_isHashMode) {
+        const onHashChange = () => {
+            if (_ignoreNextHashChange) {
+                _ignoreNextHashChange = false;
+                return;
+            }
+            const loc = readLocation();
+            const nextQuery = parseQuery(loc.search);
+            const savedPos = _hashScrollPositions.get(routeKey(loc.pathname, nextQuery)) ?? null;
+            handleRouteChange(
+                loc.pathname,
+                nextQuery,
+                savedPos,
+                (from, fromQuery) => {
+                    // Guard cancelled hashchange: restore previous hash
+                    _ignoreNextHashChange = true;
+                    window.location.hash = buildUrl(from, fromQuery).slice(1);
+                    queueMicrotask(() => { _ignoreNextHashChange = false; });
+                },
+            );
+        };
+        window.addEventListener("hashchange", onHashChange);
+        _currentPopstateCleanup = () => window.removeEventListener("hashchange", onHashChange);
+    } else {
+        const onPopstate = (ev: PopStateEvent) => {
+            const loc = readLocation();
+            const nextQuery = parseQuery(loc.search);
+            const savedPos = readScrollPositionFromState(ev.state ?? history.state);
+            handleRouteChange(
+                loc.pathname,
+                nextQuery,
+                savedPos,
+                (from, fromQuery) => {
+                    // Guard cancelled popstate: restore previous URL without triggering another popstate
+                    history.pushState(
+                        withScrollPositionInState({}, getCurrentScrollPosition()),
+                        "",
+                        buildUrl(from, fromQuery),
+                    );
+                },
+            );
+        };
+        window.addEventListener("popstate", onPopstate);
+        _currentPopstateCleanup = () => window.removeEventListener("popstate", onPopstate);
+    }
 
     // --- Internal: commit navigation + fire afterEach hooks ---
     function _commit(
         pathname: string,
         stringQuery: Record<string, string>,
         from: string,
+        fromQuery: Record<string, string>,
         m: ReturnType<typeof matchFlat>,
         useReplace: boolean,
     ): void {
+        if (!useReplace) {
+            // Snapshot the current entry before creating the next history entry.
+            _saveCurrentEntryScroll(from, fromQuery);
+        }
+
         params.value = m?.params ?? {};
         query.value = stringQuery;
         current.value = pathname;
-        const url = toFullPath(pathname) + buildQueryString(stringQuery);
-        if (useReplace) {
-            history.replaceState(null, "", url);
+        const url = buildUrl(pathname, stringQuery);
+
+        if (_isHashMode) {
+            _hashScrollPositions.set(routeKey(pathname, stringQuery), { left: 0, top: 0 });
+            if (useReplace) {
+                history.replaceState(history.state, "", url);
+            } else {
+                _ignoreNextHashChange = true;
+                window.location.hash = url.slice(1);
+                queueMicrotask(() => { _ignoreNextHashChange = false; });
+            }
         } else {
-            history.pushState(null, "", url);
+            const nextState = withScrollPositionInState({}, { left: 0, top: 0 });
+            if (useReplace) {
+                history.replaceState(nextState, "", url);
+            } else {
+                history.pushState(nextState, "", url);
+            }
         }
+
+        _applyScroll(pathname, from, null);
         // Fire afterEach hooks
         for (const hook of _afterHooks) {
             try { hook(pathname, from); } catch { /* ignore */ }
@@ -474,13 +671,14 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         _hasNavigated = true;
         const { pathname, stringQuery } = _parsePath(path, queryObj);
         const from = current.value;
+        const fromQuery = { ...query.value };
         const m = matchFlat(pathname, flat);
 
         _runGuards(
             pathname,
             from,
             m?.route.beforeEnter,
-            () => _commit(pathname, stringQuery, from, m, false),
+            () => _commit(pathname, stringQuery, from, fromQuery, m, false),
         );
     }
 
@@ -492,13 +690,14 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         _hasNavigated = true;
         const { pathname, stringQuery } = _parsePath(path, queryObj);
         const from = current.value;
+        const fromQuery = { ...query.value };
         const m = matchFlat(pathname, flat);
 
         _runGuards(
             pathname,
             from,
             m?.route.beforeEnter,
-            () => _commit(pathname, stringQuery, from, m, true),
+            () => _commit(pathname, stringQuery, from, fromQuery, m, true),
         );
     }
 
@@ -518,19 +717,7 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     function resolve(path: string): ResolvedRoute {
         const m = matchFlat(path, flat);
         if (!m) return { matched: false, params: {}, route: undefined };
-        // Find the original RouteRecord that corresponds to this match
-        const leafComponent = m.route.chain[m.route.chain.length - 1];
-        function findRecord(records: RouteRecord[]): RouteRecord | undefined {
-            for (const r of records) {
-                if (r.component === leafComponent) return r;
-                if (r.children) {
-                    const found = findRecord(r.children);
-                    if (found) return found;
-                }
-            }
-            return undefined;
-        }
-        return { matched: true, params: m.params, route: findRecord(routes) };
+        return { matched: true, params: m.params, route: m.route.record };
     }
 
     // --- beforeEach ---
@@ -554,7 +741,7 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     const router: RouterInternal = {
         current, params, query, base: _base || "/", navigate, replace,
         back, forward, go, isActive, resolve,
-        beforeEach, afterEach, routes, _flat: flat, _guards, _base,
+        beforeEach, afterEach, routes, _flat: flat, _guards, _base, _mode,
     };
 
     if (_currentRouter) {
@@ -581,11 +768,22 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
             () => {
                 // Guard returned false with no redirect: fall back to root
                 const fallback = "/";
-                history.replaceState(null, "", toFullPath(fallback));
+                const url = buildUrl(fallback, {});
+                if (_isHashMode) {
+                    _hashScrollPositions.set(routeKey(fallback, {}), { left: 0, top: 0 });
+                    history.replaceState(history.state, "", url);
+                } else {
+                    history.replaceState(
+                        withScrollPositionInState({}, { left: 0, top: 0 }),
+                        "",
+                        url,
+                    );
+                }
                 const fm = matchFlat(fallback, flat);
                 current.value = fallback;
                 params.value = fm?.params ?? {};
                 query.value = {};
+                _applyScroll(fallback, initialPath, null);
             },
         );
     });
@@ -660,9 +858,9 @@ export class Link extends NixComponent {
         const to = this._to;
         const label = this._label;
         const router = getRouter();
-        // Build the full href including the base path for correct URLs
-        const base = router._base || "";
-        const href = base + (to.startsWith("/") ? to : "/" + to);
+        const appPath = to.startsWith("/") ? to : "/" + to;
+        const fullPath = (router._base ? (router._base + appPath) : appPath).replace(/\/+/g, "/");
+        const href = router._mode === "hash" ? "#" + fullPath : fullPath;
         return html`<a
       href=${href}
       style=${() => {

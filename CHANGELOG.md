@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.9.0
+
+- **feat(router): route metadata (`meta`) in resolve/guards** — `RouteRecord` now supports optional `meta`, and `router.resolve(path)` returns the original matched route record so guards and layout logic can read `route.meta` directly.
+- **feat(router): scroll restoration + custom `scrollBehavior`** — router now persists scroll position per history entry and restores it on back/forward. Added optional `scrollBehavior(to, from, savedPosition)` callback for custom scroll control.
+- **feat(router): hash mode routing strategy** — added `mode: "hash"` in `createRouter` options, including hash-based path/query parsing, `hashchange` synchronization, and hash-aware `Link` href generation.
+- **feat(store): computed getters factory** — `createStore(initialState, actionsFactory?, gettersFactory?)` now supports a third argument for computed getter signals.
+- **feat(store): global subscriptions with `$subscribe`** — added `store.$subscribe((key, newValue, oldValue) => ...)` with unsubscribe support for middleware-like use cases (persist, devtools, telemetry).
+- **feat(form): nested field paths (dot-path)** — `createForm` now supports nested structures through flattened field paths (e.g. `address.city`) across `fields`, `validators`, and `setErrors`, while preserving nested `values` output shape.
+- **feat(form): cross-field validators** — validators now support full-form context with signature `(value, allValues?)`, enabling password confirmation, date-range checks, and conditional required rules.
+- **feat(context): `inject` default fallback** — `inject(key, defaultValue?)` now returns the provided default when the key is not found.
+- **test: suite expansion and validation coverage** — expanded test coverage for router, store, and form changes. Current CI run: **484 tests passing**.
+- **test: coverage (v8)** — latest coverage report: **95.86% statements**, **87.42% branches**, **95.84% functions**, **97.69% lines**.
+
 ## v1.8.1
 
 - **fix(template): DOM write microtask safety** — added a `try/catch` wrapper inside the `queueDOMWrite` microtask loop. Prevents unhandled render errors from terminating the entire UI rendering queue.

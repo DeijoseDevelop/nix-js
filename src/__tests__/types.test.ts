@@ -53,7 +53,7 @@ describe("isNixTemplate()", () => {
 
 describe("isKeyedList()", () => {
     it("retorna true para un KeyedList real (repeat())", () => {
-        const list = repeat([1, 2], n => n, () => html`<li>${n as any}</li>`);
+        const list = repeat([1, 2], n => n, (n) => html`<li>${n as any}</li>`);
         expect(isKeyedList(list)).toBe(true);
     });
 

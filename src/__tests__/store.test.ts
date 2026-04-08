@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { effect } from "../nix/reactivity";
+import { computed, effect } from "../nix/reactivity";
 import { createStore } from "../nix/store";
 
 describe("createStore", () => {
@@ -40,6 +40,27 @@ describe("createStore", () => {
         expect(store.count.value).toBe(11);
     });
 
+    it("supports computed getters via third argument", () => {
+        const store = createStore(
+            { count: 2, items: ["a", "b"] as string[] },
+            (s) => ({ increment: () => s.count.value++ }),
+            (s) => ({
+                double: computed(() => s.count.value * 2),
+                total: computed(() => s.items.value.length),
+            }),
+        );
+
+        expect(store.double.value).toBe(4);
+        expect(store.total.value).toBe(2);
+
+        store.increment();
+        expect(store.count.value).toBe(3);
+        expect(store.double.value).toBe(6);
+
+        store.items.value = [...store.items.value, "c"];
+        expect(store.total.value).toBe(3);
+    });
+
     it("actions coexist with $reset", () => {
         const store = createStore(
             { count: 5 },
@@ -73,6 +94,22 @@ describe("createStore", () => {
         expect(store.count.value).toBe(0);
         expect(warnSpy).toHaveBeenCalledWith(
             expect.stringContaining('"$reset" is reserved')
+        );
+        warnSpy.mockRestore();
+    });
+
+    it("ignores getter named $state and warns", () => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const store = createStore(
+            { count: 1 },
+            undefined,
+            (s) => ({ $state: computed(() => s.count.value * 10) }),
+        );
+
+        // Built-in $state must still be available
+        expect(store.$state.count).toBe(1);
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('Store getter name "$state" is reserved')
         );
         warnSpy.mockRestore();
     });
@@ -164,21 +201,94 @@ describe("createStore", () => {
         });
     });
 
+    describe("$subscribe", () => {
+        it("notifica key/newValue/oldValue cuando cambian señales", () => {
+            const store = createStore({ count: 0, name: "nix" });
+            const calls: Array<[string, unknown, unknown]> = [];
+
+            const stop = store.$subscribe((key, newVal, oldVal) => {
+                calls.push([String(key), newVal, oldVal]);
+            });
+
+            store.count.value = 1;
+            store.name.value = "nix-js";
+
+            expect(calls).toEqual([
+                ["count", 1, 0],
+                ["name", "nix-js", "nix"],
+            ]);
+
+            stop();
+        });
+
+        it("retorna unsubscribe y deja de emitir cambios", () => {
+            const store = createStore({ value: 1 });
+            const calls: Array<[string, unknown, unknown]> = [];
+
+            const stop = store.$subscribe((key, newVal, oldVal) => {
+                calls.push([String(key), newVal, oldVal]);
+            });
+
+            store.value.value = 2;
+            stop();
+            store.value.value = 3;
+
+            expect(calls).toEqual([["value", 2, 1]]);
+        });
+
+        it("observa cambios hechos via $patch y $reset", () => {
+            const store = createStore({ a: 1, b: 2 });
+            const calls: Array<[string, unknown, unknown]> = [];
+
+            const stop = store.$subscribe((key, newVal, oldVal) => {
+                calls.push([String(key), newVal, oldVal]);
+            });
+
+            store.$patch({ a: 10 });
+            store.$reset();
+
+            expect(calls).toEqual([
+                ["a", 10, 1],
+                ["a", 1, 10],
+            ]);
+
+            stop();
+        });
+    });
+
     it("throws si una key de initialState es '$patch'", () => {
         expect(() => createStore({ $patch: 1 } as any)).toThrow('"$patch" is reserved');
     });
 
     it("ignora acción nombrada '$patch' y advierte", () => {
-        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
         const store = createStore(
             { count: 0 },
-            () => ({ $patch: () => {} })
+            () => ({ $patch: () => { } })
         );
         // $patch built-in sigue funcionando
         store.$patch({ count: 5 });
         expect(store.count.value).toBe(5);
         expect(warnSpy).toHaveBeenCalledWith(
             expect.stringContaining('"$patch" is reserved')
+        );
+        warnSpy.mockRestore();
+    });
+
+    it("ignora acción nombrada '$subscribe' y advierte", () => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const store = createStore(
+            { count: 0 },
+            () => ({ $subscribe: () => { } })
+        );
+
+        // built-in $subscribe debe seguir existiendo
+        const stop = store.$subscribe(() => { });
+        expect(typeof stop).toBe("function");
+        stop();
+
+        expect(warnSpy).toHaveBeenCalledWith(
+            expect.stringContaining('"$subscribe" is reserved')
         );
         warnSpy.mockRestore();
     });

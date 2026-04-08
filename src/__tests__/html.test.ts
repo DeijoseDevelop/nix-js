@@ -216,7 +216,7 @@ describe("Ciclo de vida: mount y unmount", () => {
         const tpl2 = html`<span class="b">B</span>`;
 
         const h1 = tpl1.mount(el);
-        const h2 = tpl2.mount(el);
+        tpl2.mount(el);
 
         h1.unmount();
 

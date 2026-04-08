@@ -71,12 +71,13 @@ export function provide<T>(
  * Searches child-to-parent; returns `undefined` if the key was not provided.
  */
 export function inject<T>(
-    key: InjectionKey<T> | string | symbol
+    key: InjectionKey<T> | string | symbol,
+    defaultValue?: T
 ): T | undefined {
     for (let i = _stack.length - 1; i >= 0; i--) {
         if (_stack[i].has(key)) {
             return _stack[i].get(key) as T;
         }
     }
-    return undefined;
+    return defaultValue;
 }

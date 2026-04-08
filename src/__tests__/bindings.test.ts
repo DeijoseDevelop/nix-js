@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { detectContext, activateBindings } from "../nix/template/bindings";
+import { describe, it, expect, vi } from "vitest";
+import { detectContext } from "../nix/template/bindings";
 import { signal, nextTick } from "../nix/reactivity";
 import { html } from "../nix/template";
-import type { BindingContext } from "../nix/template/bindings";
 
 // =============================================================================
 // --- detectContext ---

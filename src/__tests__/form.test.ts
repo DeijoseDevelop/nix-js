@@ -82,6 +82,15 @@ describe("validators", () => {
         expect(noSpaces("hello")).toBeNull();
     });
 
+    it("createValidator supports full-form values as second argument", () => {
+        const matchesPass = createValidator<string, { pass: string }>((v, values) =>
+            v !== values?.pass ? "Must match" : null
+        );
+
+        expect(matchesPass("123", { pass: "456" })).toBe("Must match");
+        expect(matchesPass("123", { pass: "123" })).toBeNull();
+    });
+
     it("validators namespace contains all built-ins", () => {
         expect(typeof validators.required).toBe("function");
         expect(typeof validators.minLength).toBe("function");
@@ -368,6 +377,143 @@ describe("createForm", () => {
         const errs = form.errors.value;
         expect(errs.a).toBeTruthy();
         expect(errs.b).toBeTruthy();
+    });
+
+    it("supports nested dot-path fields", () => {
+        const form = createForm(
+            { name: "", address: { city: "", zip: "" } },
+            {
+                validators: {
+                    "address.city": [required()],
+                },
+            },
+        );
+
+        expect(form.fields.name.value.value).toBe("");
+        expect(form.fields["address.city"].value.value).toBe("");
+        expect(form.fields["address.zip"].value.value).toBe("");
+
+        form.fields["address.city"].onBlur();
+        expect(form.fields["address.city"].error.value).toBe("Required");
+
+        const event = new Event("input");
+        Object.defineProperty(event, "target", { value: { value: "Lima" } });
+        form.fields["address.city"].onInput(event);
+
+        expect(form.values.value.address.city).toBe("Lima");
+        expect(form.values.value.address.zip).toBe("");
+    });
+
+    it("setErrors accepts dot-path keys", () => {
+        const form = createForm({ address: { city: "", zip: "" } });
+        form.setErrors({ "address.city": "City is required" });
+        expect(form.fields["address.city"].error.value).toBe("City is required");
+    });
+
+    it("supports cross-field password confirmation validators", () => {
+        const form = createForm(
+            { pass: "", confirm: "" },
+            {
+                validateOn: "input",
+                validators: {
+                    confirm: [
+                        (v, values) => v !== values?.pass ? "Must match" : null,
+                    ],
+                },
+            },
+        );
+
+        const passEvent = new Event("input");
+        Object.defineProperty(passEvent, "target", { value: { value: "secret123" } });
+        form.fields.pass.onInput(passEvent);
+
+        const confirmBad = new Event("input");
+        Object.defineProperty(confirmBad, "target", { value: { value: "other" } });
+        form.fields.confirm.onInput(confirmBad);
+        expect(form.fields.confirm.error.value).toBe("Must match");
+
+        const confirmGood = new Event("input");
+        Object.defineProperty(confirmGood, "target", { value: { value: "secret123" } });
+        form.fields.confirm.onInput(confirmGood);
+        expect(form.fields.confirm.error.value).toBeNull();
+    });
+
+    it("revalidates dependent fields when the source field changes", () => {
+        const form = createForm(
+            { pass: "", confirm: "" },
+            {
+                validateOn: "input",
+                validators: {
+                    confirm: [
+                        (v, values) => v !== values?.pass ? "Must match" : null,
+                    ],
+                },
+            },
+        );
+
+        const pass1 = new Event("input");
+        Object.defineProperty(pass1, "target", { value: { value: "abc" } });
+        form.fields.pass.onInput(pass1);
+
+        const confirm = new Event("input");
+        Object.defineProperty(confirm, "target", { value: { value: "abc" } });
+        form.fields.confirm.onInput(confirm);
+        expect(form.fields.confirm.error.value).toBeNull();
+
+        const pass2 = new Event("input");
+        Object.defineProperty(pass2, "target", { value: { value: "xyz" } });
+        form.fields.pass.onInput(pass2);
+
+        expect(form.fields.confirm.error.value).toBe("Must match");
+    });
+
+    it("supports cross-field date range validation", () => {
+        const form = createForm(
+            { start: "2026-01-10", end: "" },
+            {
+                validateOn: "input",
+                validators: {
+                    end: [
+                        (v, values) => !v || v >= (values?.start ?? "") ? null : "End date must be after start date",
+                    ],
+                },
+            },
+        );
+
+        const badEnd = new Event("input");
+        Object.defineProperty(badEnd, "target", { value: { value: "2026-01-05" } });
+        form.fields.end.onInput(badEnd);
+        expect(form.fields.end.error.value).toBe("End date must be after start date");
+
+        const goodEnd = new Event("input");
+        Object.defineProperty(goodEnd, "target", { value: { value: "2026-01-12" } });
+        form.fields.end.onInput(goodEnd);
+        expect(form.fields.end.error.value).toBeNull();
+    });
+
+    it("supports conditional required validators", () => {
+        const form = createForm(
+            { isBusiness: false, companyName: "" },
+            {
+                validateOn: "input",
+                validators: {
+                    companyName: [
+                        (v, values) => values?.isBusiness && !v ? "Company is required" : null,
+                    ],
+                },
+            },
+        );
+
+        const companyTouched = new Event("input");
+        Object.defineProperty(companyTouched, "target", { value: { value: "" } });
+        form.fields.companyName.onInput(companyTouched);
+        expect(form.fields.companyName.error.value).toBeNull();
+
+        const businessOn = new Event("input");
+        Object.defineProperty(businessOn, "target", { value: { value: "on", checked: true } });
+        form.fields.isBusiness.onInput(businessOn);
+
+        expect(form.fields.companyName.error.value).toBe("Company is required");
     });
 });
 

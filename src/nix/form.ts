@@ -3,8 +3,15 @@ import type { Signal } from "./reactivity";
 
 // --- Validator ---
 
-/** A validator function. Return an error string, or null/undefined if valid. */
-export type Validator<T> = (value: T) => string | null | undefined;
+/**
+ * A validator function. Return an error string, or null/undefined if valid.
+ *
+ * `allValues` is optional and is provided when the validator runs inside `createForm`.
+ */
+export type Validator<T, AllValues = unknown> = (
+    value: T,
+    allValues?: AllValues,
+) => string | null | undefined;
 
 // --- Built-in validators ---
 
@@ -54,9 +61,9 @@ export function max(n: number, message?: string): Validator<number> {
 // --- Custom validator API ---
 
 /** Creates a typed custom validator compatible with `useField` and `createForm`. */
-export function createValidator<T>(
-    fn: (value: T) => string | null | undefined
-): Validator<T> {
+export function createValidator<T, AllValues = unknown>(
+    fn: (value: T, allValues?: AllValues) => string | null | undefined
+): Validator<T, AllValues> {
     return fn;
 }
 
@@ -131,10 +138,11 @@ export interface FieldState<T> {
 // --- useField ---
 
 /** Creates a standalone reactive form field with optional validators. */
-export function useField<T>(
+export function useField<T, AllValues = unknown>(
     initialValue: T,
-    fieldValidators: Validator<T>[] = [],
+    fieldValidators: Validator<T, AllValues>[] = [],
     validateOn: ValidateOn = "blur",
+    getAllValues?: () => AllValues,
 ): FieldState<T> {
     const value = signal(initialValue);
     const touched = signal(false);
@@ -154,8 +162,10 @@ export function useField<T>(
 
         if (!isVisible) return null;
 
+        const allValues = getAllValues?.();
+
         for (const v of fieldValidators) {
-            const e = v(value.value);
+            const e = v(value.value, allValues);
             if (e) return e;
         }
         return null;
@@ -239,13 +249,13 @@ export interface FieldArrayState<T extends Record<string, unknown>> {
  */
 export function useFieldArray<T extends Record<string, unknown>>(
     initialItems: T[],
-    fieldValidators: { [K in keyof T]?: Validator<T[K]>[] } = {},
+    fieldValidators: { [K in keyof T]?: Validator<T[K], unknown>[] } = {},
     validateOn: ValidateOn = "blur",
 ): FieldArrayState<T> {
     function makeGroup(item: T): { [K in keyof T]: FieldState<T[K]> } {
         const group = {} as { [K in keyof T]: FieldState<T[K]> };
         for (const key in item) {
-            const vs = (fieldValidators[key] ?? []) as Validator<T[typeof key]>[];
+            const vs = (fieldValidators[key] ?? []) as Validator<T[typeof key], unknown>[];
             (group as Record<string, unknown>)[key] = useField(item[key], vs, validateOn);
         }
         return group;
@@ -314,14 +324,22 @@ export function useFieldArray<T extends Record<string, unknown>>(
 
 // --- FormState ---
 
+/** Field-name map that supports top-level keys and dot-path nested keys. */
+export type FormFields<T extends Record<string, unknown>> =
+    { [K in keyof T]: FieldState<T[K]> } & Record<string, FieldState<unknown>>;
+
 /** Map of field-name → error message for external validation results. */
-export type FieldErrors<T extends Record<string, unknown>> = {
-    [K in keyof T]?: string | null;
-};
+export type FieldErrors<T extends Record<string, unknown>> =
+    { [K in keyof T]?: string | null } & Record<string, string | null | undefined>;
+
+/** Validators map supporting both top-level and dot-path keys. */
+export type FormValidators<T extends Record<string, unknown>> =
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { [K in keyof T]?: Validator<T[K], T>[] } & Record<string, Validator<any, any>[] | undefined>;
 
 export interface FormState<T extends Record<string, unknown>> {
     /** Individual field states — access value, error, event handlers. */
-    fields: { [K in keyof T]: FieldState<T[K]> };
+    fields: FormFields<T>;
     /** Computed snapshot of all current field values. */
     readonly values: Signal<T>;
     /** Computed map of all currently visible field errors. */
@@ -360,8 +378,8 @@ export interface FormState<T extends Record<string, unknown>> {
 }
 
 export interface FormOptions<T extends Record<string, unknown>> {
-    /** Per-field built-in validators. */
-    validators?: { [K in keyof T]?: Validator<T[K]>[] };
+    /** Per-field validators. Each validator receives `(value, allValues?)`. */
+    validators?: FormValidators<T>;
     /**
      * Controls when validation errors become visible.
      * - `"blur"` — after the field loses focus (default)
@@ -388,7 +406,43 @@ export interface FormOptions<T extends Record<string, unknown>> {
      */
     validate?: (
         values: T
-    ) => { [K in keyof T]?: string | string[] | null | undefined } | null | undefined;
+    ) => Record<string, string | string[] | null | undefined> | null | undefined;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function flattenValuePaths(
+    value: Record<string, unknown>,
+    prefix = "",
+    out: Array<[string, unknown]> = [],
+): Array<[string, unknown]> {
+    for (const [key, next] of Object.entries(value)) {
+        const path = prefix ? `${prefix}.${key}` : key;
+        if (isPlainRecord(next) && Object.keys(next).length > 0) {
+            flattenValuePaths(next, path, out);
+            continue;
+        }
+        out.push([path, next]);
+    }
+    return out;
+}
+
+function setAtPath(target: Record<string, unknown>, path: string, value: unknown): void {
+    const parts = path.split(".");
+    let current: Record<string, unknown> = target;
+
+    for (let i = 0; i < parts.length - 1; i++) {
+        const part = parts[i];
+        const child = current[part];
+        if (!isPlainRecord(child)) {
+            current[part] = {};
+        }
+        current = current[part] as Record<string, unknown>;
+    }
+
+    current[parts[parts.length - 1]] = value;
 }
 
 // --- createForm ---
@@ -403,19 +457,27 @@ export function createForm<T extends Record<string, unknown>>(
 ): FormState<T> {
     const validateOn: ValidateOn = options.validateOn ?? "blur";
 
-    const fields = {} as { [K in keyof T]: FieldState<T[K]> };
-    for (const key in initialValues) {
-        const vs = (options.validators?.[key] ?? []) as Validator<T[typeof key]>[];
-        (fields as Record<string, unknown>)[key] = useField(initialValues[key], vs, validateOn);
+    const fields = {} as Record<string, FieldState<unknown>>;
+    const validatorsByPath = options.validators as
+        | Record<string, Validator<unknown, T>[] | undefined>
+        | undefined;
+
+    function snapshotValues(): T {
+        const r: Record<string, unknown> = {};
+        for (const k in fields) setAtPath(r, k, fields[k].value.value);
+        return r as T;
+    }
+
+    for (const [path, initialValue] of flattenValuePaths(initialValues)) {
+        const vs = validatorsByPath?.[path] ?? [];
+        fields[path] = useField<unknown, T>(initialValue, vs, validateOn, snapshotValues);
     }
 
     const isSubmitting = signal(false);
     const submitCount = signal(0);
 
     const values = computed<T>(() => {
-        const r = {} as T;
-        for (const k in fields) (r as Record<string, unknown>)[k] = fields[k].value.value;
-        return r;
+        return snapshotValues();
     });
 
     const errors = computed<FieldErrors<T>>(() => {
@@ -479,7 +541,7 @@ export function createForm<T extends Record<string, unknown>>(
                     const mapped: FieldErrors<T> = {};
                     let hasAny = false;
                     for (const k in ext) {
-                        const v = (ext as Record<string, string | string[] | null | undefined>)[k];
+                        const v = ext[k];
                         const msg = Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
                         if (msg) {
                             (mapped as Record<string, unknown>)[k] = msg;
@@ -509,7 +571,7 @@ export function createForm<T extends Record<string, unknown>>(
     }
 
     return {
-        fields,
+        fields: fields as FormFields<T>,
         values,
         errors,
         valid,

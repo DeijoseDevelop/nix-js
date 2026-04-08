@@ -86,6 +86,9 @@ export type {
     NavigationGuardResult,
     AfterEachHook,
     ResolvedRoute,
+    ScrollPosition,
+    ScrollBehavior,
+    RouterMode,
     // Async
     SuspenseOptions,
     QueryOptions,

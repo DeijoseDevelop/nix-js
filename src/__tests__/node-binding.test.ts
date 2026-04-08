@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { html } from "../nix/template";
 import { repeat } from "../nix/template/keyed";
 import { signal, nextTick } from "../nix/reactivity";

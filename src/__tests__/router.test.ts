@@ -139,6 +139,22 @@ describe("route guards", () => {
         expect(capturedFrom).toBe(from);
     });
 
+    it("guard can read route meta through resolve()", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/admin", component: () => html`<p>admin</p>`, meta: { auth: true } },
+            { path: "/login", component: () => html`<p>login</p>` },
+        ]);
+
+        r.beforeEach((to) => {
+            const matched = r.resolve(to);
+            if (matched.route?.meta?.auth) return "/login";
+        });
+
+        r.navigate("/admin");
+        expect(r.current.value).toBe("/login");
+    });
+
     it("beforeEnter fires only for its route", () => {
         let fired = false;
         const r = createRouter([
@@ -481,6 +497,17 @@ describe("resolve()", () => {
         r.resolve("/about");
         expect(r.current.value).toBe(before);
     });
+
+    it("exposes route meta on matched resolve results", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/admin", component: () => html`<p>admin</p>`, meta: { auth: true } },
+        ]);
+
+        const info = r.resolve("/admin");
+        expect(info.matched).toBe(true);
+        expect(info.route?.meta).toEqual({ auth: true });
+    });
 });
 
 // ── afterEach() ───────────────────────────────────────────────────────────────
@@ -579,7 +606,13 @@ describe("Base path options", () => {
 
         const pushStateSpy = vi.spyOn(history, "pushState").mockImplementation(() => { });
         r.navigate("/test");
-        expect(pushStateSpy).toHaveBeenCalledWith(null, "", "/my-app/test");
+        expect(pushStateSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                __nix_scroll: expect.objectContaining({ left: 0, top: 0 }),
+            }),
+            "",
+            "/my-app/test",
+        );
         pushStateSpy.mockRestore();
     });
 
@@ -592,6 +625,142 @@ describe("Base path options", () => {
         expect(r.base).toBe("/auto-base");
 
         document.head.removeChild(baseEl);
+    });
+
+    it("supports custom scrollBehavior callback", () => {
+        history.replaceState(null, "", "/");
+        const scrollBehavior = vi.fn(() => ({ left: 12, top: 34 }));
+        const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => { });
+
+        const r = createRouter(
+            [
+                { path: "/", component: () => html`<p>home</p>` },
+                { path: "/about", component: () => html`<p>about</p>` },
+            ],
+            { scrollBehavior },
+        );
+
+        r.navigate("/about");
+
+        expect(scrollBehavior).toHaveBeenCalledWith("/about", "/", null);
+        expect(scrollToSpy).toHaveBeenCalledWith(12, 34);
+        scrollToSpy.mockRestore();
+    });
+});
+
+// ── Hash mode ────────────────────────────────────────────────────────────────
+
+describe("hash mode", () => {
+    it("reads initial route from location.hash", () => {
+        history.replaceState(null, "", "#/users/42?tab=posts");
+        const r = createRouter(
+            [
+                { path: "/", component: () => html`<p>home</p>` },
+                { path: "/users/:id", component: () => html`<p>user</p>` },
+            ],
+            { mode: "hash" },
+        );
+
+        expect(r.current.value).toBe("/users/42");
+        expect(r.query.value).toEqual({ tab: "posts" });
+        expect(r.params.value).toEqual({ id: "42" });
+    });
+
+    it("navigate updates the hash URL", () => {
+        history.replaceState(null, "", "#/");
+        const r = createRouter(
+            [
+                { path: "/", component: () => html`<p>home</p>` },
+                { path: "/about", component: () => html`<p>about</p>` },
+            ],
+            { mode: "hash" },
+        );
+
+        r.navigate("/about", { q: "x" });
+
+        expect(window.location.hash).toBe("#/about?q=x");
+        expect(r.current.value).toBe("/about");
+        expect(r.query.value).toEqual({ q: "x" });
+    });
+
+    it("hashchange updates route state", () => {
+        history.replaceState(null, "", "#/");
+        const r = createRouter(
+            [
+                { path: "/", component: () => html`<p>home</p>` },
+                { path: "/docs/:slug", component: () => html`<p>docs</p>` },
+            ],
+            { mode: "hash" },
+        );
+
+        window.location.hash = "#/docs/intro?lang=es";
+        window.dispatchEvent(new Event("hashchange"));
+
+        expect(r.current.value).toBe("/docs/intro");
+        expect(r.params.value).toEqual({ slug: "intro" });
+        expect(r.query.value).toEqual({ lang: "es" });
+    });
+
+    it("Link uses hash hrefs in hash mode", () => {
+        createRouter([{ path: "/", component: () => html`<p>home</p>` }], { mode: "hash" });
+        const link = new Link("/about", "About");
+
+        const el = document.createElement("div");
+        link.render().mount(el);
+
+        const a = el.querySelector("a")!;
+        expect(a.getAttribute("href")).toBe("#/about");
+    });
+});
+
+// ── Scroll behavior ──────────────────────────────────────────────────────────
+
+describe("scroll restoration", () => {
+    it("saves current scroll position before navigate", () => {
+        const replaceSpy = vi.spyOn(history, "replaceState").mockImplementation(() => { });
+        const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => { });
+
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/next", component: () => html`<p>next</p>` },
+        ]);
+
+        // Ignore createRouter initialization write
+        replaceSpy.mockClear();
+
+        Object.defineProperty(window, "scrollX", { value: 25, configurable: true });
+        Object.defineProperty(window, "scrollY", { value: 60, configurable: true });
+
+        r.navigate("/next");
+
+        expect(replaceSpy).toHaveBeenCalledWith(
+            expect.objectContaining({
+                __nix_scroll: expect.objectContaining({ left: 25, top: 60 }),
+            }),
+            "",
+        );
+        expect(scrollToSpy).toHaveBeenCalledWith(0, 0);
+
+        replaceSpy.mockRestore();
+        scrollToSpy.mockRestore();
+    });
+
+    it("restores saved position on popstate", () => {
+        const scrollToSpy = vi.spyOn(window, "scrollTo").mockImplementation(() => { });
+
+        createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { path: "/about", component: () => html`<p>about</p>` },
+        ]);
+
+        window.dispatchEvent(
+            new PopStateEvent("popstate", {
+                state: { __nix_scroll: { left: 111, top: 222 } },
+            }),
+        );
+
+        expect(scrollToSpy).toHaveBeenCalledWith(111, 222);
+        scrollToSpy.mockRestore();
     });
 });
 
