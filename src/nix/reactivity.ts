@@ -5,18 +5,51 @@ interface _EffectCtx {
     deps: Set<Signal<any>> | null;
 }
 
-// Pool de objetos reutilizables para evitar allocations en cada execute()
-const _ctxPool: _EffectCtx[] = [];
-const _ctxStack: _EffectCtx[] = [];
+interface _ReactivityGlobalState {
+    ctxPool: _EffectCtx[];
+    ctxStack: _EffectCtx[];
+    activeEffect: (() => void) | null;
+    activeDeps: Set<Signal<any>> | null;
+    activeErrorHandler: ((err: unknown) => void) | null;
+    errorHandlerStack: (((err: unknown) => void) | null)[];
+    batchLevel: number;
+    pendingEffectsSet: Set<() => void>;
+    pendingEffectsArr: (() => void)[];
+    effectDepth: number;
+    notifyBuf: ((() => void) | null)[];
+    notifyBase: number;
+    signalDebugHooks: _SignalDebugHooks | null;
+}
 
-// Contexto activo actual
-let activeEffect: (() => void) | null = null;
-let activeDeps: Set<Signal<any>> | null = null;
+function _createReactivityState(): _ReactivityGlobalState {
+    return {
+        ctxPool: [],
+        ctxStack: [],
+        activeEffect: null,
+        activeDeps: null,
+        activeErrorHandler: null,
+        errorHandlerStack: [],
+        batchLevel: 0,
+        pendingEffectsSet: new Set<() => void>(),
+        pendingEffectsArr: [],
+        effectDepth: 0,
+        notifyBuf: [],
+        notifyBase: 0,
+        signalDebugHooks: null,
+    };
+}
+
+const _reactivityStateKey = Symbol.for("@deijose/nix-js/reactivity-state");
+const _globalObj = globalThis as Record<PropertyKey, unknown>;
+const _state = (() => {
+    const existing = _globalObj[_reactivityStateKey] as _ReactivityGlobalState | undefined;
+    if (existing) return existing;
+    const created = _createReactivityState();
+    _globalObj[_reactivityStateKey] = created;
+    return created;
+})();
 
 // --- Error boundary support ---
-
-let activeErrorHandler: ((err: unknown) => void) | null = null;
-const errorHandlerStack: (((err: unknown) => void) | null)[] = [];
 
 /**
  * @internal — Register an error boundary handler. All `effect()` calls made
@@ -24,35 +57,36 @@ const errorHandlerStack: (((err: unknown) => void) | null)[] = [];
  * effects re-run and throw, the captured handler is invoked.
  */
 export function _pushErrorHandler(h: (err: unknown) => void): void {
-    errorHandlerStack.push(activeErrorHandler);
-    activeErrorHandler = h;
+    _state.errorHandlerStack.push(_state.activeErrorHandler);
+    _state.activeErrorHandler = h;
 }
 
 /** @internal — Restore the previous error boundary handler. */
 export function _popErrorHandler(): void {
-    activeErrorHandler = errorHandlerStack.pop() ?? null;
+    _state.activeErrorHandler = _state.errorHandlerStack.pop() ?? null;
 }
 
 // --- Batching ---
 
-let batchLevel = 0;
-const _pendingEffectsSet = new Set<() => void>();  // solo para dedup O(1)
-const _pendingEffectsArr: (() => void)[] = [];
-
 // --- Effect recursion guard ---
 
 const MAX_EFFECT_DEPTH = 100;
-let effectDepth = 0;
-
-const _notifyBuf: ((() => void) | null)[] = [];
-let _notifyBase = 0;
 const _NOTIFY_SHRINK_TRIGGER = 64;
 const _NOTIFY_LOW_USAGE = 16;
 const _NOTIFY_SHRINK_TO = 32;
 
+export interface _SignalDebugHooks {
+    onCreate?: (signal: Signal<any>, initialValue: unknown) => void;
+    onWrite?: (signal: Signal<any>, value: unknown) => void;
+}
+
+export function _setSignalDebugHooks(hooks: _SignalDebugHooks | null): void {
+    _state.signalDebugHooks = hooks;
+}
+
 /** @internal — notify buffer capacity, exposed for tests. */
 export function _getNotifyBufSize(): number {
-    return _notifyBuf.length;
+    return _state.notifyBuf.length;
 }
 
 // --- Signal ---
@@ -63,13 +97,14 @@ export class Signal<T> {
 
     constructor(initialValue: T) {
         this._value = initialValue;
+        _state.signalDebugHooks?.onCreate?.(this, initialValue);
     }
 
     /** Read the current value. Subscribes the active effect if one exists. */
     get value(): T {
-        if (activeEffect) {
-            this._subs.add(activeEffect);
-            activeDeps?.add(this);
+        if (_state.activeEffect) {
+            this._subs.add(_state.activeEffect);
+            _state.activeDeps?.add(this);
         }
         return this._value;
     }
@@ -78,6 +113,7 @@ export class Signal<T> {
     set value(newValue: T) {
         if (Object.is(this._value, newValue)) return;
         this._value = newValue;
+        _state.signalDebugHooks?.onWrite?.(this, newValue);
         this._notify();
     }
 
@@ -97,34 +133,34 @@ export class Signal<T> {
     }
 
     private _notify(): void {
-        if (batchLevel > 0) {
+        if (_state.batchLevel > 0) {
             for (const s of this._subs) {
-                if (!_pendingEffectsSet.has(s)) {
-                    _pendingEffectsSet.add(s);
-                    _pendingEffectsArr.push(s);
+                if (!_state.pendingEffectsSet.has(s)) {
+                    _state.pendingEffectsSet.add(s);
+                    _state.pendingEffectsArr.push(s);
                 }
             }
             return;
         }
-        const base = _notifyBase;
+        const base = _state.notifyBase;
         let len = 0;
-        for (const s of this._subs) _notifyBuf[base + len++] = s;
-        _notifyBase = base + len;
+        for (const s of this._subs) _state.notifyBuf[base + len++] = s;
+        _state.notifyBase = base + len;
         try {
             for (let i = 0; i < len; i++) {
-                const fn = _notifyBuf[base + i];
-                _notifyBuf[base + i] = null!;
+                const fn = _state.notifyBuf[base + i];
+                _state.notifyBuf[base + i] = null!;
                 fn?.();
             }
         } finally {
-            _notifyBase = base;
+            _state.notifyBase = base;
             // Shrink oversized notify buffer after a low-usage top-level flush.
             if (
                 base === 0 &&
-                _notifyBuf.length > _NOTIFY_SHRINK_TRIGGER &&
+                _state.notifyBuf.length > _NOTIFY_SHRINK_TRIGGER &&
                 len < _NOTIFY_LOW_USAGE
             ) {
-                _notifyBuf.length = _NOTIFY_SHRINK_TO;
+                _state.notifyBuf.length = _NOTIFY_SHRINK_TO;
             }
         }
     }
@@ -154,7 +190,7 @@ export function effect(fn: () => void | (() => void)): () => void {
     let deps = new Set<Signal<any>>();
     let newDeps = new Set<Signal<any>>();
 
-    const capturedErrorHandler = activeErrorHandler;
+    const capturedErrorHandler = _state.activeErrorHandler;
 
     const execute = () => {
         if (disposed) return;
@@ -166,23 +202,23 @@ export function effect(fn: () => void | (() => void)): () => void {
         newDeps = temp;
         newDeps.clear();
 
-        const ctx = _ctxPool.length > 0 ? _ctxPool.pop()! : { effect: null, deps: null };
-        ctx.effect = activeEffect;
-        ctx.deps = activeDeps;
-        _ctxStack.push(ctx);
-        activeEffect = execute;
-        activeDeps = newDeps;
+        const ctx = _state.ctxPool.length > 0 ? _state.ctxPool.pop()! : { effect: null, deps: null };
+        ctx.effect = _state.activeEffect;
+        ctx.deps = _state.activeDeps;
+        _state.ctxStack.push(ctx);
+        _state.activeEffect = execute;
+        _state.activeDeps = newDeps;
 
-        effectDepth++;
-        if (effectDepth > MAX_EFFECT_DEPTH) {
-            effectDepth = 0;
+        _state.effectDepth++;
+        if (_state.effectDepth > MAX_EFFECT_DEPTH) {
+            _state.effectDepth = 0;
             // Restaurar desde el stack unificado
-            const restored = _ctxStack.pop()!;
-            activeEffect = restored.effect;
-            activeDeps = restored.deps;
+            const restored = _state.ctxStack.pop()!;
+            _state.activeEffect = restored.effect;
+            _state.activeDeps = restored.deps;
             restored.effect = null;
             restored.deps = null;
-            _ctxPool.push(restored);
+            _state.ctxPool.push(restored);
             throw new Error(
                 "[Nix] Maximum effect re-execution depth exceeded (possible infinite loop)."
             );
@@ -197,13 +233,13 @@ export function effect(fn: () => void | (() => void)): () => void {
                 throw err;
             }
         } finally {
-            effectDepth--;
-            const restored = _ctxStack.pop()!;
-            activeEffect = restored.effect;
-            activeDeps = restored.deps;
+            _state.effectDepth--;
+            const restored = _state.ctxStack.pop()!;
+            _state.activeEffect = restored.effect;
+            _state.activeDeps = restored.deps;
             restored.effect = null;   // limpiar referencias para GC
             restored.deps = null;
-            _ctxPool.push(restored);  // devolver al pool para reutilizar
+            _state.ctxPool.push(restored);  // devolver al pool para reutilizar
 
 
             // Cleanup phase: Desuscribirse de señales que estaban en 'deps' pero NO en 'newDeps'
@@ -278,31 +314,31 @@ export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
 
 /** Groups multiple signal writes so effects flush once at the end. */
 export function batch(fn: () => void): void {
-    batchLevel++;
+    _state.batchLevel++;
     try {
         fn();
     } finally {
-        batchLevel--;
-        if (batchLevel === 0 && _pendingEffectsArr.length > 0) {
-            const len = _pendingEffectsArr.length;
-            for (let i = 0; i < len; i++) _pendingEffectsArr[i]();
-            _pendingEffectsArr.length = 0;  // reset O(1) sin GC — key del cambio
-            _pendingEffectsSet.clear();
+        _state.batchLevel--;
+        if (_state.batchLevel === 0 && _state.pendingEffectsArr.length > 0) {
+            const len = _state.pendingEffectsArr.length;
+            for (let i = 0; i < len; i++) _state.pendingEffectsArr[i]();
+            _state.pendingEffectsArr.length = 0;  // reset O(1) sin GC — key del cambio
+            _state.pendingEffectsSet.clear();
         }
     }
 }
 
 /** Executes `fn` without subscribing to any signals read inside it. */
 export function untrack<T>(fn: () => T): T {
-    const prevEffect = activeEffect;
-    const prevDeps = activeDeps;
-    activeEffect = null;
-    activeDeps = null;
+    const prevEffect = _state.activeEffect;
+    const prevDeps = _state.activeDeps;
+    _state.activeEffect = null;
+    _state.activeDeps = null;
     try {
         return fn();
     } finally {
-        activeEffect = prevEffect;
-        activeDeps = prevDeps;
+        _state.activeEffect = prevEffect;
+        _state.activeDeps = prevDeps;
     }
 }
 

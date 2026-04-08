@@ -281,6 +281,20 @@ function flattenRoutes(
     return result;
 }
 
+export interface _RouterDebugInternal {
+    mode: RouterMode;
+    base: string;
+    currentPath: string;
+    params: Record<string, string>;
+    query: Record<string, string>;
+    matchedPath: string | null;
+    activeGuards: {
+        globalCount: number;
+        hasRouteGuard: boolean;
+        names: string[];
+    };
+}
+
 /** Attempts to match `path` against a `FlatRoute`. Returns extracted params or `null`. */
 function tryMatch(path: string, route: FlatRoute): Record<string, string> | null {
     const parts = path.split("/").filter(Boolean);
@@ -868,6 +882,32 @@ export function _resetRouter(): void {
         _currentPopstateCleanup = null;
     }
     _currentRouter = null;
+}
+
+/** @internal — lightweight router state accessor for optional devtools modules. */
+export function _debugGetRouterInternal(): _RouterDebugInternal | null {
+    if (!_currentRouter) return null;
+
+    const currentPath = _currentRouter.current.value;
+    const matched = matchFlat(currentPath, _currentRouter._flat);
+    const routeGuard = matched?.route.beforeEnter;
+
+    const names = _currentRouter._guards.map((g, idx) => g.name || `beforeEach#${idx + 1}`);
+    if (routeGuard) names.push(routeGuard.name || "beforeEnter");
+
+    return {
+        mode: _currentRouter._mode,
+        base: _currentRouter._base || "/",
+        currentPath,
+        params: { ..._currentRouter.params.value },
+        query: { ..._currentRouter.query.value },
+        matchedPath: matched?.route.fullPath ?? null,
+        activeGuards: {
+            globalCount: _currentRouter._guards.length,
+            hasRouteGuard: Boolean(routeGuard),
+            names,
+        },
+    };
 }
 
 // --- RouterView ---

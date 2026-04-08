@@ -1,5 +1,11 @@
 import type { NixTemplate, NixMountHandle } from "./template";
-import { isNixComponent, type NixComponent } from "./lifecycle";
+import {
+    isNixComponent,
+    _debugComponentMountStart,
+    _debugComponentMountEnd,
+    _debugComponentUnmount,
+    type NixComponent,
+} from "./lifecycle";
 import { _pushComponentContext, _popComponentContext, provide } from "./context";
 import { RouterKey, type Router } from "./router";
 
@@ -36,6 +42,7 @@ export function mount(
     if (isNixComponent(component)) {
         const el = _resolveContainer(container);
 
+        _debugComponentMountStart(component);
         _pushComponentContext();
         let cleanup: () => void;
         try {
@@ -45,6 +52,7 @@ export function mount(
             try { component.onInit?.(); } catch (e) { if (component.onError) component.onError(e); else throw e; }
             cleanup = component.render()._render(el, null);
         } finally {
+            _debugComponentMountEnd(component);
             _popComponentContext();
         }
         let mountCleanup: (() => void) | undefined;
@@ -62,6 +70,7 @@ export function mount(
                 try { component.onUnmount?.(); } catch { /* ignore */ }
                 try { mountCleanup?.(); } catch { /* ignore */ }
                 cleanup();
+                _debugComponentUnmount(component);
             },
         };
     }

@@ -1,4 +1,9 @@
-import type { NixComponent } from "../lifecycle";
+import {
+    _debugComponentMountStart,
+    _debugComponentMountEnd,
+    _debugComponentUnmount,
+    type NixComponent,
+} from "../lifecycle";
 import {
     _captureContextSnapshot,
     _pushComponentContext,
@@ -20,12 +25,14 @@ export function _mountComponent(
     parent: Node,
     before: Node | null,
 ): () => void {
+    _debugComponentMountStart(inst);
     _pushComponentContext();
     let renderCleanup!: () => void;
     try {
         try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
         renderCleanup = inst.render()._render(parent, before);
     } finally {
+        _debugComponentMountEnd(inst);
         _popComponentContext();
     }
     let mountCleanup: (() => void) | undefined;
@@ -39,6 +46,7 @@ export function _mountComponent(
         try { inst.onUnmount?.(); } catch { /* ignore */ }
         try { mountCleanup?.(); } catch { /* ignore */ }
         renderCleanup();
+        _debugComponentUnmount(inst);
     };
 }
 
@@ -52,12 +60,14 @@ export function _mountComponentSilent(
     parent: Node,
     before: Node | null,
 ): () => void {
+    _debugComponentMountStart(inst);
     _pushComponentContext();
     let renderCleanup!: () => void;
     try {
         try { inst.onInit?.(); } catch { /* ignore */ }
         renderCleanup = inst.render()._render(parent, before);
     } finally {
+        _debugComponentMountEnd(inst);
         _popComponentContext();
     }
     let mountRet: (() => void) | undefined;
@@ -69,6 +79,7 @@ export function _mountComponentSilent(
         try { inst.onUnmount?.(); } catch { /* ignore */ }
         try { mountRet?.(); } catch { /* ignore */ }
         renderCleanup();
+        _debugComponentUnmount(inst);
     };
 }
 
@@ -84,11 +95,16 @@ export function _mountComponentWithCtx(
     before: Node | null,
     ctxSnapshot: ReturnType<typeof _captureContextSnapshot>,
 ): () => void {
+    _debugComponentMountStart(inst);
     let renderCleanup!: () => void;
-    _withComponentContext(ctxSnapshot, () => {
-        try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
-        renderCleanup = inst.render()._render(parent, before);
-    });
+    try {
+        _withComponentContext(ctxSnapshot, () => {
+            try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
+            renderCleanup = inst.render()._render(parent, before);
+        });
+    } finally {
+        _debugComponentMountEnd(inst);
+    }
     let mountCleanup: (() => void) | undefined;
     try {
         const ret = inst.onMount?.();
@@ -100,6 +116,7 @@ export function _mountComponentWithCtx(
         try { inst.onUnmount?.(); } catch { /* ignore */ }
         try { mountCleanup?.(); } catch { /* ignore */ }
         renderCleanup();
+        _debugComponentUnmount(inst);
     };
 }
 
@@ -117,12 +134,14 @@ export function _mountComponentDeferred(
     postMountHooks: Array<() => void>,
     disposes: Array<() => void>,
 ): void {
+    _debugComponentMountStart(inst);
     _pushComponentContext();
     let renderCleanup!: () => void;
     try {
         try { inst.onInit?.(); } catch (e) { if (inst.onError) inst.onError(e); else throw e; }
         renderCleanup = inst.render()._render(parent, before);
     } finally {
+        _debugComponentMountEnd(inst);
         _popComponentContext();
     }
     let mountCleanup: (() => void) | undefined;
@@ -138,5 +157,6 @@ export function _mountComponentDeferred(
         try { inst.onUnmount?.(); } catch { /* ignore */ }
         try { mountCleanup?.(); } catch { /* ignore */ }
         renderCleanup();
+        _debugComponentUnmount(inst);
     });
 }

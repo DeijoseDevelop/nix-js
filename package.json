@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js",
-  "version": "1.9.7",
+  "version": "2.0.0",
   "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
   "license": "MIT",
   "author": "Deiver Vasquez",
@@ -70,6 +70,11 @@
       "types": "./dist/lib/nix/lifecycle.d.ts",
       "import": "./dist/lib/lifecycle.js",
       "require": "./dist/lib/lifecycle.cjs"
+    },
+    "./devtools": {
+      "types": "./dist/lib/nix/devtools.d.ts",
+      "import": "./dist/lib/devtools.js",
+      "require": "./dist/lib/devtools.cjs"
     }
   },
   "main": "./dist/lib/nix-js.cjs",

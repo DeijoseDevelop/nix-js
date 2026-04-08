@@ -32,6 +32,7 @@ export default defineConfig({
                 "component": resolve("src/nix/component.ts"),
                 "context": resolve("src/nix/context.ts"),
                 "lifecycle": resolve("src/nix/lifecycle.ts"),
+                "devtools": resolve("src/nix/devtools.ts"),
             },
             name: "NixJS",
             formats: ["es", "cjs"],

@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.0.0
+
+- **feat(devtools): in-page overlay inspector** — added optional `@deijose/nix-js/devtools` entry with `enableDevTools()` / `disableDevTools()` and three panels (signals, component tree, router state).
+- **feat(debug): component identity tracking hooks** — added internal component mount/unmount tracking with `_debugName` support for richer devtools trees.
+- **feat(debug): signal metadata snapshots** — added internal signal registry snapshots with subscriber counts, last updated timestamp, and bounded history.
+- **feat(debug): router snapshot API** — added internal router debug snapshots including current path, params/query, matched route chain, and active guards.
+- **fix(reactivity): shared global runtime state across duplicated module instances** — moved reactive engine state to `globalThis` (`Symbol.for("@deijose/nix-js/reactivity-state")`) so effects/signals interoperate correctly even when dev bundlers prebundle/inject duplicate copies.
+
 ## v1.9.7
 
 - **perf(reactivity): notify buffer shrink policy** — `_notifyBuf` now shrinks to 32 when capacity grows above 64 and subsequent top-level notify usage is under 16, preventing slow memory growth in long-running apps.

@@ -20,6 +20,9 @@ export abstract class NixComponent {
     /** Default slot — child content injected by the parent. */
     children?: NixChildren;
 
+    /** Optional label used by devtools. Falls back to class name. */
+    _debugName?: string;
+
     /** @internal */
     private _slots = new Map<string, NixChildren>();
 
@@ -38,6 +41,12 @@ export abstract class NixComponent {
     /** Returns content for a named slot. */
     slot(name: string): NixChildren {
         return this._slots.get(name);
+    }
+
+    /** Sets an explicit devtools display name. Returns `this` for chaining. */
+    setDebugName(name: string): this {
+        this._debugName = name;
+        return this;
     }
 
     /** Returns the component template. Called once on mount; updates happen via signals. */
@@ -65,4 +74,30 @@ export function isNixComponent(v: unknown): v is NixComponent {
         typeof v === "object" &&
         (v as Record<string, unknown>).__isNixComponent === true
     );
+}
+
+// --- Devtools component tracking (internal) ---
+
+export interface _ComponentDebugHooks {
+    onMountStart?: (inst: NixComponent) => void;
+    onMountEnd?: (inst: NixComponent) => void;
+    onUnmount?: (inst: NixComponent) => void;
+}
+
+let _componentDebugHooks: _ComponentDebugHooks | null = null;
+
+export function _setComponentDebugHooks(hooks: _ComponentDebugHooks | null): void {
+    _componentDebugHooks = hooks;
+}
+
+export function _debugComponentMountStart(inst: NixComponent): void {
+    _componentDebugHooks?.onMountStart?.(inst);
+}
+
+export function _debugComponentMountEnd(inst: NixComponent): void {
+    _componentDebugHooks?.onMountEnd?.(inst);
+}
+
+export function _debugComponentUnmount(inst: NixComponent): void {
+    _componentDebugHooks?.onUnmount?.(inst);
 }

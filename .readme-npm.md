@@ -36,6 +36,7 @@ import { html, repeat, transition } from "@deijose/nix-js/template";
 import { mount } from "@deijose/nix-js/component";
 import { NixComponent } from "@deijose/nix-js/lifecycle";
 import { provide, inject, createInjectionKey } from "@deijose/nix-js/context";
+import { enableDevTools } from "@deijose/nix-js/devtools";
 ```
 
 This is optional: `import { ... } from "@deijose/nix-js"` remains fully supported.
