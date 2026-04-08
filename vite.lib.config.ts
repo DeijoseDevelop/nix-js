@@ -21,19 +21,39 @@ export default defineConfig({
         sourcemap: true,
 
         lib: {
-            entry: resolve("src/index.ts"),
+            entry: {
+                "nix-js": resolve("src/index.ts"),
+                "signals": resolve("src/nix/reactivity.ts"),
+                "router": resolve("src/nix/router.ts"),
+                "form": resolve("src/nix/form.ts"),
+                "store": resolve("src/nix/store.ts"),
+                "async": resolve("src/nix/async.ts"),
+                "template": resolve("src/nix/template/index.ts"),
+            },
             name: "NixJS",
             formats: ["es", "cjs"],
-            fileName: (format) => (format === "cjs" ? "nix-js.cjs" : "nix-js.js"),
         },
 
         rollupOptions: {
             // Nix.js has zero runtime dependencies — nothing to mark external.
             external: [],
-            output: {
-                // Preserve module structure for better tree-shaking in ES builds
-                preserveModules: false,
-            },
+            output: [
+                {
+                    // ESM output
+                    format: "es",
+                    entryFileNames: "[name].js",
+                    chunkFileNames: "[name].js",
+                    preserveModules: false,
+                },
+                {
+                    // CJS output
+                    format: "cjs",
+                    entryFileNames: "[name].cjs",
+                    chunkFileNames: "[name].cjs",
+                    exports: "named",
+                    preserveModules: false,
+                },
+            ],
         },
     },
 });

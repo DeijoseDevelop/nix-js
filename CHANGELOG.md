@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.9.4
+
+- **feat(build): subpath exports for modular imports** — added `@deijose/nix-js/signals`, `@deijose/nix-js/router`, `@deijose/nix-js/form`, `@deijose/nix-js/store`, `@deijose/nix-js/async`, and `@deijose/nix-js/template` export paths.
+- **build(lib): multi-entry output for targeted consumption** — library build now emits dedicated entry files (`signals`, `router`, `form`, `store`, `async`, `template`) in both ESM and CJS formats.
+- **build(lib): deterministic shared chunk filenames** — removed hashed chunk filenames from library output so shared modules now emit stable names across builds.
+
 ## v1.9.3
 
 - **feat(router): named routes navigation** — `RouteRecord` now supports `name`, and router navigation accepts named locations (`navigate({ name, params?, query? })` / `replace({ name, params?, query? })`) with path-string compatibility preserved.

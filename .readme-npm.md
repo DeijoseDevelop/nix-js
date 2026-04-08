@@ -22,6 +22,21 @@ A lightweight, fully reactive micro-framework for building modern web UIs — no
 npm install @deijose/nix-js
 ```
 
+## Subpath Imports (Tree-Shaking)
+
+When you only need one module, import from subpaths:
+
+```typescript
+import { signal, effect } from "@deijose/nix-js/signals";
+import { createRouter } from "@deijose/nix-js/router";
+import { createStore } from "@deijose/nix-js/store";
+import { createForm } from "@deijose/nix-js/form";
+import { suspend, lazy } from "@deijose/nix-js/async";
+import { html, repeat, transition } from "@deijose/nix-js/template";
+```
+
+This is optional: `import { ... } from "@deijose/nix-js"` remains fully supported.
+
 ## Quick Start
 
 ```typescript
