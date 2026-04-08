@@ -3,6 +3,7 @@ import type { Signal } from "./reactivity";
 import { NixComponent } from "./lifecycle";
 import type { NixTemplate } from "./template";
 import { html } from "./template";
+import { createInjectionKey, inject } from "./context";
 
 // --- Public types ---
 
@@ -21,6 +22,8 @@ export type NavigationGuard = (
 ) => NavigationGuardResult | Promise<NavigationGuardResult>;
 
 export interface RouteRecord {
+    /** Optional unique name to enable named navigation. */
+    name?: string;
     /** Route path segment. Supports literals, params (`:id`), and wildcards (`*`). */
     path: string;
     /** Factory returning the view for this route level. */
@@ -37,6 +40,16 @@ export interface RouteRecord {
  * Callback for `afterEach` hooks — receives the committed `to` and `from` paths.
  */
 export type AfterEachHook = (to: string, from: string) => void;
+
+/** Named route target for programmatic navigation. */
+export interface NamedRouteLocation {
+    name: string;
+    params?: Record<string, string | number>;
+    query?: Record<string, string | number | boolean | null | undefined>;
+}
+
+/** Navigation input accepted by `navigate` / `replace`. */
+export type RouteLocation = string | NamedRouteLocation;
 
 /** Serializable scroll position used by the router for history restoration. */
 export interface ScrollPosition {
@@ -111,9 +124,9 @@ export interface Router {
     /** The resolved base path used by the router. */
     readonly base: string;
     /** Navigate to a new path via `pushState`. Guards run before committing. */
-    navigate(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
+    navigate(location: RouteLocation, query?: Record<string, string | number | boolean | null | undefined>): void;
     /** Navigate via `replaceState` (no new history entry). Guards still run. */
-    replace(path: string, query?: Record<string, string | number | boolean | null | undefined>): void;
+    replace(location: RouteLocation, query?: Record<string, string | number | boolean | null | undefined>): void;
     /** Go back one entry in the browser history. */
     back(): void;
     /** Go forward one entry in the browser history. */
@@ -132,6 +145,9 @@ export interface Router {
     afterEach(hook: AfterEachHook): () => void;
 }
 
+/** DI key for router instances. Useful to mount multiple app trees with isolated routers. */
+export const RouterKey = createInjectionKey<Router>("nix:router");
+
 // --- Internals ---
 
 type Segment =
@@ -143,6 +159,7 @@ interface FlatRoute {
     fullPath: string;
     segments: Segment[];
     chain: Array<() => NixTemplate | NixComponent>;
+    name?: string;
     meta?: Record<string, unknown>;
     beforeEnter?: NavigationGuard;
     record: RouteRecord;
@@ -252,6 +269,7 @@ function flattenRoutes(
             fullPath,
             segments,
             chain,
+            name: route.name,
             meta: route.meta,
             beforeEnter: route.beforeEnter,
             record: route,
@@ -434,6 +452,14 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     const initialPath = initialLoc.pathname;
     const initialQuery = parseQuery(initialLoc.search);
     const flat = flattenRoutes(routes);
+    const _nameIndex = new Map<string, FlatRoute>();
+    for (const route of flat) {
+        if (!route.name) continue;
+        if (_nameIndex.has(route.name)) {
+            console.warn(`[Nix Router] Duplicate route name: "${route.name}"`);
+        }
+        _nameIndex.set(route.name, route);
+    }
     const initialMatch = matchFlat(initialPath, flat);
 
     const current = signal(initialPath);
@@ -536,6 +562,40 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
             if (v != null && v !== false) stringQuery[k] = String(v);
         }
         return { pathname, stringQuery };
+    }
+
+    function _resolveNamedPath(location: NamedRouteLocation): string {
+        const found = _nameIndex.get(location.name);
+        if (!found) {
+            throw new Error(`[Nix Router] No route with name "${location.name}"`);
+        }
+
+        const parts = found.segments.map((seg) => {
+            if (seg.kind === "literal") return seg.value;
+            if (seg.kind === "wildcard") return "";
+            const value = location.params?.[seg.name];
+            if (value == null) {
+                throw new Error(
+                    `[Nix Router] Missing param "${seg.name}" for route "${location.name}"`
+                );
+            }
+            return encodeURIComponent(String(value));
+        });
+
+        return "/" + parts.filter(Boolean).join("/");
+    }
+
+    function _resolveLocation(
+        location: RouteLocation,
+        queryObj?: Record<string, string | number | boolean | null | undefined>,
+    ): { pathname: string; stringQuery: Record<string, string> } {
+        if (typeof location === "string") {
+            return _parsePath(location, queryObj);
+        }
+
+        const pathname = _resolveNamedPath(location);
+        const mergedQuery = { ...(location.query ?? {}), ...(queryObj ?? {}) };
+        return _parsePath(pathname, mergedQuery);
     }
 
     // --- Route-change listener ---
@@ -665,11 +725,11 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
 
     // --- navigate ---
     function navigate(
-        path: string,
+        location: RouteLocation,
         queryObj?: Record<string, string | number | boolean | null | undefined>,
     ): void {
         _hasNavigated = true;
-        const { pathname, stringQuery } = _parsePath(path, queryObj);
+        const { pathname, stringQuery } = _resolveLocation(location, queryObj);
         const from = current.value;
         const fromQuery = { ...query.value };
         const m = matchFlat(pathname, flat);
@@ -684,11 +744,11 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
 
     // --- replace ---
     function replace(
-        path: string,
+        location: RouteLocation,
         queryObj?: Record<string, string | number | boolean | null | undefined>,
     ): void {
         _hasNavigated = true;
-        const { pathname, stringQuery } = _parsePath(path, queryObj);
+        const { pathname, stringQuery } = _resolveLocation(location, queryObj);
         const from = current.value;
         const fromQuery = { ...query.value };
         const m = matchFlat(pathname, flat);
@@ -793,6 +853,8 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
 
 /** Returns the active router singleton. */
 export function useRouter(): Router {
+    const injected = inject(RouterKey);
+    if (injected) return injected;
     return getRouter();
 }
 
@@ -822,7 +884,7 @@ export class RouterView extends NixComponent {
     render(): NixTemplate {
         const depth = this._depth;
         return html`<div class="router-view">${() => {
-            const router = getRouter();
+            const router = useRouter() as RouterInternal;
             const matched = matchFlat(router.current.value, router._flat);
 
             if (!matched) {
@@ -857,21 +919,20 @@ export class Link extends NixComponent {
     render(): NixTemplate {
         const to = this._to;
         const label = this._label;
-        const router = getRouter();
+        const router = useRouter() as RouterInternal;
         const appPath = to.startsWith("/") ? to : "/" + to;
         const fullPath = (router._base ? (router._base + appPath) : appPath).replace(/\/+/g, "/");
         const href = router._mode === "hash" ? "#" + fullPath : fullPath;
         return html`<a
       href=${href}
       style=${() => {
-                const router = getRouter();
                 return router.current.value === to
                     ? "color:#38bdf8;font-weight:700;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px;background:#0c2a3a"
                     : "color:#a3a3a3;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px";
             }}
       @click=${(e: Event) => {
                 e.preventDefault();
-                getRouter().navigate(to);
+                router.navigate(to);
             }}
     >${label}</a>`;
     }

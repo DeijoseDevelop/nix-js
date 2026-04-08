@@ -35,13 +35,10 @@ export {
     RouterView,
     Link,
     useRouter,
+    RouterKey,
     // Async / Lazy
     suspend,
     lazy,
-    createQuery,
-    invalidateQueries,
-    clearQueryCache,
-    setQueryCacheTime,
     // Dependency Injection
     provide,
     inject,
@@ -69,6 +66,7 @@ export type {
     // Templates
     NixTemplate,
     NixMountHandle,
+    MountOptions,
     KeyedList,
     NixRef,
     PortalOutlet,
@@ -80,6 +78,8 @@ export type {
     StoreSignals,
     // Router
     Router,
+    NamedRouteLocation,
+    RouteLocation,
     RouteRecord,
     RouterOptions,
     NavigationGuard,
@@ -91,7 +91,6 @@ export type {
     RouterMode,
     // Async
     SuspenseOptions,
-    QueryOptions,
     // Dependency Injection
     InjectionKey,
     // Forms

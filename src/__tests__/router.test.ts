@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { html } from "../nix/template";
 import { createRouter, useRouter, RouterView, Link, _resetRouter } from "../nix/router";
+import { mount } from "../nix/component";
+import { NixComponent } from "../nix/lifecycle";
 import type { NavigationGuard } from "../nix/router";
 
 // Reset router singleton before each test to avoid warnings
@@ -75,6 +77,85 @@ describe("createRouter", () => {
         r.navigate("/nonexistent");
         expect(r.current.value).toBe("/nonexistent");
     });
+
+    it("navigate supports named routes with params", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { name: "user-detail", path: "/users/:id", component: () => html`<p>user</p>` },
+        ]);
+
+        r.navigate({ name: "user-detail", params: { id: 42 } });
+
+        expect(r.current.value).toBe("/users/42");
+        expect(r.params.value).toEqual({ id: "42" });
+    });
+
+    it("navigate supports named routes with query", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { name: "search", path: "/search", component: () => html`<p>search</p>` },
+        ]);
+
+        r.navigate({ name: "search", query: { q: "nix", page: 1 } });
+
+        expect(r.current.value).toBe("/search");
+        expect(r.query.value).toEqual({ q: "nix", page: "1" });
+    });
+
+    it("named-route query merges with second argument", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { name: "search", path: "/search", component: () => html`<p>search</p>` },
+        ]);
+
+        r.navigate(
+            { name: "search", query: { q: "initial", page: 1 } },
+            { page: 2, ref: "navbar" },
+        );
+
+        expect(r.query.value).toEqual({ q: "initial", page: "2", ref: "navbar" });
+    });
+
+    it("replace supports named routes", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { name: "user-detail", path: "/users/:id", component: () => html`<p>user</p>` },
+        ]);
+
+        r.replace({ name: "user-detail", params: { id: "99" } });
+
+        expect(r.current.value).toBe("/users/99");
+        expect(r.params.value).toEqual({ id: "99" });
+    });
+
+    it("throws when named route does not exist", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+
+        expect(() => r.navigate({ name: "missing-route" })).toThrow(/No route with name/);
+    });
+
+    it("throws when named route is missing required params", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+            { name: "user-detail", path: "/users/:id", component: () => html`<p>user</p>` },
+        ]);
+
+        expect(() => r.navigate({ name: "user-detail" })).toThrow(/Missing param/);
+    });
+
+    it("warns when duplicate named routes are registered", () => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+
+        createRouter([
+            { name: "dup", path: "/a", component: () => html`<p>a</p>` },
+            { name: "dup", path: "/b", component: () => html`<p>b</p>` },
+        ]);
+
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Duplicate route name"));
+        warnSpy.mockRestore();
+    });
 });
 
 // ── useRouter ─────────────────────────────────────────────────────────────────
@@ -85,6 +166,89 @@ describe("useRouter", () => {
             { path: "/", component: () => html`<p>home</p>` },
         ]);
         expect(useRouter()).toBe(r);
+    });
+
+    it("prefers injected router from mount options over singleton", () => {
+        const singleton = createRouter([
+            { path: "/", component: () => html`<p>home</p>` },
+        ]);
+        const injected = createRouter([
+            { path: "/", component: () => html`<p>root</p>` },
+        ]);
+
+        class Probe extends NixComponent {
+            seen: unknown;
+            onInit() {
+                this.seen = useRouter();
+            }
+            render() {
+                return html`<p>probe</p>`;
+            }
+        }
+
+        const probe = new Probe();
+        const el = document.createElement("div");
+        mount(probe, el, { router: injected });
+
+        expect(probe.seen).toBe(injected);
+        expect(probe.seen).not.toBe(singleton);
+    });
+
+    it("supports router DI when root is a NixTemplate", () => {
+        const injected = createRouter([
+            { path: "/", component: () => html`<p>root</p>` },
+        ]);
+
+        class Probe extends NixComponent {
+            seen: unknown;
+            onInit() {
+                this.seen = useRouter();
+            }
+            render() {
+                return html`<span>inside</span>`;
+            }
+        }
+
+        const probe = new Probe();
+        const el = document.createElement("div");
+        mount(html`<section>${probe}</section>`, el, { router: injected });
+
+        expect(probe.seen).toBe(injected);
+    });
+
+    it("isolates router instances across mounted trees", async () => {
+        const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
+        const routerA = createRouter([
+            { path: "/", component: () => html`<p>a-home</p>` },
+            { path: "/a", component: () => html`<p>a</p>` },
+        ]);
+        const routerB = createRouter([
+            { path: "/", component: () => html`<p>b-home</p>` },
+            { path: "/b", component: () => html`<p>b</p>` },
+        ]);
+
+        class Shell extends NixComponent {
+            render() {
+                const router = useRouter();
+                return html`<span class="path">${() => router.current.value}</span>`;
+            }
+        }
+
+        const elA = document.createElement("div");
+        const elB = document.createElement("div");
+        const hA = mount(new Shell(), elA, { router: routerA });
+        const hB = mount(new Shell(), elB, { router: routerB });
+
+        routerA.navigate("/a");
+        routerB.navigate("/b");
+        await Promise.resolve();
+
+        expect(elA.querySelector(".path")?.textContent).toBe("/a");
+        expect(elB.querySelector(".path")?.textContent).toBe("/b");
+
+        hA.unmount();
+        hB.unmount();
+        warnSpy.mockRestore();
     });
 });
 

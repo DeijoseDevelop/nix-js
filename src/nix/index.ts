@@ -3,13 +3,16 @@ export type { WatchOptions } from "./reactivity";
 export { html, repeat, ref, showWhen, portal, createPortalOutlet, portalOutlet, provideOutlet, injectOutlet, createErrorBoundary, transition } from "./template";
 export type { NixTemplate, NixMountHandle, KeyedList, NixRef, PortalOutlet, ErrorFallback, TransitionOptions, TransitionContent } from "./template";
 export { mount } from "./component";
+export type { MountOptions } from "./component";
 export { NixComponent } from "./lifecycle";
 export type { NixChildren } from "./lifecycle";
 export { createStore } from "./store";
 export type { Store, StoreSignals } from "./store";
-export { createRouter, RouterView, Link, useRouter } from "./router";
+export { createRouter, RouterView, Link, useRouter, RouterKey } from "./router";
 export type {
     Router,
+    NamedRouteLocation,
+    RouteLocation,
     RouteRecord,
     RouterOptions,
     NavigationGuard,
@@ -20,8 +23,8 @@ export type {
     ScrollBehavior,
     RouterMode,
 } from "./router";
-export { suspend, lazy, createQuery, invalidateQueries, clearQueryCache, setQueryCacheTime } from "./async";
-export type { SuspenseOptions, QueryOptions } from "./async";
+export { suspend, lazy } from "./async";
+export type { SuspenseOptions } from "./async";
 export { provide, inject, createInjectionKey } from "./context";
 export type { InjectionKey } from "./context";
 export {

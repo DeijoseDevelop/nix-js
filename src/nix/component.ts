@@ -1,6 +1,22 @@
 import type { NixTemplate, NixMountHandle } from "./template";
 import { isNixComponent, type NixComponent } from "./lifecycle";
-import { _pushComponentContext, _popComponentContext } from "./context";
+import { _pushComponentContext, _popComponentContext, provide } from "./context";
+import { RouterKey, type Router } from "./router";
+
+export interface MountOptions {
+    router?: Router;
+}
+
+function _resolveContainer(container: Element | string): Element {
+    const el =
+        typeof container === "string"
+            ? (document.querySelector(container) as Element)
+            : container;
+    if (!el) {
+        throw new Error(`[Nix] mount: container not found: ${container}`);
+    }
+    return el;
+}
 
 /**
  * Mounts a NixTemplate or NixComponent into the DOM.
@@ -14,20 +30,18 @@ import { _pushComponentContext, _popComponentContext } from "./context";
  */
 export function mount(
     component: NixTemplate | NixComponent,
-    container: Element | string
+    container: Element | string,
+    options?: MountOptions
 ): NixMountHandle {
     if (isNixComponent(component)) {
-        const el =
-            typeof container === "string"
-                ? (document.querySelector(container) as Element)
-                : container;
-        if (!el) {
-            throw new Error(`[Nix] mount: container not found: ${container}`);
-        }
+        const el = _resolveContainer(container);
 
         _pushComponentContext();
         let cleanup: () => void;
         try {
+            if (options?.router) {
+                provide(RouterKey, options.router);
+            }
             try { component.onInit?.(); } catch (e) { if (component.onError) component.onError(e); else throw e; }
             cleanup = component.render()._render(el, null);
         } finally {
@@ -52,6 +66,25 @@ export function mount(
         };
     }
 
-    // NixTemplate: delegar al método .mount() interno
-    return (component as NixTemplate).mount(container);
+    if (!options?.router) {
+        // NixTemplate: delegar al método .mount() interno
+        return (component as NixTemplate).mount(container);
+    }
+
+    // For template roots, create a context frame so useRouter()/inject() can resolve.
+    const el = _resolveContainer(container);
+    _pushComponentContext();
+    let cleanup: () => void;
+    try {
+        provide(RouterKey, options.router);
+        cleanup = (component as NixTemplate)._render(el, null);
+    } finally {
+        _popComponentContext();
+    }
+
+    return {
+        unmount() {
+            cleanup();
+        },
+    };
 }

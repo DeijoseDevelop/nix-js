@@ -66,7 +66,7 @@ class Clock extends NixComponent {
 
 // --- Router ---
 
-createRouter([
+const router = createRouter([
   { path: "/",         component: () => HomePage() },
   { path: "/user/:id", component: () => UserPage() },
 ]);
@@ -81,8 +81,27 @@ function App(): NixTemplate {
   `;
 }
 
-mount(App(), "#app");
+mount(App(), "#app", { router });
 ```
+
+## Router DI at Mount Root
+
+You can provide a router instance per mounted app tree:
+
+```typescript
+const routerA = createRouter(routesA);
+const routerB = createRouter(routesB);
+
+mount(AppA(), "#app-a", { router: routerA });
+mount(AppB(), "#app-b", { router: routerB });
+```
+
+`useRouter()` now resolves in this order:
+
+1. injected router from context (`mount(..., { router })`)
+2. singleton fallback (legacy `createRouter(...)` behavior)
+
+This enables isolated router instances for testing and micro-frontend scenarios while keeping backward compatibility.
 
 ## Route Metadata (meta)
 
@@ -131,6 +150,30 @@ createRouter(routes, {
 ```
 
 In hash mode, URLs look like `#/users/42` and navigation is driven by `hashchange`.
+
+## Named Routes
+
+Routes can define a stable `name` and be navigated by name with params/query.
+
+```typescript
+const router = createRouter([
+  { name: "home", path: "/", component: () => HomePage() },
+  { name: "user-detail", path: "/users/:id", component: () => UserPage() },
+  { name: "search", path: "/search", component: () => SearchPage() },
+]);
+
+router.navigate({ name: "user-detail", params: { id: 42 } });
+router.navigate({ name: "search", query: { q: "nix", page: 1 } });
+router.replace({ name: "user-detail", params: { id: "99" } });
+
+// still valid (non-breaking)
+router.navigate("/users/42");
+```
+
+Named route errors are explicit:
+
+- unknown name: throws `No route with name "..."`
+- missing dynamic param: throws `Missing param "..." for route "..."`
 
 ## Advanced Store Patterns
 
@@ -227,13 +270,21 @@ Everything ships in a single zero-dependency import:
 | **Reactivity** | `signal`, `computed`, `effect`, `batch`, `watch`, `untrack`, `nextTick` |
 | **Templates** | `` html` ` ``, `repeat`, `ref`, `portal`, `transition`, `showWhen` |
 | **Components** | `NixTemplate` (function components), `NixComponent` (lifecycle class), `mount`, children & named slots |
-| **Router** | `createRouter` (meta + scrollBehavior + mode), `RouterView`, `Link`, `useRouter`, guards, nested routes |
+| **Router** | `createRouter` (meta + scrollBehavior + mode), `RouterView`, `Link`, `useRouter`, `RouterKey`, guards, nested routes, named routes (`name` + `navigate({ name })`), `mount(..., { router })` |
 | **Forms** | `useField`, `createForm` (including nested dot-path fields), built-in validators, Zod/Valibot interop |
 | **State** | `createStore` (actions + getters), `$subscribe`, `provide`, `inject`, `createInjectionKey` |
-| **Async** | `suspend` (with `invalidate` for re-fetching), `createQuery`, `invalidateQueries`, `lazy` |
+| **Async** | `suspend` (with `invalidate` for re-fetching), `lazy` |
 | **Error handling** | `createErrorBoundary` |
 
 ## Documentation
+
+## Query Package
+
+`createQuery` and query cache utilities now live in `@deijose/nix-query`.
+
+```bash
+npm install @deijose/nix-query
+```
 
 Full API reference, guides, and examples:
 

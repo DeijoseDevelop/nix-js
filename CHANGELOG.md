@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.9.3
+
+- **feat(router): named routes navigation** — `RouteRecord` now supports `name`, and router navigation accepts named locations (`navigate({ name, params?, query? })` / `replace({ name, params?, query? })`) with path-string compatibility preserved.
+
+## v1.9.2
+
+- **feat(router): DI-first router resolution with legacy fallback** — `useRouter()` now resolves an injected router from context first (via `RouterKey`) and falls back to the singleton created by `createRouter()` when no DI router is available.
+- **feat(component): router injection at mount root** — `mount(component, container, { router })` now provides the router instance to the mounted tree, including `NixComponent` and `NixTemplate` roots.
+- **refactor(router): RouterView and Link consume `useRouter()`** — internal router consumers now respect DI-scoped router instances, enabling isolated parallel app trees (tests/micro-frontends).
+- **docs: README and npm README router DI guidance** — quick-start and API summary now include `mount(..., { router })` and `RouterKey`, with explicit backward-compatibility notes.
+
+## v1.9.1
+
+- **feat(async): extracted query APIs to `@deijose/nix-query`** — `createQuery`, `invalidateQueries`, `clearQueryCache`, and `setQueryCacheTime` were removed from `@deijose/nix-js` and moved to the dedicated query package.
+- **refactor(async): core now keeps `suspend` and `lazy` only** — async rendering/lazy-loading remain in `@deijose/nix-js` with independent suspense cache internals.
+- **docs: updated README and npm README** — async API tables now reflect the split and include installation guidance for `@deijose/nix-query`.
+
 ## v1.9.0
 
 - **feat(router): route metadata (`meta`) in resolve/guards** — `RouteRecord` now supports optional `meta`, and `router.resolve(path)` returns the original matched route record so guards and layout logic can read `route.meta` directly.
