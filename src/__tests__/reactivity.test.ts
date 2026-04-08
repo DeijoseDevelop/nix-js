@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { signal, effect, computed, batch, untrack, watch, nextTick } from "../nix/reactivity";
+import { signal, effect, computed, batch, untrack, watch, nextTick, _getNotifyBufSize } from "../nix/reactivity";
 
 // ── Signal ────────────────────────────────────────────────────────────────────
 
@@ -118,11 +118,39 @@ describe("effect", () => {
         c.value = 1;
         expect(runs).toBe(1);
     });
+
+    it("shrinks oversized notify buffer after low usage", () => {
+        const s = signal(0);
+        const disposers = Array.from({ length: 80 }, () => effect(() => { s.value; }));
+
+        // Grow notify buffer with a high fan-out update.
+        s.value = 1;
+        expect(_getNotifyBufSize()).toBeGreaterThan(64);
+
+        // Keep only a small subscriber set and trigger low-usage notify.
+        for (let i = 0; i < 70; i++) disposers[i]();
+        s.value = 2;
+        expect(_getNotifyBufSize()).toBe(32);
+
+        for (let i = 70; i < disposers.length; i++) disposers[i]();
+    });
 });
 
 // ── computed ──────────────────────────────────────────────────────────────────
 
 describe("computed", () => {
+    it("is lazy: does not evaluate until first .value read", () => {
+        let runs = 0;
+        const c = computed(() => {
+            runs++;
+            return 123;
+        });
+
+        expect(runs).toBe(0);
+        expect(c.value).toBe(123);
+        expect(runs).toBe(1);
+    });
+
     it("derives value from signals", () => {
         const a = signal(2);
         const b = signal(3);
@@ -144,6 +172,17 @@ describe("computed", () => {
         effect(() => { captured = doubled.value; });
         a.value = 5;
         expect(captured).toBe(10);
+    });
+
+    it("dispose before first read does not evaluate", () => {
+        let runs = 0;
+        const c = computed(() => {
+            runs++;
+            return 1;
+        });
+
+        c.dispose();
+        expect(runs).toBe(0);
     });
 });
 

@@ -46,6 +46,14 @@ let effectDepth = 0;
 
 const _notifyBuf: ((() => void) | null)[] = [];
 let _notifyBase = 0;
+const _NOTIFY_SHRINK_TRIGGER = 64;
+const _NOTIFY_LOW_USAGE = 16;
+const _NOTIFY_SHRINK_TO = 32;
+
+/** @internal — notify buffer capacity, exposed for tests. */
+export function _getNotifyBufSize(): number {
+    return _notifyBuf.length;
+}
 
 // --- Signal ---
 
@@ -110,6 +118,14 @@ export class Signal<T> {
             }
         } finally {
             _notifyBase = base;
+            // Shrink oversized notify buffer after a low-usage top-level flush.
+            if (
+                base === 0 &&
+                _notifyBuf.length > _NOTIFY_SHRINK_TRIGGER &&
+                len < _NOTIFY_LOW_USAGE
+            ) {
+                _notifyBuf.length = _NOTIFY_SHRINK_TO;
+            }
         }
     }
 
@@ -216,11 +232,45 @@ export function effect(fn: () => void | (() => void)): () => void {
 /** Derived signal that recalculates when its dependencies change. */
 export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
     const s = new Signal<T>(undefined as T);
-    const disposeEffect = effect(() => { s.value = fn(); });
+    let disposeEffect: (() => void) | null = null;
+    let initialized = false;
+    let disposed = false;
+
+    const ensureInitialized = () => {
+        if (initialized || disposed) return;
+        initialized = true;
+        // Important: initialize untracked so first computed evaluation does not
+        // accidentally subscribe the currently running external effect.
+        untrack(() => {
+            disposeEffect = effect(() => {
+                s.value = fn();
+            });
+        });
+    };
+
+    const signalProto = Object.getPrototypeOf(s) as Signal<T>;
+    const valueDescriptor = Object.getOwnPropertyDescriptor(signalProto, "value");
+    if (!valueDescriptor?.get || !valueDescriptor?.set) {
+        throw new Error("[Nix] Internal error: Signal.value descriptor not found.");
+    }
+
+    Object.defineProperty(s, "value", {
+        get() {
+            ensureInitialized();
+            return valueDescriptor.get!.call(this) as T;
+        },
+        set(v: T) {
+            valueDescriptor.set!.call(this, v);
+        },
+        configurable: true,
+    });
+
     const originalDispose = s.dispose;
     
     s.dispose = () => {
-        disposeEffect();
+        disposed = true;
+        disposeEffect?.();
+        disposeEffect = null;
         originalDispose.call(s); // Opt: Evitar el uso lento de .bind()
     };
     return s as Signal<T> & { dispose(): void };

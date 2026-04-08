@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.9.7
+
+- **perf(reactivity): notify buffer shrink policy** — `_notifyBuf` now shrinks to 32 when capacity grows above 64 and subsequent top-level notify usage is under 16, preventing slow memory growth in long-running apps.
+- **perf(reactivity): lazy computed initialization** — `computed()` now defers effect setup and first evaluation until `.value` is read for the first time, reducing unnecessary work for conditionally read derived signals.
+
 ## v1.9.5
 
 - **feat(build): component and DI subpath parity** — added `@deijose/nix-js/component`, `@deijose/nix-js/context`, and `@deijose/nix-js/lifecycle` so `mount`, `NixComponent`, `provide`, `inject`, and `createInjectionKey` can be imported as dedicated tree-shakeable modules.
