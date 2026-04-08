@@ -378,7 +378,9 @@ function _renderTreeNode(node: _TreeNode, depth: number): string {
 
 function _renderComponents(target: HTMLDivElement): void {
     const rows = _listMountedComponents();
-    const key = `${rows.length}:${rows.map((r) => `${r.id}-${r.parentId}-${r.debugName}-${r.hasDefaultSlot}-${r.slotNames.join(",")}-${_safeStringify(r.props)}`).join("|")}`;
+    const router = _debugGetRouterInternal();
+    const routeKey = router ? `${router.currentPath}|${router.matchedPath ?? ""}` : "no-router";
+    const key = `${routeKey}:${rows.length}:${rows.map((r) => `${r.id}-${r.parentId}-${r.debugName}-${r.hasDefaultSlot}-${r.slotNames.join(",")}-${_safeStringify(r.props)}`).join("|")}`;
     if (_state.renderedTab === "components" && _state.renderKeys.components === key) return;
     _state.renderKeys.components = key;
     _state.renderedTab = "components";
@@ -389,6 +391,10 @@ function _renderComponents(target: HTMLDivElement): void {
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
             <strong>Component Tree</strong>
             <span style="opacity:.8">${rows.length} mounted</span>
+        </div>
+        <div style="font-size:11px;opacity:.82;margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap;">
+            <span><b>current:</b> ${_escapeHtml(router?.currentPath ?? "-")}</span>
+            <span><b>matched:</b> ${_escapeHtml(router?.matchedPath ?? "none")}</span>
         </div>
         <div data-nix-devtools-scroll="components" style="max-height:280px;overflow:auto;overscroll-behavior:contain;border:1px solid #2f2f35;border-radius:8px;">
             ${roots.length > 0

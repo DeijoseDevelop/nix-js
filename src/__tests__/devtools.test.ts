@@ -196,4 +196,33 @@ describe("devtools overlay", () => {
             vi.useRealTimers();
         }
     });
+
+    it("updates components panel route context on navigation", async () => {
+        vi.useFakeTimers();
+        try {
+            const router = createRouter([
+                { path: "/", component: () => html`<div>Home</div>` },
+                { path: "/about", component: () => html`<div>About</div>` },
+            ]);
+
+            const handle = enableDevTools({ initiallyOpen: true, refreshMs: 120 });
+            const componentsTab = document.querySelector("button[data-nix-devtools-tab='components']") as HTMLButtonElement;
+            componentsTab.click();
+
+            await vi.advanceTimersByTimeAsync(160);
+
+            const content = document.querySelector("[data-nix-devtools-content]") as HTMLDivElement;
+            expect(content.textContent).toContain("current:");
+            expect(content.textContent).toContain("/");
+
+            await router.navigate("/about");
+            await vi.advanceTimersByTimeAsync(160);
+
+            expect(content.textContent).toContain("/about");
+
+            handle.disable();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
 });

@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.0.2
+
+- **fix(devtools): components tab route-aware refresh** — components panel now invalidates/re-renders on route changes (`current` / `matched`) so navigation updates are reflected in real time even when page views are template-based.
+- **ux(devtools): route context in components panel** — added visible `current` and `matched` route metadata to clarify page transitions when mounted class-component tree remains stable.
+- **test(devtools): route-navigation regression** — added coverage to ensure components panel updates after `router.navigate()`.
+
 ## v2.0.1
 
 - **fix(devtools): tab/content synchronization** — fixed stale panel rendering when switching tabs quickly; active tab button state and rendered panel content now stay in sync.
