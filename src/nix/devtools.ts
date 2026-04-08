@@ -20,6 +20,7 @@ type _DevToolsTab = "signals" | "components" | "router";
 interface _DevToolsState {
     enabled: boolean;
     activeTab: _DevToolsTab;
+    renderedTab: _DevToolsTab | null;
     refreshId: ReturnType<typeof setInterval> | null;
     root: HTMLDivElement | null;
     panel: HTMLDivElement | null;
@@ -32,6 +33,7 @@ interface _DevToolsState {
 const _state: _DevToolsState = {
     enabled: false,
     activeTab: "signals",
+    renderedTab: null,
     refreshId: null,
     root: null,
     panel: null,
@@ -73,18 +75,29 @@ interface _ComponentSnapshot {
     props: Record<string, unknown>;
 }
 
+interface _ComponentRecord extends _ComponentSnapshot {
+    ref: _ComponentRef;
+}
+
+type _ComponentRef = { deref(): NixComponent | undefined };
+
 const _signalRefs = new Set<_SignalRef>();
 let _signalMeta = new WeakMap<Signal<any>, _SignalMeta>();
 let _signalSeq = 1;
 
 let _componentIds = new WeakMap<NixComponent, number>();
-const _componentMounted = new Map<number, _ComponentSnapshot>();
+const _componentMounted = new Map<number, _ComponentRecord>();
 const _componentMountStack: number[] = [];
 let _componentSeq = 1;
 
 function _makeSignalRef<T>(s: Signal<T>): _SignalRef {
     if (typeof WeakRef !== "undefined") return new WeakRef(s) as _SignalRef;
     return { deref: () => s };
+}
+
+function _makeComponentRef(inst: NixComponent): _ComponentRef {
+    if (typeof WeakRef !== "undefined") return new WeakRef(inst) as _ComponentRef;
+    return { deref: () => inst };
 }
 
 function _ensureSignalMeta<T>(s: Signal<T>, initialValue: T): _SignalMeta {
@@ -178,17 +191,45 @@ function _mountPathChain(fullPath: string | null): string[] {
 }
 
 function _listMountedComponents(): _ComponentSnapshot[] {
-    const out = Array.from(_componentMounted.values()).map((item) => ({
-        id: item.id,
-        parentId: item.parentId,
-        debugName: item.debugName,
-        mountedAt: item.mountedAt,
-        hasDefaultSlot: item.hasDefaultSlot,
-        slotNames: [...item.slotNames],
-        props: { ...item.props },
-    }));
+    const out: _ComponentSnapshot[] = [];
+
+    for (const [id, item] of _componentMounted) {
+        const inst = item.ref.deref();
+        if (!inst) {
+            _componentMounted.delete(id);
+            continue;
+        }
+
+        // Keep rows fresh while panel is open (debug name/props can change after mount).
+        item.debugName = _componentName(inst);
+        item.hasDefaultSlot = inst.children != null;
+        item.slotNames = _componentSlotNames(inst);
+        item.props = _componentProps(inst);
+
+        out.push({
+            id: item.id,
+            parentId: item.parentId,
+            debugName: item.debugName,
+            mountedAt: item.mountedAt,
+            hasDefaultSlot: item.hasDefaultSlot,
+            slotNames: [...item.slotNames],
+            props: { ...item.props },
+        });
+    }
+
     out.sort((a, b) => a.id - b.id);
     return out;
+}
+
+function _removeMountedComponentSubtree(rootId: number): void {
+    const pending = [rootId];
+    while (pending.length > 0) {
+        const current = pending.pop()!;
+        for (const [id, record] of _componentMounted) {
+            if (record.parentId === current) pending.push(id);
+        }
+        _componentMounted.delete(current);
+    }
 }
 
 function _resetDevtoolsStores(): void {
@@ -240,8 +281,9 @@ function _relativeTime(ts: number): string {
 function _renderSignals(target: HTMLDivElement): void {
     const signals = _listSignals();
     const key = `${signals.length}:${signals.map((s) => `${s.id}-${s.lastUpdated}-${s.subscriberCount}`).join("|")}`;
-    if (_state.renderKeys.signals === key) return;
+    if (_state.renderedTab === "signals" && _state.renderKeys.signals === key) return;
     _state.renderKeys.signals = key;
+    _state.renderedTab = "signals";
 
     const rows = signals
         .map((s) => {
@@ -336,9 +378,10 @@ function _renderTreeNode(node: _TreeNode, depth: number): string {
 
 function _renderComponents(target: HTMLDivElement): void {
     const rows = _listMountedComponents();
-    const key = `${rows.length}:${rows.map((r) => `${r.id}-${r.parentId}-${r.debugName}`).join("|")}`;
-    if (_state.renderKeys.components === key) return;
+    const key = `${rows.length}:${rows.map((r) => `${r.id}-${r.parentId}-${r.debugName}-${r.hasDefaultSlot}-${r.slotNames.join(",")}-${_safeStringify(r.props)}`).join("|")}`;
+    if (_state.renderedTab === "components" && _state.renderKeys.components === key) return;
     _state.renderKeys.components = key;
+    _state.renderedTab = "components";
 
     const roots = _buildComponentTree(rows);
 
@@ -360,8 +403,9 @@ function _renderRouter(target: HTMLDivElement): void {
     const key = router
         ? `${router.mode}|${router.base}|${router.currentPath}|${JSON.stringify(router.params)}|${JSON.stringify(router.query)}|${router.matchedPath}|${router.activeGuards.names.join(",")}`
         : "none";
-    if (_state.renderKeys.router === key) return;
+    if (_state.renderedTab === "router" && _state.renderKeys.router === key) return;
     _state.renderKeys.router = key;
+    _state.renderedTab = "router";
 
     if (!router) {
         target.innerHTML = `
@@ -429,6 +473,14 @@ function _refreshPanel(force = false): void {
     _restoreScroll("router");
 }
 
+function _syncTabButtons(): void {
+    if (!_state.panel) return;
+    for (const btn of _state.panel.querySelectorAll<HTMLButtonElement>("button[data-nix-devtools-tab]")) {
+        const isActive = btn.dataset.nixDevtoolsTab === _state.activeTab;
+        btn.style.background = isActive ? "#2d4c7a" : "#1f1f24";
+    }
+}
+
 function _createOverlay(options: Required<Pick<DevToolsOptions, "position">>): void {
     const root = document.createElement("div");
     root.setAttribute("data-nix-devtools-root", "");
@@ -485,9 +537,7 @@ function _createOverlay(options: Required<Pick<DevToolsOptions, "position">>): v
         t.style.cursor = "pointer";
         t.addEventListener("click", () => {
             _state.activeTab = name;
-            for (const btn of tabs.querySelectorAll<HTMLButtonElement>("button[data-nix-devtools-tab]")) {
-                btn.style.background = btn.dataset.nixDevtoolsTab === name ? "#2d4c7a" : "#1f1f24";
-            }
+            _syncTabButtons();
             _refreshPanel(true);
         });
         return t;
@@ -499,7 +549,10 @@ function _createOverlay(options: Required<Pick<DevToolsOptions, "position">>): v
 
     button.addEventListener("click", () => {
         panel.style.display = panel.style.display === "none" ? "block" : "none";
-        if (panel.style.display === "block") _refreshPanel();
+        if (panel.style.display === "block") {
+            _syncTabButtons();
+            _refreshPanel(true);
+        }
     });
 
     panel.appendChild(tabs);
@@ -534,6 +587,7 @@ export function disableDevTools(): void {
     _state.panel = null;
     _state.content = null;
     _state.dispose = null;
+    _state.renderedTab = null;
     _state.renderKeys = { signals: "", components: "", router: "" };
     _state.scrollMemo = {
         signals: { top: 0, left: 0 },
@@ -593,6 +647,7 @@ export function enableDevTools(options: DevToolsOptions = {}): { disable: () => 
                 hasDefaultSlot: inst.children != null,
                 slotNames: _componentSlotNames(inst),
                 props: _componentProps(inst),
+                ref: _makeComponentRef(inst),
             });
 
             _componentMountStack.push(id);
@@ -621,10 +676,7 @@ export function enableDevTools(options: DevToolsOptions = {}): { disable: () => 
             const id = _componentIds.get(inst);
             if (id == null) return;
 
-            _componentMounted.delete(id);
-            for (const [childId, child] of _componentMounted) {
-                if (child.parentId === id) _componentMounted.delete(childId);
-            }
+            _removeMountedComponentSubtree(id);
 
             const idx = _componentMountStack.lastIndexOf(id);
             if (idx >= 0) _componentMountStack.splice(idx, 1);
@@ -641,7 +693,8 @@ export function enableDevTools(options: DevToolsOptions = {}): { disable: () => 
 
     if (options.initiallyOpen && _state.panel) {
         _state.panel.style.display = "block";
-        _refreshPanel();
+        _syncTabButtons();
+        _refreshPanel(true);
     }
 
     const dispose = () => disableDevTools();

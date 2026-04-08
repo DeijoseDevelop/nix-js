@@ -12,6 +12,37 @@ afterEach(() => {
 });
 
 describe("devtools overlay", () => {
+    it("keeps selected tab and rendered content in sync when switching", async () => {
+        vi.useFakeTimers();
+        try {
+            const handle = enableDevTools({ initiallyOpen: true, refreshMs: 120 });
+            const s = signal(1);
+            const stop = effect(() => {
+                s.value;
+            });
+
+            await vi.advanceTimersByTimeAsync(140);
+
+            const signalsTab = document.querySelector("button[data-nix-devtools-tab='signals']") as HTMLButtonElement;
+            const componentsTab = document.querySelector("button[data-nix-devtools-tab='components']") as HTMLButtonElement;
+            const content = document.querySelector("[data-nix-devtools-content]") as HTMLDivElement;
+
+            expect(content.textContent).toContain("Signals");
+
+            componentsTab.click();
+            expect(content.textContent).toContain("Component Tree");
+
+            // No signal changes between tab switches. This used to leave stale component content.
+            signalsTab.click();
+            expect(content.textContent).toContain("Signals");
+
+            stop();
+            handle.disable();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
     it("mounts one overlay instance and disposes it", () => {
         const d1 = enableDevTools();
         const d2 = enableDevTools();
@@ -91,6 +122,47 @@ describe("devtools overlay", () => {
             const content = document.querySelector("[data-nix-devtools-content]") as HTMLDivElement;
             expect(content.textContent).toContain("Component Tree");
             expect(content.textContent).toContain("TestCardDebug");
+
+            mountHandle.unmount();
+            handle.disable();
+            host.remove();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("refreshes component panel when tracked component props change", async () => {
+        vi.useFakeTimers();
+        try {
+            class CounterCard extends NixComponent {
+                count = 0;
+
+                render() {
+                    return html`<div>${() => this.count}</div>`;
+                }
+            }
+
+            const host = document.createElement("div");
+            document.body.appendChild(host);
+
+            const handle = enableDevTools({ initiallyOpen: true, refreshMs: 120 });
+            const inst = new CounterCard().setDebugName("CounterCard");
+            const mountHandle = mount(inst, host);
+
+            const tab = document.querySelector("button[data-nix-devtools-tab='components']") as HTMLButtonElement;
+            tab.click();
+            await vi.advanceTimersByTimeAsync(160);
+
+            let content = document.querySelector("[data-nix-devtools-content]") as HTMLDivElement;
+            expect(content.textContent).toContain("CounterCard");
+            expect(content.textContent).toContain("count");
+            expect(content.textContent).toContain("0");
+
+            inst.count = 42;
+            await vi.advanceTimersByTimeAsync(160);
+
+            content = document.querySelector("[data-nix-devtools-content]") as HTMLDivElement;
+            expect(content.textContent).toContain("42");
 
             mountHandle.unmount();
             handle.disable();

@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.0.1
+
+- **fix(devtools): tab/content synchronization** — fixed stale panel rendering when switching tabs quickly; active tab button state and rendered panel content now stay in sync.
+- **fix(devtools): component panel live refresh** — component rows now refresh using live instance references (debug name, slots, props), so component state changes are reflected without requiring remount.
+- **fix(devtools): recursive unmount cleanup** — unmount now removes full tracked component subtrees to prevent stale entries in the component panel.
+- **test(devtools): regression coverage for tab and component refresh behavior** — added tests for tab switching desync and component prop updates in the inspector.
+
 ## v2.0.0
 
 - **feat(devtools): in-page overlay inspector** — added optional `@deijose/nix-js/devtools` entry with `enableDevTools()` / `disableDevTools()` and three panels (signals, component tree, router state).
