@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v1.9.5
+
+- **feat(build): component and DI subpath parity** — added `@deijose/nix-js/component`, `@deijose/nix-js/context`, and `@deijose/nix-js/lifecycle` so `mount`, `NixComponent`, `provide`, `inject`, and `createInjectionKey` can be imported as dedicated tree-shakeable modules.
+
 ## v1.9.4
 
 - **feat(build): subpath exports for modular imports** — added `@deijose/nix-js/signals`, `@deijose/nix-js/router`, `@deijose/nix-js/form`, `@deijose/nix-js/store`, `@deijose/nix-js/async`, and `@deijose/nix-js/template` export paths.

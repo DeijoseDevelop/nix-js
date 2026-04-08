@@ -33,6 +33,9 @@ import { createStore } from "@deijose/nix-js/store";
 import { createForm } from "@deijose/nix-js/form";
 import { suspend, lazy } from "@deijose/nix-js/async";
 import { html, repeat, transition } from "@deijose/nix-js/template";
+import { mount } from "@deijose/nix-js/component";
+import { NixComponent } from "@deijose/nix-js/lifecycle";
+import { provide, inject, createInjectionKey } from "@deijose/nix-js/context";
 ```
 
 This is optional: `import { ... } from "@deijose/nix-js"` remains fully supported.
