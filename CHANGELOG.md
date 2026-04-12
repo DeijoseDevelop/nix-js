@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.1.0
+
+- **refactor(api)!: `use*` prefix renamed to `nix*` across the framework** — composables/hooks and related API names now use the `nix` prefix for consistency with package naming.
+- **docs(api)!: updated examples and guides to the new `nix*` naming** — all public snippets were aligned to the breaking rename.
+- **breaking**: projects using previous `use*` APIs must migrate imports and call sites to their `nix*` equivalents.
+
 ## v2.0.2
 
 - **fix(devtools): components tab route-aware refresh** — components panel now invalidates/re-renders on route changes (`current` / `matched`) so navigation updates are reflected in real time even when page views are template-based.
