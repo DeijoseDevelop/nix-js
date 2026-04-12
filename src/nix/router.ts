@@ -866,7 +866,7 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
 }
 
 /** Returns the active router singleton. */
-export function useRouter(): Router {
+export function nixRouter(): Router {
     const injected = inject(RouterKey);
     if (injected) return injected;
     return getRouter();
@@ -924,7 +924,7 @@ export class RouterView extends NixComponent {
     render(): NixTemplate {
         const depth = this._depth;
         return html`<div class="router-view">${() => {
-            const router = useRouter() as RouterInternal;
+            const router = nixRouter() as RouterInternal;
             const matched = matchFlat(router.current.value, router._flat);
 
             if (!matched) {
@@ -959,7 +959,7 @@ export class Link extends NixComponent {
     render(): NixTemplate {
         const to = this._to;
         const label = this._label;
-        const router = useRouter() as RouterInternal;
+        const router = nixRouter() as RouterInternal;
         const appPath = to.startsWith("/") ? to : "/" + to;
         const fullPath = (router._base ? (router._base + appPath) : appPath).replace(/\/+/g, "/");
         const href = router._mode === "hash" ? "#" + fullPath : fullPath;

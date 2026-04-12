@@ -334,7 +334,7 @@ groupF2("html`` — 5b. Atributo null → removeAttribute");
 {
   const el = sandbox();
   const active = signal(true);
-  html`<div title="${() => active.value ? "activo" : null}"></div>`.mount(el);
+  html`<div title="${() => active.value ? " activo" : null}"></div>`.mount(el);
   const div = el.querySelector("div")!;
   assertF2(div.getAttribute("title") === "activo", "title='activo' cuando true");
   active.value = false;
@@ -498,21 +498,18 @@ function TodoList() {
         <span class="badge-count">${() => todos.value.length}</span>
       </div>
       <div class="demo-row">
-        <input
-          id="todo-input"
-          type="text"
-          placeholder="Nueva tarea..."
-          @input=${(e: Event) => (inputVal.value = (e.target as HTMLInputElement).value)}
-          @keydown=${(e: KeyboardEvent) => e.key === "Enter" && addTodo()}
+        <input id="todo-input" type="text" placeholder="Nueva tarea..." @input=${(e: Event) => (inputVal.value = (e.target as
+      HTMLInputElement).value)}
+        @keydown=${(e: KeyboardEvent) => e.key === "Enter" && addTodo()}
         />
         <button @click=${addTodo}>Agregar</button>
       </div>
       <ul class="todo-list">
         ${() => todos.value.map((todo, i) => html`
-          <li class="todo-item">
-            <span>${todo}</span>
-            <button class="btn-remove" @click=${() => todos.update((arr) => arr.filter((_, j) => j !== i))}>✕</button>
-          </li>
+        <li class="todo-item">
+          <span>${todo}</span>
+          <button class="btn-remove" @click=${() => todos.update((arr) => arr.filter((_, j) => j !== i))}>✕</button>
+        </li>
         `)}
       </ul>
       ${() => todos.value.length === 0 ? html`<p class="empty-msg">Sin tareas pendientes ✓</p>` : null}
@@ -532,20 +529,20 @@ function ToggleTabs() {
         </button>
       </div>
       ${() => show.value ? html`
-        <div>
-          <div class="demo-row">
-            <button @click=${() => (page.value = "A")}>Tab A</button>
-            <button @click=${() => (page.value = "B")}>Tab B</button>
-            <button @click=${() => (page.value = "C")}>Tab C</button>
-          </div>
-          ${() => {
+      <div>
+        <div class="demo-row">
+          <button @click=${() => (page.value = "A")}>Tab A</button>
+          <button @click=${() => (page.value = "B")}>Tab B</button>
+          <button @click=${() => (page.value = "C")}>Tab C</button>
+        </div>
+        ${() => {
         switch (page.value) {
           case "A": return html`<p class="tab-content">❄️ Contenido de Tab A</p>`;
           case "B": return html`<p class="tab-content">🌊 Contenido de Tab B</p>`;
           case "C": return html`<p class="tab-content">🔥 Contenido de Tab C</p>`;
         }
       }}
-        </div>
+      </div>
       ` : null}
     </div>
   `;
@@ -621,9 +618,9 @@ groupF3("Componentes — 2. Props estáticos");
   const el = sandbox3();
   mount(
     html`<div>
-      ${Badge({ text: "v1.0", color: "green" })}
-      ${Badge({ text: "beta" })}
-    </div>`,
+  ${Badge({ text: "v1.0", color: "green" })}
+  ${Badge({ text: "beta" })}
+</div>`,
     el
   );
 
@@ -660,7 +657,9 @@ groupF3("Componentes — 3. Estado interno (signal local)");
 groupF3("Componentes — 4. Composición simple");
 {
   function Header4(props: { title: string }) {
-    return html`<header><h1 id="t4-title">${props.title}</h1></header>`;
+    return html`<header>
+  <h1 id="t4-title">${props.title}</h1>
+</header>`;
   }
 
   function Footer4() {
@@ -704,9 +703,9 @@ groupF3("Componentes — 5. Props reactivos (Signal como prop)");
   const el = sandbox3();
   mount(
     html`<div>
-      ${Display5({ count: sharedCount })}
-      <button id="t5-btn" @click=${() => sharedCount.update((n) => n + 1)}>+</button>
-    </div>`,
+  ${Display5({ count: sharedCount })}
+  <button id="t5-btn" @click=${() => sharedCount.update((n) => n + 1)}>+</button>
+</div>`,
     el
   );
 
@@ -928,19 +927,19 @@ function DTodoList() {
         <span class="badge-count">${() => todos.value.length}</span>
       </div>
       <div class="demo-row">
-        <input id="d3-input" type="text" placeholder="Agregar fase..."
-          @input=${(e: Event) => (inp.value = (e.target as HTMLInputElement).value)}
-          @keydown=${(e: KeyboardEvent) => e.key === "Enter" && add()}
+        <input id="d3-input" type="text" placeholder="Agregar fase..." @input=${(e: Event) => (inp.value = (e.target as
+      HTMLInputElement).value)}
+        @keydown=${(e: KeyboardEvent) => e.key === "Enter" && add()}
         />
         <button @click=${add}>+</button>
       </div>
       <ul class="todo-list">
         ${() => todos.value.map((text, i) =>
-    DItem({
-      text,
-      onRemove: () => todos.update((arr) => arr.filter((_, j) => j !== i)),
-    })
-  )}
+        DItem({
+          text,
+          onRemove: () => todos.update((arr) => arr.filter((_, j) => j !== i)),
+        })
+      )}
       </ul>
     </div>
   `;
@@ -956,17 +955,17 @@ function DApp() {
       <div class="demo-grid">
         ${DCounter({ initial: 0, label: "Counter Maestro" })}
         ${html`
-          <div class="widget" style="display:flex;flex-direction:column;gap:12px">
-            <div class="widget-label">Signal compartido</div>
-            <div class="counter-value">${() => sharedCount.value}</div>
-            <div class="demo-row">
-              <button @click=${() => sharedCount.update((n) => n - 1)}>−</button>
-              <button @click=${() => sharedCount.update((n) => n + 1)}>+</button>
-            </div>
-            <button @click=${() => showDisplay.update((v) => !v)} style="margin-top:4px">
-              ${() => showDisplay.value ? "Ocultar Display" : "Mostrar Display"}
-            </button>
+        <div class="widget" style="display:flex;flex-direction:column;gap:12px">
+          <div class="widget-label">Signal compartido</div>
+          <div class="counter-value">${() => sharedCount.value}</div>
+          <div class="demo-row">
+            <button @click=${() => sharedCount.update((n) => n - 1)}>−</button>
+            <button @click=${() => sharedCount.update((n) => n + 1)}>+</button>
           </div>
+          <button @click=${() => showDisplay.update((v) => !v)} style="margin-top:4px">
+            ${() => showDisplay.value ? "Ocultar Display" : "Mostrar Display"}
+          </button>
+        </div>
         `}
       </div>
       ${() => showDisplay.value ? DDisplay({ count: sharedCount }) : null}
@@ -1573,7 +1572,8 @@ class CartSummary extends NixComponent {
             <span>Descuento ${() => discountStore.pct.value > 0 ? `(${discountStore.pct.value}%)` : ""}</span>
             <span>−$${() => discount.value.toFixed(2)}</span>
           </div>
-          <div style="display:flex;justify-content:space-between;font-weight:700;font-size:1.1rem;border-top:1px solid #334;padding-top:6px">
+          <div
+            style="display:flex;justify-content:space-between;font-weight:700;font-size:1.1rem;border-top:1px solid #334;padding-top:6px">
             <span>Total</span><span>$${() => total.value.toFixed(2)}</span>
           </div>
         </div>
@@ -1610,8 +1610,8 @@ mount(
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
         ${PRODUCTS.map((p) =>
     html`<button @click=${() => cartStore.addItem(p.name, p.price)}>
-            + ${p.name} ($${p.price.toFixed(2)})
-          </button>`
+          + ${p.name} ($${p.price.toFixed(2)})
+        </button>`
   )}
         <button @click=${() => cartStore.$reset()} style="opacity:.6">🗑 Vaciar</button>
       </div>
@@ -1637,7 +1637,7 @@ mount(
 //  FASE 6: Router
 //  Tests → #tests6 | Summary → #summary6 | Demo → #demo6
 // ══════════════════════════════════════════════════════════════
-import { createRouter, RouterView, Link, useRouter } from "./nix";
+import { createRouter, RouterView, Link, nixRouter } from "./nix";
 import type { NixTemplate } from "./nix";
 
 // ── helpers Fase 6 ────────────────────────────────────────────────────────────
@@ -1983,11 +1983,11 @@ class AboutPage extends NixComponent {
           <strong style="color:#e5e5e5">Nix.js</strong> — micro-framework reactivo.
         </p>
         <ul style="color:#a3a3a3;margin:0;padding-left:18px;line-height:1.8">
-          <li>⚛️  Reactivity: <code>signal · computed · effect · batch</code></li>
-          <li>🧩  Templates: <code>html\`\`</code> tagged templates</li>
-          <li>🏗️  Components: <code>NixComponent</code> con lifecycle</li>
-          <li>🗄️  Stores: <code>createStore</code> compartido</li>
-          <li>🔀  Router: <code>createRouter · RouterView · Link</code></li>
+          <li>⚛️ Reactivity: <code>signal · computed · effect · batch</code></li>
+          <li>🧩 Templates: <code>html\`\`</code> tagged templates</li>
+          <li>🏗️ Components: <code>NixComponent</code> con lifecycle</li>
+          <li>🗄️ Stores: <code>createStore</code> compartido</li>
+          <li>🔀 Router: <code>createRouter · RouterView · Link</code></li>
         </ul>
       </div>
     `;
@@ -2018,11 +2018,11 @@ class UsersPage extends NixComponent {
         <h3 style="color:#38bdf8;margin:0 0 8px">👥 Users</h3>
         <ul style="margin:0;padding-left:18px;line-height:2">
           ${DEMO_USERS.map((u) =>
-      html`<li><a
-              href="/users/${u.id}"
-              style="color:#a78bfa;cursor:pointer"
-              @click=${(e: Event) => { e.preventDefault(); appRouter.navigate("/users/" + u.id); }}
-            >${u.name}</a> — <span style="color:#71717a">${u.role}</span></li>`
+      html`<li><a href="/users/${u.id}" style="color:#a78bfa;cursor:pointer" @click=${(e: Event) => {
+        e.preventDefault();
+        appRouter.navigate("/users/" + u.id);
+      }}
+              >${u.name}</a> — <span style="color:#71717a">${u.role}</span></li>`
     )}
         </ul>
       </div>
@@ -2036,26 +2036,24 @@ class UserDetailPage extends NixComponent {
       <div style="padding:8px 0">
         <h3 style="color:#38bdf8;margin:0 0 8px">👤 User detail</h3>
         ${() => {
-        const id = useRouter().params.value.id;
+        const id = nixRouter().params.value.id;
         const user = DEMO_USERS.find((u) => u.id === id);
         if (!user) return html`<p style="color:#f87171">Usuario #${id} no encontrado.</p>`;
         return html`
-            <p style="color:#e5e5e5;margin:0 0 4px">
-              <strong>ID:</strong> <code style="color:#38bdf8">${user.id}</code>
-            </p>
-            <p style="color:#e5e5e5;margin:0 0 4px">
-              <strong>Nombre:</strong> ${user.name}
-            </p>
-            <p style="color:#e5e5e5;margin:0">
-              <strong>Rol:</strong>
-              <span style="color:#a78bfa">${user.role}</span>
-            </p>
-          `;
+        <p style="color:#e5e5e5;margin:0 0 4px">
+          <strong>ID:</strong> <code style="color:#38bdf8">${user.id}</code>
+        </p>
+        <p style="color:#e5e5e5;margin:0 0 4px">
+          <strong>Nombre:</strong> ${user.name}
+        </p>
+        <p style="color:#e5e5e5;margin:0">
+          <strong>Rol:</strong>
+          <span style="color:#a78bfa">${user.role}</span>
+        </p>
+        `;
       }}
-        <button
-          style="margin-top:12px;font-size:12px;padding:4px 10px;opacity:.6"
-          @click=${() => appRouter.navigate("/users")}
-        >← Volver</button>
+        <button style="margin-top:12px;font-size:12px;padding:4px 10px;opacity:.6" @click=${() => appRouter.navigate("/users")}
+          >← Volver</button>
       </div>
     `;
   }
@@ -2065,16 +2063,16 @@ class UserDetailPage extends NixComponent {
 mount(
   html`
     <div>
-      <nav style="display:flex;gap:4px;align-items:center;margin-bottom:12px;padding:10px 12px;background:#1a1a1a;border-radius:8px;border:1px solid #2a2a2a">
+      <nav
+        style="display:flex;gap:4px;align-items:center;margin-bottom:12px;padding:10px 12px;background:#1a1a1a;border-radius:8px;border:1px solid #2a2a2a">
         <span style="color:#52525b;font-size:13px;margin-right:8px">Nix Router</span>
         ${new Link("/", "🏠 Home")}
         ${new Link("/counter", "🔢 Counter")}
         ${new Link("/users", "👥 Users")}
         ${new Link("/about", "ℹ️ About")}
-        <button
-          style="margin-left:auto;font-size:12px;padding:4px 10px;opacity:.6"
-          @click=${() => appRouter.navigate("/unknown-page")}
-        >→ 404</button>
+        <button style="margin-left:auto;font-size:12px;padding:4px 10px;opacity:.6" @click=${() =>
+      appRouter.navigate("/unknown-page")}
+          >→ 404</button>
       </nav>
       <div class="section" style="margin:0">
         ${new RouterView()}
@@ -2258,10 +2256,9 @@ mount(
       <div class="demo-row" style="margin-bottom:12px">
         <input
           style="flex:1;background:#1a1a1a;border:1px solid #2a2a2a;color:#e5e5e5;padding:6px 10px;border-radius:6px;font-size:14px"
-          placeholder="Nueva tarea…"
-          value=${() => inputVal.value}
-          @input=${(e: Event) => inputVal.value = (e.target as HTMLInputElement).value}
-          @keydown=${(e: KeyboardEvent) => e.key === "Enter" && addTodo()}
+          placeholder="Nueva tarea…" value=${() => inputVal.value}
+        @input=${(e: Event) => inputVal.value = (e.target as HTMLInputElement).value}
+        @keydown=${(e: KeyboardEvent) => e.key === "Enter" && addTodo()}
         />
         <button @click=${addTodo}>Añadir</button>
         <button @click=${shuffleTodos} style="opacity:.6">Mezclar</button>
@@ -2271,22 +2268,17 @@ mount(
     todos.value,
     t => t.id,
     t => html`
-            <li style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1a1a1a">
-              <input
-                type="checkbox"
-                style="accent-color:#38bdf8"
-                ${() => t.done ? "checked" : ""}
-                @change=${() => toggleTodo(t.id)}
-              />
-              <span style=${() => t.done ? "color:#52525b;text-decoration:line-through;flex:1" : "color:#e5e5e5;flex:1"}>
-                ${t.text}
-              </span>
-              <button
-                style="font-size:11px;padding:2px 8px;opacity:.5"
-                @click=${() => removeTodo(t.id)}
-              >×</button>
-            </li>
-          `
+        <li style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #1a1a1a">
+          <input type="checkbox" style="accent-color:#38bdf8" ${() => t.done ? "checked" : ""}
+          @change=${() => toggleTodo(t.id)}
+          />
+          <span style=${() => t.done ? "color:#52525b;text-decoration:line-through;flex:1" : "color:#e5e5e5;flex:1"}>
+            ${t.text}
+          </span>
+          <button style="font-size:11px;padding:2px 8px;opacity:.5" @click=${() => removeTodo(t.id)}
+            >×</button>
+        </li>
+        `
   )}
       </ul>
       <div style="margin-top:12px;color:#52525b;font-size:13px">
@@ -2509,15 +2501,18 @@ function refreshProfile() {
         fail
       ),
       (user) => html`
-        <div style="display:flex;align-items:center;gap:12px;padding:14px;background:#0a0a0a;border-radius:8px;border:1px solid #262626">
-          <div style="min-width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#38bdf8,#818cf8);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px">
+        <div
+          style="display:flex;align-items:center;gap:12px;padding:14px;background:#0a0a0a;border-radius:8px;border:1px solid #262626">
+          <div
+            style="min-width:48px;height:48px;border-radius:50%;background:linear-gradient(135deg,#38bdf8,#818cf8);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:16px">
             ${user.avatar}
           </div>
           <div>
             <div style="color:#f5f5f5;font-weight:600;font-size:15px">${user.name}</div>
             <div style="color:#71717a;font-size:13px;margin-top:2px">${user.role}</div>
           </div>
-          <div style="margin-left:auto;color:#22c55e;font-size:12px;padding:3px 10px;border-radius:999px;background:#052e16;border:1px solid #166534">
+          <div
+            style="margin-left:auto;color:#22c55e;font-size:12px;padding:3px 10px;border-radius:999px;background:#052e16;border:1px solid #166534">
             ✓ ${delay}ms
           </div>
         </div>
@@ -2534,7 +2529,8 @@ function refreshProfile() {
           <style>@keyframes nix-pulse{0%,100%{opacity:.3}50%{opacity:.75}}</style>
         `,
         errorFallback: (err) => html`
-          <div style="display:flex;align-items:center;gap:10px;padding:14px;background:#0a0a0a;border-radius:8px;border:1px solid #7f1d1d;color:#f87171;font-size:13px">
+          <div
+            style="display:flex;align-items:center;gap:10px;padding:14px;background:#0a0a0a;border-radius:8px;border:1px solid #7f1d1d;color:#f87171;font-size:13px">
             <span style="font-size:18px">⚠</span>
             <span>${err instanceof Error ? err.message : String(err)}</span>
             <button style="margin-left:auto;font-size:12px;padding:2px 10px" @click=${refreshProfile}>Reintentar</button>
@@ -2553,19 +2549,17 @@ mount(
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:12px">
       <label style="color:#a3a3a3;font-size:13px;display:flex;align-items:center;gap:8px">
         Latencia
-        <input
-          type="range" min="300" max="3000" step="100"
-          value=${() => demoDelay.value}
-          @input=${(e: Event) => { demoDelay.value = Number((e.target as HTMLInputElement).value); }}
-          style="accent-color:#38bdf8;width:120px"
+        <input type="range" min="300" max="3000" step="100" value=${() => demoDelay.value}
+        @input=${(e: Event) => { demoDelay.value = Number((e.target as HTMLInputElement).value); }}
+        style="accent-color:#38bdf8;width:120px"
         />
         <code style="color:#38bdf8;min-width:42px">${() => demoDelay.value}ms</code>
       </label>
       <label style="color:#a3a3a3;font-size:13px;display:flex;align-items:center;gap:6px">
-        <input
-          type="checkbox"
-          style="accent-color:#f87171"
-          @change=${(e: Event) => { demoFail.value = (e.target as HTMLInputElement).checked; }}
+        <input type="checkbox" style="accent-color:#f87171" @change=${(e: Event) => {
+      demoFail.value = (e.target as
+        HTMLInputElement).checked;
+    }}
         />
         Simular error
       </label>
@@ -2740,43 +2734,32 @@ class FocusDemo extends NixComponent {
       <div style="display:flex;flex-direction:column;gap:12px;max-width:400px">
         <label style="color:#a3a3a3;font-size:13px">
           Texto
-          <input
-            ref=${this.textRef}
-            type="text"
-            placeholder="escribe algo..."
-            style="display:block;margin-top:4px;padding:6px 10px;background:#1e1e1e;
-                   border:1px solid #444;border-radius:6px;color:#f1f5f9;width:100%"
-          />
+          <input ref=${this.textRef} type="text" placeholder="escribe algo..." style="display:block;margin-top:4px;padding:6px 10px;background:#1e1e1e;
+                               border:1px solid #444;border-radius:6px;color:#f1f5f9;width:100%" />
         </label>
         <label style="color:#a3a3a3;font-size:13px">
           Color de fondo
-          <input
-            ref=${this.colorRef}
-            type="color"
-            value="#1e293b"
-            style="display:block;margin-top:4px;width:60px;height:32px;cursor:pointer"
-          />
+          <input ref=${this.colorRef} type="color" value="#1e293b"
+            style="display:block;margin-top:4px;width:60px;height:32px;cursor:pointer" />
         </label>
         <div style="display:flex;gap:8px">
-          <button
-            @click=${() => this.textRef.el?.focus()}
+          <button @click=${() => this.textRef.el?.focus()}
             style="padding:6px 14px;font-size:13px"
-          >Focus texto</button>
-          <button
-            @click=${() => {
+            >Focus texto</button>
+          <button @click=${() => {
         const text = this.textRef.el?.value ?? "";
         const color = this.colorRef.el?.value ?? "#1e293b";
         this.result.value = `"${text}" sobre ${color}`;
       }}
             style="padding:6px 14px;font-size:13px"
-          >Capturar</button>
+            >Capturar</button>
         </div>
         ${() => this.result.value
         ? html`
-              <div style="padding:10px 14px;border-radius:8px;font-size:14px;
-                          background:${this.colorRef.el?.value ?? '#1e293b'};color:#f1f5f9">
-                ${() => this.result.value}
-              </div>`
+        <div style="padding:10px 14px;border-radius:8px;font-size:14px;
+                                      background:${this.colorRef.el?.value ?? '#1e293b'};color:#f1f5f9">
+          ${() => this.result.value}
+        </div>`
         : null
       }
       </div>
@@ -2956,69 +2939,62 @@ const demoF10 = document.getElementById("demo10")!;
 
   mount(html`
     <div style="display:flex;flex-direction:column;gap:14px;max-width:480px">
-
+    
       <p style="color:#94a3b8;font-size:13px;margin:0">
         Cada botón/input demuestra un modificador distinto.
       </p>
-
+    
       <!-- .prevent -->
       <label style="color:#a3a3a3;font-size:13px">
         <code style="color:#38bdf8">@click.prevent</code> en un enlace (no navega)
-        <br/>
-        <a
-          href="https://example.com"
-          @click.prevent=${() => addLog("click.prevent — navegación cancelada ✓")}
+        <br />
+        <a href="https://example.com" @click.prevent=${() => addLog("click.prevent — navegación cancelada ✓")}
           style="color:#818cf8;cursor:pointer"
-        >Clic aquí (no navega)</a>
+          >Clic aquí (no navega)</a>
       </label>
-
+    
       <!-- .stop -->
       <label style="color:#a3a3a3;font-size:13px">
         <code style="color:#38bdf8">@click.stop</code> en botón interior (no propaga al div)
-        <div
-          @click=${() => addLog("click en PADRE disparado ✗")}
+        <div @click=${() => addLog("click en PADRE disparado ✗")}
           style="padding:8px;border:1px dashed #475569;border-radius:6px;margin-top:4px"
-        >
-          <button
-            @click.stop=${() => addLog("click.stop en hijo — padre no recibió el evento ✓")}
+          >
+          <button @click.stop=${() => addLog("click.stop en hijo — padre no recibió el evento ✓")}
             style="padding:4px 12px"
-          >Click (no propaga)</button>
+            >Click (no propaga)</button>
         </div>
       </label>
-
+    
       <!-- .once -->
       <label style="color:#a3a3a3;font-size:13px">
         <code style="color:#38bdf8">@click.once</code> — solo dispara una vez
-        <br/>
-        <button
-          @click.once=${() => addLog("click.once — este mensaje solo aparece una vez ✓")}
+        <br />
+        <button @click.once=${() => addLog("click.once — este mensaje solo aparece una vez ✓")}
           style="margin-top:4px;padding:4px 12px"
-        >Click (once)</button>
+          >Click (once)</button>
       </label>
-
+    
       <!-- .enter -->
       <label style="color:#a3a3a3;font-size:13px">
         <code style="color:#38bdf8">@keydown.enter</code> — solo reacciona a Enter
-        <input
-          type="text"
-          placeholder="escribe y pulsa Enter..."
-          @keydown.enter=${(e: Event) => addLog(`keydown.enter — "${(e.target as HTMLInputElement).value}" ✓`)}
-          style="display:block;margin-top:4px;padding:6px 10px;width:100%;
-                 background:#1e1e1e;border:1px solid #444;border-radius:6px;color:#f1f5f9"
+        <input type="text" placeholder="escribe y pulsa Enter..." @keydown.enter=${(e: Event) => addLog(`keydown.enter —
+        "${(e.target as HTMLInputElement).value}" ✓`)}
+        style="display:block;margin-top:4px;padding:6px 10px;width:100%;
+        background:#1e1e1e;border:1px solid #444;border-radius:6px;color:#f1f5f9"
         />
       </label>
-
+    
       <!-- Log -->
       <div style="background:#0f172a;border-radius:8px;padding:10px 14px;min-height:60px">
         <p style="color:#475569;font-size:11px;margin:0 0 4px">Log (últimas 10 acciones):</p>
         ${() => log.value.length === 0
       ? html`<span style="color:#475569;font-size:13px">—</span>`
       : html`<ul style="margin:0;padding-left:16px;font-size:13px;color:#94a3b8">
-              ${() => repeat(log.value, (_, i) => i, (msg) => html`<li>${msg}</li>`)}
-            </ul>`
+          ${() => repeat(log.value, (_, i) => i, (msg) => html`<li>${msg}</li>`)}
+        </ul>`
     }
       </div>
-
+    
     </div>
   `, demoF10);
 }
@@ -3174,44 +3150,42 @@ const demoF11 = document.getElementById("demo11")!;
 
   mount(html`
     <div style="display:flex;flex-direction:column;gap:14px;max-width:460px">
-
+    
       <p style="color:#94a3b8;font-size:13px;margin:0">
         Dos watchers activos: uno observa el precio, otro observa
         <code>precio × cantidad</code>.
       </p>
-
+    
       <label style="color:#a3a3a3;font-size:13px">
         Precio: <code style="color:#38bdf8">${() => price.value}</code>
-        <input type="range" min="10" max="500" step="10"
-          value=${() => price.value}
-          @input=${(e: Event) => { price.value = Number((e.target as HTMLInputElement).value); }}
-          style="display:block;margin-top:4px;width:100%;accent-color:#38bdf8"
+        <input type="range" min="10" max="500" step="10" value=${() => price.value}
+        @input=${(e: Event) => { price.value = Number((e.target as HTMLInputElement).value); }}
+        style="display:block;margin-top:4px;width:100%;accent-color:#38bdf8"
         />
       </label>
-
+    
       <label style="color:#a3a3a3;font-size:13px">
         Cantidad: <code style="color:#38bdf8">${() => qty.value}</code>
-        <input type="range" min="1" max="20"
-          value=${() => qty.value}
-          @input=${(e: Event) => { qty.value = Number((e.target as HTMLInputElement).value); }}
-          style="display:block;margin-top:4px;width:100%;accent-color:#a78bfa"
+        <input type="range" min="1" max="20" value=${() => qty.value}
+        @input=${(e: Event) => { qty.value = Number((e.target as HTMLInputElement).value); }}
+        style="display:block;margin-top:4px;width:100%;accent-color:#a78bfa"
         />
       </label>
-
+    
       <div style="padding:8px 14px;background:#0f172a;border-radius:8px;font-size:14px;color:#f1f5f9">
         Total: <strong style="color:#34d399">${() => price.value * qty.value}</strong>
       </div>
-
+    
       <div style="background:#0f172a;border-radius:8px;padding:10px 14px;min-height:60px">
         <p style="color:#475569;font-size:11px;margin:0 0 4px">Log de cambios:</p>
         ${() => log.value.length === 0
       ? html`<span style="color:#475569;font-size:13px">—</span>`
       : html`<ul style="margin:0;padding-left:16px;font-size:12px;color:#94a3b8;font-family:monospace">
-              ${() => repeat(log.value, (_, i) => i, (msg) => html`<li>${msg}</li>`)}
-            </ul>`
+          ${() => repeat(log.value, (_, i) => i, (msg) => html`<li>${msg}</li>`)}
+        </ul>`
     }
       </div>
-
+    
     </div>
   `, demoF11);
 }
@@ -3374,29 +3348,25 @@ function groupF12(label: string) {
         Después de agregar, el campo recupera el foco automáticamente
         gracias a <code>await nextTick()</code> antes de <code>focus()</code>.
       </p>
-
+    
       <div style="display:flex;gap:8px">
-        <input
-          ref=${inputRef}
-          type="text"
-          placeholder="Nuevo elemento..."
-          value=${() => newItem.value}
-          @input=${(e: Event) => { newItem.value = (e.target as HTMLInputElement).value; }}
-          @keydown.enter=${addItem}
-          style="flex:1;padding:6px 10px;background:#1e1e1e;
-                 border:1px solid #444;border-radius:6px;color:#f1f5f9"
+        <input ref=${inputRef} type="text" placeholder="Nuevo elemento..." value=${() => newItem.value}
+        @input=${(e: Event) => { newItem.value = (e.target as HTMLInputElement).value; }}
+        @keydown.enter=${addItem}
+        style="flex:1;padding:6px 10px;background:#1e1e1e;
+        border:1px solid #444;border-radius:6px;color:#f1f5f9"
         />
         <button @click=${addItem} style="padding:6px 14px;font-size:13px">Añadir</button>
       </div>
-
+    
       ${() => lastAdded.value
         ? html`<p style="color:#86efac;font-size:13px;margin:0">
-            ✓ Añadido: <strong>${() => lastAdded.value}</strong>
-            — foco restaurado vía <code>nextTick</code>
-          </p>`
+        ✓ Añadido: <strong>${() => lastAdded.value}</strong>
+        — foco restaurado vía <code>nextTick</code>
+      </p>`
         : null
       }
-
+    
       <ul style="margin:0;padding-left:18px;color:#cbd5e1;font-size:14px">
         ${() => repeat(
         items.value,
@@ -3612,7 +3582,7 @@ const demoF13 = document.getElementById("demo13")!;
                 color:${dark ? "#f1f5f9" : "#0f172a"}`;
       };
       return html`
-        <div style=${style}>
+        <div style=xxxxxxxx>
           <strong>ThemedCard</strong> — tema actual:
           <code style="color:#38bdf8">${() => this.theme.value}</code>
         </div>
@@ -3628,7 +3598,7 @@ const demoF13 = document.getElementById("demo13")!;
          font-weight:600;color:#fff;
          background:${this.theme.value === 'dark' ? '#0ea5e9' : '#7c3aed'}`;
       return html`
-        <span style=${style}>
+        <span style=xxxxxxxx>
           ${() => this.theme.value === "dark" ? "🌙 Dark" : "☀️ Light"}
         </span>
       `;
@@ -3647,17 +3617,16 @@ const demoF13 = document.getElementById("demo13")!;
             <code>ThemeProvider</code> provee la señal <code>theme</code>.
             Los componentes hijos la inyectan sin recibir props.
           </p>
-
+        
           <div style="display:flex;align-items:center;gap:12px">
             <span style="color:#a3a3a3;font-size:13px">Tema:</span>
-            <button
-              @click=${() => { this.theme.value = this.theme.value === "dark" ? "light" : "dark"; }}
+            <button @click=${() => { this.theme.value = this.theme.value === "dark" ? "light" : "dark"; }}
               style="padding:5px 14px;font-size:13px">Cambiar tema</button>
             ${new ThemedBadge()}
           </div>
-
+        
           ${new ThemedCard()}
-
+        
           <div style="color:#475569;font-size:12px">
             Ambos componentes leen el mismo
             <code>inject(THEME_KEY)</code> sin que <code>ThemeProvider</code>
@@ -3676,7 +3645,7 @@ const demoF13 = document.getElementById("demo13")!;
 //  Tests → #tests15 | Summary → #summary15 | Demo → #demo15
 // ══════════════════════════════════════════════════════════════
 import {
-  useField, createForm,
+  nixField, createForm,
   required, minLength, maxLength, email, min, max,
 } from "./nix";
 import type { FieldState } from "./nix";
@@ -3700,44 +3669,44 @@ import type { FieldState } from "./nix";
     field.onInput({ target: el } as unknown as Event);
   }
   function blur(field: FieldState<unknown>) { field.onBlur(); }
-  // ── useField ─────────────────────────────────────────────────────────────
-  const f1 = useField("hello");
-  assert15(f1.value.value === "hello", "useField — initial value");
-  assert15(!f1.touched.value, "useField — not touched initially");
-  assert15(!f1.dirty.value, "useField — not dirty initially");
-  assert15(f1.error.value === null, "useField — no error before interaction");
+  // ── nixField ─────────────────────────────────────────────────────────────
+  const f1 = nixField("hello");
+  assert15(f1.value.value === "hello", "nixField — initial value");
+  assert15(!f1.touched.value, "nixField — not touched initially");
+  assert15(!f1.dirty.value, "nixField — not dirty initially");
+  assert15(f1.error.value === null, "nixField — no error before interaction");
 
-  const f2 = useField("", [required()]);
+  const f2 = nixField("", [required()]);
   blur(f2);
-  assert15(f2.error.value === "Required", "useField — error shows after blur");
+  assert15(f2.error.value === "Required", "nixField — error shows after blur");
 
   type(f2, "hello");
-  assert15(f2.error.value === null, "useField — error clears when valid value entered");
-  assert15(f2.dirty.value, "useField — dirty after input");
+  assert15(f2.error.value === null, "nixField — error clears when valid value entered");
+  assert15(f2.dirty.value, "nixField — dirty after input");
 
   f2.reset();
-  assert15(f2.value.value === "", "useField — reset restores initial value");
-  assert15(!f2.touched.value, "useField — reset clears touched");
-  assert15(f2.error.value === null, "useField — error hidden after reset");
+  assert15(f2.value.value === "", "nixField — reset restores initial value");
+  assert15(!f2.touched.value, "nixField — reset clears touched");
+  assert15(f2.error.value === null, "nixField — error hidden after reset");
 
   // ── Built-in validators ──────────────────────────────────────────────────
-  const fMin = useField("", [minLength(3)]);
+  const fMin = nixField("", [minLength(3)]);
   blur(fMin); type(fMin, "ab");
   assert15(fMin.error.value !== null, "minLength — fails when too short");
   type(fMin, "abc");
   assert15(fMin.error.value === null, "minLength — passes at exact length");
 
-  const fMax = useField("", [maxLength(3)]);
+  const fMax = nixField("", [maxLength(3)]);
   blur(fMax); type(fMax, "abcd");
   assert15(fMax.error.value !== null, "maxLength — fails when too long");
 
-  const fEmail = useField("", [email()]);
+  const fEmail = nixField("", [email()]);
   blur(fEmail); type(fEmail, "notanemail");
   assert15(fEmail.error.value !== null, "email — fails for invalid email");
   type(fEmail, "test@example.com");
   assert15(fEmail.error.value === null, "email — passes for valid email");
 
-  const fNum = useField<number>(0, [min(18), max(120)]);
+  const fNum = nixField<number>(0, [min(18), max(120)]);
   blur(fNum);
   fNum.value.value = 10;
   assert15(fNum.error.value !== null, "min — fails below minimum");
@@ -3748,7 +3717,7 @@ import type { FieldState } from "./nix";
   assert15(fNum.error.value !== null, "max — fails above maximum");
 
   // ── External error injection (_setExternalError) ─────────────────────────
-  const fExt = useField("ok");
+  const fExt = nixField("ok");
   fExt._setExternalError("Server error");
   assert15(fExt.error.value === "Server error", "_setExternalError — injects external error");
   assert15(fExt.touched.value, "_setExternalError — marks field as touched");
@@ -3845,17 +3814,15 @@ import type { FieldState } from "./nix";
     return html`
       <div style="display:flex;flex-direction:column;gap:4px">
         <label style="font-size:13px;color:#94a3b8">${label}</label>
-        <input
-          type=${inputType}
-          value=${() => String(field.value.value)}
-          @input=${field.onInput}
-          @blur=${field.onBlur}
-          style=${() => `
-            padding:8px 10px;border-radius:6px;font-size:14px;
-            background:#1e293b;color:#e2e8f0;
-            border:1px solid ${field.error.value ? "#ef4444" : field.dirty.value ? "#22c55e" : "#334155"};
-            outline:none;width:100%;box-sizing:border-box
-          `}
+        <input type=${inputType} value=${() => String(field.value.value)}
+        @input=${field.onInput}
+        @blur=${field.onBlur}
+        style=${() => `
+        padding:8px 10px;border-radius:6px;font-size:14px;
+        background:#1e293b;color:#e2e8f0;
+        border:1px solid ${field.error.value ? "#ef4444" : field.dirty.value ? "#22c55e" : "#334155"};
+        outline:none;width:100%;box-sizing:border-box
+        `}
         />
         ${() => field.error.value
         ? html`<p style="margin:0;font-size:12px;color:#f87171">${field.error.value}</p>`
@@ -3868,40 +3835,35 @@ import type { FieldState } from "./nix";
     <div style="max-width:420px">
       ${() => submitted.value
       ? html`
-            <div style="padding:18px;border-radius:8px;background:#14532d;border:1px solid #22c55e;color:#bbf7d0">
-              <strong>✅ Registered successfully!</strong>
-              <pre style="margin:10px 0 0;font-size:12px;color:#86efac">${() => JSON.stringify(submitted.value, null, 2)}</pre>
-            </div>
-          `
+      <div style="padding:18px;border-radius:8px;background:#14532d;border:1px solid #22c55e;color:#bbf7d0">
+        <strong>✅ Registered successfully!</strong>
+        <pre style="margin:10px 0 0;font-size:12px;color:#86efac">${() => JSON.stringify(submitted.value, null, 2)}</pre>
+      </div>
+      `
       : html`
-            <form @submit=${regForm.handleSubmit((v) => { submitted.value = v; })}
-                  style="display:flex;flex-direction:column;gap:14px">
-
-              ${fieldRow("Full name", regForm.fields.name)}
-              ${fieldRow("Email", regForm.fields.email, "email")}
-              ${fieldRow("Age", regForm.fields.age as FieldState<string | number>, "number")}
-              ${fieldRow("Password", regForm.fields.password, "password")}
-              ${fieldRow("Confirm password", regForm.fields.confirm as FieldState<string | number>, "password")}
-
-              <div style="display:flex;gap:10px;align-items:center">
-                <button
-                  type="submit"
-                  style="padding:9px 20px;font-size:14px;border-radius:6px;
-                         background:#3b82f6;color:#fff;border:none;cursor:pointer"
-                >Register</button>
-                <button
-                  type="button"
-                  @click=${() => { regForm.reset(); submitted.value = null; }}
-                  style="padding:9px 20px;font-size:14px;border-radius:6px;
-                         background:#1e293b;color:#94a3b8;border:1px solid #334155;cursor:pointer"
+      <form @submit=${regForm.handleSubmit((v) => { submitted.value = v; })}
+        style="display:flex;flex-direction:column;gap:14px">
+    
+        ${fieldRow("Full name", regForm.fields.name)}
+        ${fieldRow("Email", regForm.fields.email, "email")}
+        ${fieldRow("Age", regForm.fields.age as FieldState<string | number>, "number")}
+          ${fieldRow("Password", regForm.fields.password, "password")}
+          ${fieldRow("Confirm password", regForm.fields.confirm as FieldState<string | number>, "password")}
+    
+            <div style="display:flex;gap:10px;align-items:center">
+              <button type="submit" style="padding:9px 20px;font-size:14px;border-radius:6px;
+                                 background:#3b82f6;color:#fff;border:none;cursor:pointer">Register</button>
+              <button type="button" @click=${() => { regForm.reset(); submitted.value = null; }}
+                style="padding:9px 20px;font-size:14px;border-radius:6px;
+                background:#1e293b;color:#94a3b8;border:1px solid #334155;cursor:pointer"
                 >Reset</button>
-              </div>
-
-              <p style="font-size:12px;color:#475569;margin:0">
-                Try submitting empty — errors appear. Then fill valid data and submit again.
-              </p>
-            </form>
-          `}
+            </div>
+    
+            <p style="font-size:12px;color:#475569;margin:0">
+              Try submitting empty — errors appear. Then fill valid data and submit again.
+            </p>
+      </form>
+      `}
     </div>
   `, demoEl);
 }
@@ -4055,12 +4017,10 @@ import type { NixChildren } from "./nix";
   }
 
   const tabButtons = tabs.map((t, i) =>
-    html`<button
-      style=${() => `padding:5px 12px;font-size:12px;border-radius:4px;cursor:pointer;
-        background:${activeTab.value === i ? "#3b82f6" : "#1e293b"};
-        color:${activeTab.value === i ? "#fff" : "#94a3b8"};border:none`}
-      @click=${() => { activeTab.value = i; }}
-    >${t.label}</button>`
+    html`<button style=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx @click=${() => { activeTab.value = i; }}
+  >${t.label}</button>`
   );
 
   mount(html`
@@ -4178,29 +4138,25 @@ import { showWhen } from "./nix";
 
     mount(html`
       <div style="display:flex;flex-direction:column;gap:12px">
-
+      
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-          <button
-            style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+          <button style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => { visible.value = !visible.value; }}
-          >${() => visible.value ? "Ocultar panel" : "Mostrar panel"}</button>
-
-          <button
-            style="padding:6px 14px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            >${() => visible.value ? "Ocultar panel" : "Mostrar panel"}</button>
+      
+          <button style="padding:6px 14px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => { loading.value = !loading.value; }}
-          >${() => loading.value ? "Quitar loading" : "Simular loading"}</button>
-
-          <button
-            style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            >${() => loading.value ? "Quitar loading" : "Simular loading"}</button>
+      
+          <button style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => { count.value++; }}
-          >Incrementar (${() => count.value})</button>
+            >Incrementar (${() => count.value})</button>
         </div>
-
+      
         <!-- show: visible cuando la señal es true -->
-        <div
-          show=${() => visible.value}
+        <div show=${() => visible.value}
           style="padding:16px;background:#1e293b;border-radius:8px;border:1px solid #334155"
-        >
+          >
           <p style="margin:0 0 8px;color:#94a3b8;font-size:13px">
             Este panel usa <code>show</code> — el DOM se mantiene aunque esté oculto.
           </p>
@@ -4208,23 +4164,21 @@ import { showWhen } from "./nix";
             Contador: ${() => count.value}
           </p>
         </div>
-
+      
         <!-- hide: oculto cuando loading es true, visible cuando es false -->
-        <div
-          hide=${() => loading.value}
+        <div hide=${() => loading.value}
           style="padding:12px 16px;background:#0f172a;border-radius:8px;border:1px solid #1e293b;color:#94a3b8;font-size:13px"
-        >
+          >
           Contenido normal (oculto mientras carga)
         </div>
-
+      
         <!-- loading spinner usando hide inverso -->
-        <div
-          show=${() => loading.value}
+        <div show=${() => loading.value}
           style="padding:12px 16px;background:#1e293b;border-radius:8px;border:1px solid #334155;color:#60a5fa;font-size:13px"
-        >
+          >
           ⏳ Cargando...
         </div>
-
+      
       </div>
     `, demo16El);
   }
@@ -4402,77 +4356,68 @@ import { portal } from "./nix";
     // so z-index, overflow, and stacking contexts can't clip it.
     mount(html`
       <div style="display:flex;flex-direction:column;gap:12px">
-
+      
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <button
-            style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+          <button style="padding:6px 14px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => { showModal.value = true; }}
-          >Abrir Modal</button>
-
-          <button
-            style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            >Abrir Modal</button>
+      
+          <button style="padding:6px 14px;background:#10b981;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => triggerToast("Cambios guardados con éxito ✨")}
-          >Toast éxito</button>
-
-          <button
-            style="padding:6px 14px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            >Toast éxito</button>
+      
+          <button style="padding:6px 14px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => triggerToast("❌ Error al conectar con el servidor")}
-          >Toast error</button>
+            >Toast error</button>
         </div>
-
+      
         <p style="font-size:12px;color:#64748b;margin:0">
           El modal y los toasts se renderizan en <code>document.body</code> mediante <code>portal()</code>.
           No pueden ser recortados por ningún contenedor con <code>overflow:hidden</code>.
         </p>
-
+      
         <!-- Modal portal: renders into document.body -->
         ${() => showModal.value ? portal(html`
-          <div
-            id="demo17-overlay"
-            @click=${() => { showModal.value = false; }}
-            style="
-              position:fixed;inset:0;background:rgba(0,0,0,.65);
-              display:flex;align-items:center;justify-content:center;
-              z-index:9999
-            "
+        <div id="demo17-overlay" @click=${() => { showModal.value = false; }}
+          style="
+          position:fixed;inset:0;background:rgba(0,0,0,.65);
+          display:flex;align-items:center;justify-content:center;
+          z-index:9999
+          "
           >
-            <div
-              @click.stop=${() => { }}
-              style="
-                background:#1e293b;border:1px solid #334155;border-radius:12px;
-                padding:28px 32px;min-width:320px;max-width:480px;
-                box-shadow:0 25px 50px rgba(0,0,0,.5)
-              "
+          <div @click.stop=${() => { }}
+            style="
+            background:#1e293b;border:1px solid #334155;border-radius:12px;
+            padding:28px 32px;min-width:320px;max-width:480px;
+            box-shadow:0 25px 50px rgba(0,0,0,.5)
+            "
             >
-              <h2 style="margin:0 0 12px;color:#f1f5f9;font-size:20px">❄️ Portal Modal</h2>
-              <p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.6">
-                Este cuadro de diálogo vive en <code>document.body</code>, no dentro
-                del árbol del componente. Nunca será recortado por ningún contenedor.
-              </p>
-              <div style="display:flex;justify-content:flex-end">
-                <button
-                  @click=${() => { showModal.value = false; }}
-                  style="padding:8px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            <h2 style="margin:0 0 12px;color:#f1f5f9;font-size:20px">❄️ Portal Modal</h2>
+            <p style="margin:0 0 20px;color:#94a3b8;font-size:14px;line-height:1.6">
+              Este cuadro de diálogo vive en <code>document.body</code>, no dentro
+              del árbol del componente. Nunca será recortado por ningún contenedor.
+            </p>
+            <div style="display:flex;justify-content:flex-end">
+              <button @click=${() => { showModal.value = false; }}
+                style="padding:8px 18px;background:#3b82f6;color:#fff;border:none;border-radius:6px;cursor:pointer"
                 >Cerrar</button>
-              </div>
             </div>
           </div>
+        </div>
         `) : null}
-
+      
         <!-- Toast portal: renders into document.body -->
         ${() => showToast.value ? portal(html`
-          <div
-            style="
-              position:fixed;bottom:24px;right:24px;
-              background:#1e293b;border:1px solid #334155;
-              border-radius:8px;padding:12px 18px;
-              color:#f1f5f9;font-size:14px;
-              box-shadow:0 8px 24px rgba(0,0,0,.4);
-              z-index:9999;max-width:320px
-            "
-          >${() => toastMsg.value}</div>
+        <div style="
+                          position:fixed;bottom:24px;right:24px;
+                          background:#1e293b;border:1px solid #334155;
+                          border-radius:8px;padding:12px 18px;
+                          color:#f1f5f9;font-size:14px;
+                          box-shadow:0 8px 24px rgba(0,0,0,.4);
+                          z-index:9999;max-width:320px
+                        ">${() => toastMsg.value}</div>
         `) : null}
-
+      
       </div>
     `, demo17El);
   }
@@ -4631,32 +4576,27 @@ import type { PortalOutlet } from "./nix";
             <button
               style="padding:6px 14px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer;align-self:flex-start"
               @click=${() => { this.open.value = true; }}
-            >Abrir Modal (via injectOutlet)</button>
-
+              >Abrir Modal (via injectOutlet)</button>
+          
             ${() => this.open.value ? portal(html`
-              <div
-                style="
-                  position:fixed;inset:0;background:rgba(0,0,0,.6);
-                  display:flex;align-items:center;justify-content:center;z-index:9999
-                "
-                @click=${() => { this.open.value = false; }}
+            <div style="
+                                      position:fixed;inset:0;background:rgba(0,0,0,.6);
+                                      display:flex;align-items:center;justify-content:center;z-index:9999
+                                    " @click=${() => { this.open.value = false; }}
               >
-                <div
-                  style="background:#1e293b;border:1px solid #334155;border-radius:12px;
-                         padding:28px 32px;max-width:400px"
-                  @click.stop=${() => { }}
+              <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;
+                                             padding:28px 32px;max-width:400px" @click.stop=${() => { }}
                 >
-                  <h3 style="margin:0 0 10px;color:#f1f5f9">Modal via injectOutlet()</h3>
-                  <p style="color:#94a3b8;font-size:14px;margin:0 0 18px;line-height:1.6">
-                    Renderizado en el outlet inyectado.<br>
-                    Sin prop drilling · Sin selectores CSS · Sin DOM manual.
-                  </p>
-                  <button
-                    style="padding:7px 16px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer"
-                    @click=${() => { this.open.value = false; }}
+                <h3 style="margin:0 0 10px;color:#f1f5f9">Modal via injectOutlet()</h3>
+                <p style="color:#94a3b8;font-size:14px;margin:0 0 18px;line-height:1.6">
+                  Renderizado en el outlet inyectado.<br>
+                  Sin prop drilling · Sin selectores CSS · Sin DOM manual.
+                </p>
+                <button style="padding:7px 16px;background:#8b5cf6;color:#fff;border:none;border-radius:6px;cursor:pointer"
+                  @click=${() => { this.open.value = false; }}
                   >Cerrar</button>
-                </div>
               </div>
+            </div>
             `, this.outlet ?? document.body) : null}
           </div>
         `;
@@ -4845,25 +4785,20 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
 
     mount(html`
       <div style="display:flex;flex-direction:column;gap:14px">
-
+      
         <div style="display:flex;gap:8px;flex-wrap:wrap">
-          <button
-            style="padding:6px 14px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer"
+          <button style="padding:6px 14px;background:#ef4444;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => { shouldFail.value = true; }}
-          >💥 Tirar error</button>
-          <button
-            style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer"
+            >💥 Tirar error</button>
+          <button style="padding:6px 14px;background:#22c55e;color:#fff;border:none;border-radius:6px;cursor:pointer"
             @click=${() => { shouldFail.value = false; resetKey.value++; }}
-          >🔄 Recuperar</button>
-          <input
-            type="text"
-            placeholder="Mensaje de error..."
+            >🔄 Recuperar</button>
+          <input type="text" placeholder="Mensaje de error..."
             style="padding:6px 10px;background:#1e293b;color:#e2e8f0;border:1px solid #334155;border-radius:6px;font-size:13px"
-            value="Something went wrong"
-            @input=${(e: Event) => { failMsg.value = (e.target as HTMLInputElement).value; }}
+            value="Something went wrong" @input=${(e: Event) => { failMsg.value = (e.target as HTMLInputElement).value; }}
           />
         </div>
-
+      
         <!-- The boundary key-resets by conditionally swapping based on resetKey -->
         ${() => {
         const _key = resetKey.value; // dependency: re-creates boundary on Recuperar
@@ -4871,17 +4806,17 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
         return createErrorBoundary(
           new DataWidget(),
           (err) => html`
-            <div style="padding:14px;border-radius:8px;border:1px solid #7f1d1d;background:#450a0a;color:#fca5a5">
-              <strong style="display:block;margin-bottom:6px">❌ Error Boundary capturó un fallo</strong>
-              <code style="font-size:12px;color:#f87171">${String(err)}</code>
-              <p style="font-size:12px;color:#fca5a5;margin:8px 0 0">
-                Pulsa <strong>Recuperar</strong> para reiniciar el widget.
-              </p>
-            </div>
-          `
+        <div style="padding:14px;border-radius:8px;border:1px solid #7f1d1d;background:#450a0a;color:#fca5a5">
+          <strong style="display:block;margin-bottom:6px">❌ Error Boundary capturó un fallo</strong>
+          <code style="font-size:12px;color:#f87171">${String(err)}</code>
+          <p style="font-size:12px;color:#fca5a5;margin:8px 0 0">
+            Pulsa <strong>Recuperar</strong> para reiniciar el widget.
+          </p>
+        </div>
+        `
         );
       }}
-
+      
         <p style="font-size:12px;color:#64748b;margin:0">
           El error boundary aísla el fallo. El botón "Recuperar" limpia la señal de error
           y el boundary vuelve a renderizar el contenido original.
@@ -5092,7 +5027,9 @@ import { transition } from "./nix";
     const showZoom = signal(false);
 
     const card = (label: string, color: string) =>
-      html`<div style="${`padding:16px 20px;border-radius:8px;border:1px solid ${color};background:${color}22;color:${color};font-size:13px;font-weight:600`}">${label}</div>`;
+      html`<div
+  style="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
+  ${label}</div>`;
 
     html`
       <div style="display:flex;flex-direction:column;gap:20px">
@@ -5305,10 +5242,26 @@ import type { NavigationGuard } from "./nix";
     const isLoggedIn = signal(false);
 
     const demoRouter = createRouter([
-      { path: "/", component: () => html`<div style="color:#e2e8f0"><h3 style="margin:0 0 6px">🏠 Inicio</h3><p style="color:#94a3b8;font-size:13px;margin:0">Página pública</p></div>` },
-      { path: "/perfil", component: () => html`<div style="color:#e2e8f0"><h3 style="margin:0 0 6px">👤 Perfil</h3><p style="color:#94a3b8;font-size:13px;margin:0">Solo usuarios autenticados</p></div>` },
-      { path: "/ajustes", component: () => html`<div style="color:#e2e8f0"><h3 style="margin:0 0 6px">⚙️ Ajustes</h3><p style="color:#94a3b8;font-size:13px;margin:0">Solo usuarios autenticados</p></div>` },
-      { path: "/login", component: () => html`<div style="color:#fbbf24"><h3 style="margin:0 0 6px">🔒 Login</h3><p style="color:#94a3b8;font-size:13px;margin:0">Inicia sesión para acceder a rutas protegidas</p></div>` },
+      {
+        path: "/", component: () => html`<div style="color:#e2e8f0">
+  <h3 style="margin:0 0 6px">🏠 Inicio</h3>
+  <p style="color:#94a3b8;font-size:13px;margin:0">Página pública</p>
+</div>` },
+      {
+        path: "/perfil", component: () => html`<div style="color:#e2e8f0">
+  <h3 style="margin:0 0 6px">👤 Perfil</h3>
+  <p style="color:#94a3b8;font-size:13px;margin:0">Solo usuarios autenticados</p>
+</div>` },
+      {
+        path: "/ajustes", component: () => html`<div style="color:#e2e8f0">
+  <h3 style="margin:0 0 6px">⚙️ Ajustes</h3>
+  <p style="color:#94a3b8;font-size:13px;margin:0">Solo usuarios autenticados</p>
+</div>` },
+      {
+        path: "/login", component: () => html`<div style="color:#fbbf24">
+  <h3 style="margin:0 0 6px">🔒 Login</h3>
+  <p style="color:#94a3b8;font-size:13px;margin:0">Inicia sesión para acceder a rutas protegidas</p>
+</div>` },
     ]);
 
     const PROTECTED = ["/perfil", "/ajustes"];
@@ -5318,14 +5271,16 @@ import type { NavigationGuard } from "./nix";
     });
 
     const btn = (color: string, label: string, onClick: () => void) =>
-      html`<button style=${"padding:6px 14px;background:" + color + ";color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:13px"}
-        @click=${onClick}>${label}</button>`;
+      html`<button
+  style=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  @click=${onClick}>${label}</button>`;
 
     html`
       <div style="display:flex;flex-direction:column;gap:14px">
-        <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;background:#0f172a;border:1px solid #1e293b">
+        <div
+          style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:8px;background:#0f172a;border:1px solid #1e293b">
           <span style="font-size:13px;color:#94a3b8">Estado:</span>
-          <span style="${() => "font-weight:600;font-size:13px;color:" + (isLoggedIn.value ? "#22c55e" : "#ef4444")}">
+          <span style="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">
             ${() => isLoggedIn.value ? "✅ Autenticado" : "❌ No autenticado"}
           </span>
           ${() => btn(isLoggedIn.value ? "#ef4444" : "#22c55e",

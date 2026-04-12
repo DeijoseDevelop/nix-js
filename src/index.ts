@@ -34,7 +34,7 @@ export {
     createRouter,
     RouterView,
     Link,
-    useRouter,
+    nixRouter,
     RouterKey,
     // Async / Lazy
     suspend,
@@ -44,8 +44,8 @@ export {
     inject,
     createInjectionKey,
     // Forms
-    useField,
-    useFieldArray,
+    nixField,
+    nixFieldArray,
     createForm,
     required,
     minLength,

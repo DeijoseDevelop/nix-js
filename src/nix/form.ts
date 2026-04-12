@@ -1,12 +1,22 @@
-import { signal, computed } from "./reactivity";
+import { signal, computed, effect, batch } from "./reactivity";
 import type { Signal } from "./reactivity";
 
 // --- Validator ---
 
 /**
- * A validator function. Return an error string, or null/undefined if valid.
+ * A validator function. Return an error string when invalid, or `null` /
+ * `undefined` when valid.
  *
- * `allValues` is optional and is provided when the validator runs inside `createForm`.
+ * `allValues` is provided when the validator runs inside `createForm`, enabling
+ * cross-field validation (e.g., "confirm password matches password").
+ *
+ * **Validators must be pure.** They are invoked reactively whenever the field
+ * value changes — potentially many times per keystroke in forms with
+ * cross-field rules — and may run inside computed signals that assume
+ * deterministic output. Do not perform I/O, mutate external state, or rely on
+ * `Date.now()` / `Math.random()` inside a validator. For asynchronous checks
+ * (uniqueness, server-side rules), submit the form and inject the result via
+ * {@link FormState.setErrors}.
  */
 export type Validator<T, AllValues = unknown> = (
     value: T,
@@ -60,7 +70,7 @@ export function max(n: number, message?: string): Validator<number> {
 
 // --- Custom validator API ---
 
-/** Creates a typed custom validator compatible with `useField` and `createForm`. */
+/** Creates a typed custom validator compatible with `nixField` and `createForm`. */
 export function createValidator<T, AllValues = unknown>(
     fn: (value: T, allValues?: AllValues) => string | null | undefined
 ): Validator<T, AllValues> {
@@ -109,11 +119,13 @@ export type ValidateOn = "blur" | "input" | "submit";
 export interface FieldState<T> {
     /** Current value — read/write signal. */
     value: Signal<T>;
-    /**
-     * Current error message, or null.
-     * Visibility depends on `validateOn` option.
-     */
+    /** Error visible según validateOn. Para UI. */
     readonly error: Signal<string | null>;
+    /**
+     * Error real, ignorando validateOn/touched/dirty.
+     * Para lógica de habilitación de botones, validez global, etc.
+     */
+    readonly rawError: Signal<string | null>;
     /** True after the input has lost focus at least once. */
     touched: Signal<boolean>;
     /** True after the user has typed at least once. */
@@ -135,10 +147,10 @@ export interface FieldState<T> {
     _dispose(): void;
 }
 
-// --- useField ---
+// --- nixField ---
 
 /** Creates a standalone reactive form field with optional validators. */
-export function useField<T, AllValues = unknown>(
+export function nixField<T, AllValues = unknown>(
     initialValue: T,
     fieldValidators: Validator<T, AllValues>[] = [],
     validateOn: ValidateOn = "blur",
@@ -151,24 +163,35 @@ export function useField<T, AllValues = unknown>(
     // Tracks whether the form has been submitted at least once (injected externally)
     const _submitted = signal(false);
 
-    const error = computed<string | null>(() => {
+    let _skipFirstClear = true;
+    const _disposeExtCleanup = effect(() => {
+        value.value; // subscribe to value changes
+        if (_skipFirstClear) {
+            _skipFirstClear = false;
+            return;
+        }
+        if (_ext.peek() !== null) {
+            _ext.value = null;
+        }
+    });
+
+    const rawError = computed<string | null>(() => {
         if (_ext.value) return _ext.value;
-
-        // Determine whether errors should be visible yet based on validateOn
-        const isVisible =
-            validateOn === "input" ? dirty.value || touched.value :
-                validateOn === "submit" ? _submitted.value :
-            /* blur (default) */      touched.value;
-
-        if (!isVisible) return null;
-
         const allValues = getAllValues?.();
-
         for (const v of fieldValidators) {
             const e = v(value.value, allValues);
             if (e) return e;
         }
         return null;
+    });
+
+    const error = computed<string | null>(() => {
+        const isVisible =
+            validateOn === "input" ? dirty.value || touched.value :
+            validateOn === "submit" ? _submitted.value :
+                                    touched.value;
+        if (!isVisible) return null;
+        return rawError.value;
     });
 
     function coerce(target: EventTarget | null): T {
@@ -182,17 +205,18 @@ export function useField<T, AllValues = unknown>(
     const onInput = (e: Event): void => {
         value.value = coerce(e.target);
         dirty.value = true;
-        _ext.value = null;
     };
 
     const onBlur = (): void => { touched.value = true; };
 
     function reset(): void {
-        value.value = initialValue;
-        touched.value = false;
-        dirty.value = false;
-        _ext.value = null;
-        _submitted.value = false;
+        batch(() => {
+            value.value = initialValue;
+            touched.value = false;
+            dirty.value = false;
+            _ext.value = null;
+            _submitted.value = false;
+        });
     }
 
     function _setExternalError(msg: string | null): void {
@@ -206,10 +230,12 @@ export function useField<T, AllValues = unknown>(
     }
 
     function _dispose(): void {
+        _disposeExtCleanup();
         error.dispose();
+        rawError.dispose();
     }
 
-    return { value, error, touched, dirty, onInput, onBlur, reset, _setExternalError, _forceVisible, _dispose };
+    return { value, error, rawError, touched, dirty, onInput, onBlur, reset, _setExternalError, _forceVisible, _dispose };
 }
 
 // --- FieldArrayState ---
@@ -241,13 +267,13 @@ export interface FieldArrayState<T extends Record<string, unknown>> {
  * Creates a reactive array of field groups for dynamic list forms.
  *
  * @example
- * const items = useFieldArray([{ name: "" }], {
+ * const items = nixFieldArray([{ name: "" }], {
  *     name: [required()],
  * });
  * items.append({ name: "nuevo" });
  * items.remove(0);
  */
-export function useFieldArray<T extends Record<string, unknown>>(
+export function nixFieldArray<T extends Record<string, unknown>>(
     initialItems: T[],
     fieldValidators: { [K in keyof T]?: Validator<T[K], unknown>[] } = {},
     validateOn: ValidateOn = "blur",
@@ -256,7 +282,7 @@ export function useFieldArray<T extends Record<string, unknown>>(
         const group = {} as { [K in keyof T]: FieldState<T[K]> };
         for (const key in item) {
             const vs = (fieldValidators[key] ?? []) as Validator<T[typeof key], unknown>[];
-            (group as Record<string, unknown>)[key] = useField(item[key], vs, validateOn);
+            (group as Record<string, unknown>)[key] = nixField(item[key], vs, validateOn);
         }
         return group;
     }
@@ -344,8 +370,43 @@ export interface FormState<T extends Record<string, unknown>> {
     readonly values: Signal<T>;
     /** Computed map of all currently visible field errors. */
     readonly errors: Signal<FieldErrors<T>>;
-    /** True when no field has a visible error (meaningful after submit / touch-all). */
+    /**
+     * True when no field has a *visible* error.
+     *
+     * Visibility follows `validateOn`, so this signal reflects what the user
+     * currently sees in the UI — not the underlying validity of the data.
+     * Use it to drive error summaries, banners, or any UI that should only
+     * react to errors the user has been shown.
+     *
+     * For enabling or disabling submit buttons, use {@link canSubmit} instead.
+     */
     readonly valid: Signal<boolean>;
+    /**
+     * True when every per-field validator passes against the current values,
+     * regardless of `touched`, `dirty`, or `validateOn`.
+     *
+     * This is the signal to bind to submit buttons:
+     *
+     * ```ts
+     * <button disabled=${() => !form.canSubmit.value || form.isSubmitting.value}>
+     *   Save
+     * </button>
+     * ```
+     *
+     * Unlike {@link valid}, `canSubmit` does not depend on whether errors are
+     * currently visible — a pristine form with empty required fields starts
+     * as `false` and flips to `true` the moment all validators pass.
+     *
+     * External errors injected via {@link setErrors} also flip `canSubmit` to
+     * `false` until the user edits the affected field.
+     *
+     * **Note:** `canSubmit` does not execute `options.validate` (schema-level
+     * validators such as Zod). Schema validation runs only on submit, by design,
+     * to keep per-keystroke cost predictable. If you need a schema rule to
+     * affect `canSubmit` reactively, express it as a per-field validator in
+     * `options.validators` instead.
+     */
+    readonly canSubmit: Signal<boolean>;
     /** True when at least one field has been modified. */
     readonly dirty: Signal<boolean>;
     /** True when at least one field has been touched (lost focus). */
@@ -470,7 +531,7 @@ export function createForm<T extends Record<string, unknown>>(
 
     for (const [path, initialValue] of flattenValuePaths(initialValues)) {
         const vs = validatorsByPath?.[path] ?? [];
-        fields[path] = useField<unknown, T>(initialValue, vs, validateOn, snapshotValues);
+        fields[path] = nixField<unknown, T>(initialValue, vs, validateOn, snapshotValues);
     }
 
     const isSubmitting = signal(false);
@@ -487,6 +548,13 @@ export function createForm<T extends Record<string, unknown>>(
             if (e) (r as Record<string, unknown>)[k] = e;
         }
         return r;
+    });
+
+    const canSubmit = computed<boolean>(() => {
+        for (const k in fields) {
+            if (fields[k].rawError.value) return false;
+        }
+        return true;
     });
 
     const valid = computed<boolean>(() => {
@@ -517,6 +585,7 @@ export function createForm<T extends Record<string, unknown>>(
     function dispose(): void {
         values.dispose();
         errors.dispose();
+        canSubmit.dispose();
         valid.dispose();
         dirty.dispose();
         touched.dispose();
@@ -529,7 +598,6 @@ export function createForm<T extends Record<string, unknown>>(
 
             submitCount.value++;
 
-            // Force error visibility on all fields regardless of validateOn
             for (const k in fields) fields[k]._forceVisible();
 
             const currentValues = values.value;
@@ -553,9 +621,8 @@ export function createForm<T extends Record<string, unknown>>(
             }
 
             // Check built-in validators
-            for (const k in fields) if (fields[k].error.value) return;
+            for (const k in fields) if (fields[k].rawError.value) return;
 
-            // All validations passed — call the callback
             const result = fn(currentValues);
 
             if (result instanceof Promise) {
@@ -574,6 +641,7 @@ export function createForm<T extends Record<string, unknown>>(
         fields: fields as FormFields<T>,
         values,
         errors,
+        canSubmit,
         valid,
         dirty,
         touched,

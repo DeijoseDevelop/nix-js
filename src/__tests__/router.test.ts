@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { html } from "../nix/template";
-import { createRouter, useRouter, RouterView, Link, _resetRouter } from "../nix/router";
+import { createRouter, nixRouter, RouterView, Link, _resetRouter } from "../nix/router";
 import { mount } from "../nix/component";
 import { NixComponent } from "../nix/lifecycle";
 import type { NavigationGuard } from "../nix/router";
@@ -158,14 +158,14 @@ describe("createRouter", () => {
     });
 });
 
-// ── useRouter ─────────────────────────────────────────────────────────────────
+// ── nixRouter ─────────────────────────────────────────────────────────────────
 
-describe("useRouter", () => {
+describe("nixRouter", () => {
     it("returns the active router singleton", () => {
         const r = createRouter([
             { path: "/", component: () => html`<p>home</p>` },
         ]);
-        expect(useRouter()).toBe(r);
+        expect(nixRouter()).toBe(r);
     });
 
     it("prefers injected router from mount options over singleton", () => {
@@ -179,7 +179,7 @@ describe("useRouter", () => {
         class Probe extends NixComponent {
             seen: unknown;
             onInit() {
-                this.seen = useRouter();
+                this.seen = nixRouter();
             }
             render() {
                 return html`<p>probe</p>`;
@@ -202,7 +202,7 @@ describe("useRouter", () => {
         class Probe extends NixComponent {
             seen: unknown;
             onInit() {
-                this.seen = useRouter();
+                this.seen = nixRouter();
             }
             render() {
                 return html`<span>inside</span>`;
@@ -229,7 +229,7 @@ describe("useRouter", () => {
 
         class Shell extends NixComponent {
             render() {
-                const router = useRouter();
+                const router = nixRouter();
                 return html`<span class="path">${() => router.current.value}</span>`;
             }
         }
@@ -928,12 +928,12 @@ describe("scroll restoration", () => {
     });
 });
 
-// ── useRouter Errors ──────────────────────────────────────────────────────────
+// ── nixRouter Errors ──────────────────────────────────────────────────────────
 
-describe("useRouter errors", () => {
+describe("nixRouter errors", () => {
     it("throws if called before createRouter", () => {
         _resetRouter();
-        expect(() => useRouter()).toThrow(/No active router/);
+        expect(() => nixRouter()).toThrow(/No active router/);
     });
 });
 

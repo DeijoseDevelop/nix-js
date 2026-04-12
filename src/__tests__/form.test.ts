@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import {
-    useField,
-    useFieldArray,
+    nixField,
+    nixFieldArray,
     createForm,
     required,
     minLength,
@@ -14,6 +14,7 @@ import {
     validators,
     extendValidators,
 } from "../nix/form";
+import { effect } from "../nix/reactivity";
 
 // ── Validators ────────────────────────────────────────────────────────────────
 
@@ -114,33 +115,33 @@ describe("validators", () => {
     });
 });
 
-// ── useField ──────────────────────────────────────────────────────────────────
+// ── nixField ──────────────────────────────────────────────────────────────────
 
-describe("useField", () => {
+describe("nixField", () => {
     it("initializes with given value", () => {
-        const f = useField("hello");
+        const f = nixField("hello");
         expect(f.value.value).toBe("hello");
     });
 
     it("starts untouched and not dirty", () => {
-        const f = useField("");
+        const f = nixField("");
         expect(f.touched.value).toBe(false);
         expect(f.dirty.value).toBe(false);
     });
 
     it("error is null before touched/dirty", () => {
-        const f = useField("", [required()]);
+        const f = nixField("", [required()]);
         expect(f.error.value).toBeNull();
     });
 
     it("shows error after touched", () => {
-        const f = useField("", [required()]);
+        const f = nixField("", [required()]);
         f.onBlur();
         expect(f.error.value).toBe("Required");
     });
 
     it("shows error after dirty via onInput", () => {
-        const f = useField("hello", [minLength(10)], "input");
+        const f = nixField("hello", [minLength(10)], "input");
         const event = new Event("input");
         Object.defineProperty(event, "target", { value: { value: "hi" } });
         f.onInput(event);
@@ -149,7 +150,7 @@ describe("useField", () => {
     });
 
     it("reset() restores initial state", () => {
-        const f = useField("abc", [required()]);
+        const f = nixField("abc", [required()]);
         (f.value as { value: string }).value = "changed";
         f.touched.value = true;
         f.dirty.value = true;
@@ -160,14 +161,14 @@ describe("useField", () => {
     });
 
     it("_setExternalError injects server-side error", () => {
-        const f = useField("test");
+        const f = nixField("test");
         f._setExternalError("Email taken");
         expect(f.error.value).toBe("Email taken");
         expect(f.touched.value).toBe(true);
     });
 
     it("external error clears on next input", () => {
-        const f = useField("test");
+        const f = nixField("test");
         f._setExternalError("Server error");
         const event = new Event("input");
         Object.defineProperty(event, "target", { value: { value: "new" } });
@@ -176,37 +177,37 @@ describe("useField", () => {
     });
 
     it("coerce handles non-input event targets gracefully", () => {
-        const field = useField("default");
+        const field = nixField("default");
         const fakeEvent = { target: document.createElement("div") } as unknown as Event;
         field.onInput(fakeEvent);
         expect(field.value.value).toBe("default");
     });
 
     it("coerce handles null event target gracefully", () => {
-        const field = useField("fallback");
+        const field = nixField("fallback");
         const fakeEvent = { target: null } as unknown as Event;
         field.onInput(fakeEvent);
         expect(field.value.value).toBe("fallback");
     });
 });
 
-// ── useField — validateOn ─────────────────────────────────────────────────────
+// ── nixField — validateOn ─────────────────────────────────────────────────────
 
-describe("useField — validateOn", () => {
+describe("nixField — validateOn", () => {
     describe('validateOn: "blur" (default)', () => {
         it("does not show error before blur", () => {
-            const f = useField("", [required()], "blur");
+            const f = nixField("", [required()], "blur");
             expect(f.error.value).toBeNull();
         });
 
         it("shows error after blur", () => {
-            const f = useField("", [required()], "blur");
+            const f = nixField("", [required()], "blur");
             f.onBlur();
             expect(f.error.value).toBeTruthy();
         });
 
         it("does not show error after input only (no blur)", () => {
-            const f = useField("ok", [minLength(10)], "blur");
+            const f = nixField("ok", [minLength(10)], "blur");
             const event = new Event("input");
             Object.defineProperty(event, "target", { value: { value: "hi" } });
             f.onInput(event);
@@ -217,12 +218,12 @@ describe("useField — validateOn", () => {
 
     describe('validateOn: "input"', () => {
         it("does not show error before any interaction", () => {
-            const f = useField("", [required()], "input");
+            const f = nixField("", [required()], "input");
             expect(f.error.value).toBeNull();
         });
 
         it("shows error immediately after input", () => {
-            const f = useField("ok", [minLength(10)], "input");
+            const f = nixField("ok", [minLength(10)], "input");
             const event = new Event("input");
             Object.defineProperty(event, "target", { value: { value: "hi" } });
             f.onInput(event);
@@ -230,13 +231,13 @@ describe("useField — validateOn", () => {
         });
 
         it("shows error after blur too", () => {
-            const f = useField("", [required()], "input");
+            const f = nixField("", [required()], "input");
             f.onBlur();
             expect(f.error.value).toBeTruthy();
         });
 
         it("clears error when value becomes valid", () => {
-            const f = useField("", [required()], "input");
+            const f = nixField("", [required()], "input");
             // First input: invalid
             const bad = new Event("input");
             Object.defineProperty(bad, "target", { value: { value: "" } });
@@ -252,7 +253,7 @@ describe("useField — validateOn", () => {
 
     describe('validateOn: "submit"', () => {
         it("does not show error before submit, even after blur and input", () => {
-            const f = useField("", [required()], "submit");
+            const f = nixField("", [required()], "submit");
             f.onBlur();
             const event = new Event("input");
             Object.defineProperty(event, "target", { value: { value: "" } });
@@ -261,13 +262,13 @@ describe("useField — validateOn", () => {
         });
 
         it("shows error after _forceVisible()", () => {
-            const f = useField("", [required()], "submit");
+            const f = nixField("", [required()], "submit");
             f._forceVisible();
             expect(f.error.value).toBeTruthy();
         });
 
         it("reset() clears _submitted flag — error hidden again", () => {
-            const f = useField("", [required()], "submit");
+            const f = nixField("", [required()], "submit");
             f._forceVisible();
             expect(f.error.value).toBeTruthy();
             f.reset();
@@ -705,37 +706,37 @@ describe("createForm — dispose()", () => {
     });
 });
 
-// ── useFieldArray ─────────────────────────────────────────────────────────────
+// ── nixFieldArray ─────────────────────────────────────────────────────────────
 
-describe("useFieldArray", () => {
+describe("nixFieldArray", () => {
     it("initializes with the given items", () => {
-        const arr = useFieldArray([{ name: "a" }, { name: "b" }]);
+        const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
         expect(arr.fields.value).toHaveLength(2);
         expect(arr.fields.value[0].name.value.value).toBe("a");
         expect(arr.fields.value[1].name.value.value).toBe("b");
     });
 
     it("length signal reflects the current count", () => {
-        const arr = useFieldArray([{ name: "x" }]);
+        const arr = nixFieldArray([{ name: "x" }]);
         expect(arr.length.value).toBe(1);
     });
 
     it("starts with empty array when initialItems is empty", () => {
-        const arr = useFieldArray<{ name: string }>([]);
+        const arr = nixFieldArray<{ name: string }>([]);
         expect(arr.fields.value).toHaveLength(0);
         expect(arr.length.value).toBe(0);
     });
 
     describe("append()", () => {
         it("adds a new group at the end", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             arr.append({ name: "b" });
             expect(arr.fields.value).toHaveLength(2);
             expect(arr.fields.value[1].name.value.value).toBe("b");
         });
 
         it("new group has independent field state", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             arr.append({ name: "b" });
             arr.fields.value[1].name.onBlur();
             expect(arr.fields.value[0].name.touched.value).toBe(false);
@@ -743,7 +744,7 @@ describe("useFieldArray", () => {
         });
 
         it("length updates reactively", () => {
-            const arr = useFieldArray<{ name: string }>([]);
+            const arr = nixFieldArray<{ name: string }>([]);
             const lengths: number[] = [];
             // Track length changes via reading the signal
             arr.append({ name: "a" });
@@ -756,7 +757,7 @@ describe("useFieldArray", () => {
 
     describe("remove()", () => {
         it("removes the item at the given index", () => {
-            const arr = useFieldArray([{ name: "a" }, { name: "b" }, { name: "c" }]);
+            const arr = nixFieldArray([{ name: "a" }, { name: "b" }, { name: "c" }]);
             arr.remove(1);
             expect(arr.fields.value).toHaveLength(2);
             expect(arr.fields.value[0].name.value.value).toBe("a");
@@ -764,14 +765,14 @@ describe("useFieldArray", () => {
         });
 
         it("does nothing for out-of-range index", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             expect(() => arr.remove(5)).not.toThrow();
             expect(() => arr.remove(-1)).not.toThrow();
             expect(arr.fields.value).toHaveLength(1);
         });
 
         it("removing the only item results in empty array", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             arr.remove(0);
             expect(arr.fields.value).toHaveLength(0);
         });
@@ -779,7 +780,7 @@ describe("useFieldArray", () => {
 
     describe("move()", () => {
         it("moves an item from one index to another", () => {
-            const arr = useFieldArray([{ name: "a" }, { name: "b" }, { name: "c" }]);
+            const arr = nixFieldArray([{ name: "a" }, { name: "b" }, { name: "c" }]);
             arr.move(0, 2);
             expect(arr.fields.value[0].name.value.value).toBe("b");
             expect(arr.fields.value[1].name.value.value).toBe("c");
@@ -787,20 +788,20 @@ describe("useFieldArray", () => {
         });
 
         it("move(i, i) is a no-op", () => {
-            const arr = useFieldArray([{ name: "a" }, { name: "b" }]);
+            const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
             arr.move(0, 0);
             expect(arr.fields.value[0].name.value.value).toBe("a");
         });
 
         it("does nothing for out-of-range indices", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             expect(() => arr.move(0, 5)).not.toThrow();
             expect(() => arr.move(-1, 0)).not.toThrow();
             expect(arr.fields.value).toHaveLength(1);
         });
 
         it("preserves field state after move", () => {
-            const arr = useFieldArray([{ name: "a" }, { name: "b" }]);
+            const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
             arr.fields.value[0].name.onBlur(); // touch first item
             arr.move(0, 1);
             // The moved group should still have touched=true
@@ -811,14 +812,14 @@ describe("useFieldArray", () => {
 
     describe("replace()", () => {
         it("replaces the item at the given index with new values", () => {
-            const arr = useFieldArray([{ name: "a" }, { name: "b" }]);
+            const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
             arr.replace(0, { name: "replaced" });
             expect(arr.fields.value[0].name.value.value).toBe("replaced");
             expect(arr.fields.value[1].name.value.value).toBe("b");
         });
 
         it("new group starts with clean state (untouched, not dirty)", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             arr.fields.value[0].name.onBlur();
             arr.replace(0, { name: "fresh" });
             expect(arr.fields.value[0].name.touched.value).toBe(false);
@@ -826,7 +827,7 @@ describe("useFieldArray", () => {
         });
 
         it("does nothing for out-of-range index", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             expect(() => arr.replace(5, { name: "x" })).not.toThrow();
             expect(arr.fields.value).toHaveLength(1);
         });
@@ -834,7 +835,7 @@ describe("useFieldArray", () => {
 
     describe("reset()", () => {
         it("restores the initial items", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             arr.append({ name: "b" });
             arr.append({ name: "c" });
             arr.reset();
@@ -843,16 +844,16 @@ describe("useFieldArray", () => {
         });
 
         it("new groups after reset start with clean state", () => {
-            const arr = useFieldArray([{ name: "a" }]);
+            const arr = nixFieldArray([{ name: "a" }]);
             arr.fields.value[0].name.onBlur();
             arr.reset();
             expect(arr.fields.value[0].name.touched.value).toBe(false);
         });
     });
 
-    describe("validators in useFieldArray", () => {
+    describe("validators in nixFieldArray", () => {
         it("applies validators to each group's fields", () => {
-            const arr = useFieldArray(
+            const arr = nixFieldArray(
                 [{ name: "" }],
                 { name: [required()] }
             );
@@ -861,7 +862,7 @@ describe("useFieldArray", () => {
         });
 
         it("new groups from append() also have validators", () => {
-            const arr = useFieldArray(
+            const arr = nixFieldArray(
                 [{ name: "ok" }],
                 { name: [required()] }
             );
@@ -871,9 +872,9 @@ describe("useFieldArray", () => {
         });
     });
 
-    describe("validateOn in useFieldArray", () => {
+    describe("validateOn in nixFieldArray", () => {
         it('validateOn "input" applies to all group fields', () => {
-            const arr = useFieldArray(
+            const arr = nixFieldArray(
                 [{ name: "" }],
                 { name: [required()] },
                 "input"
@@ -885,7 +886,7 @@ describe("useFieldArray", () => {
         });
 
         it('validateOn "submit" hides errors until _forceVisible()', () => {
-            const arr = useFieldArray(
+            const arr = nixFieldArray(
                 [{ name: "" }],
                 { name: [required()] },
                 "submit"
@@ -899,8 +900,113 @@ describe("useFieldArray", () => {
 
     describe("_dispose()", () => {
         it("does not throw", () => {
-            const arr = useFieldArray([{ name: "a" }, { name: "b" }]);
+            const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
             expect(() => arr._dispose()).not.toThrow();
         });
+    });
+});
+
+describe("createForm.canSubmit", () => {
+    it("is false initially when required fields are empty", () => {
+        const form = createForm(
+            { email: "", password: "" },
+            { validators: { email: [required()], password: [required()] } }
+        );
+        expect(form.canSubmit.value).toBe(false);
+    });
+
+    it("becomes true only when ALL fields are valid", () => {
+        const form = createForm(
+            { email: "", password: "" },
+            { validators: { email: [required()], password: [required()] } }
+        );
+        form.fields.email.value.value = "a@b.com";
+        expect(form.canSubmit.value).toBe(false); // password aún vacío
+        form.fields.password.value.value = "123";
+        expect(form.canSubmit.value).toBe(true);
+    });
+
+    it("does not depend on touched/dirty (works with validateOn: blur)", () => {
+        const form = createForm(
+            { email: "" },
+            { validateOn: "blur", validators: { email: [required()] } }
+        );
+        // Sin tocar nada, valid (visible) es true pero canSubmit es false
+        expect(form.valid.value).toBe(true);
+        expect(form.canSubmit.value).toBe(false);
+    });
+
+    it("reflects external errors from setErrors", () => {
+        const form = createForm(
+            { email: "" },
+            { validators: { email: [] } }
+        );
+        expect(form.canSubmit.value).toBe(true);
+        form.setErrors({ email: "taken" });
+        expect(form.canSubmit.value).toBe(false);
+        form.fields.email.value.value = "new@b.com";
+        expect(form.canSubmit.value).toBe(true);
+    });
+
+    it("only notifies subscribers on boolean transitions", () => {
+        const form = createForm(
+            { email: "", password: "" },
+            { validators: { email: [required()], password: [required()] } }
+        );
+        let calls = 0;
+        const dispose = effect(() => {
+            form.canSubmit.value;
+            calls++;
+        });
+        calls = 0; // ignore initial run
+
+        form.fields.email.value.value = "a"; // sigue inválido (password vacío)
+        form.fields.email.value.value = "ab";
+        form.fields.email.value.value = "abc";
+        expect(calls).toBe(0); // no transición
+
+        form.fields.password.value.value = "x"; // ahora sí transita a true
+        expect(calls).toBe(1);
+
+        dispose();
+        form.dispose();
+    });
+
+    it("does not run options.validate (schema) reactively", () => {
+        let schemaCalls = 0;
+        const form = createForm(
+            { email: "" },
+            {
+                validate: (v) => {
+                    schemaCalls++;
+                    return v.email ? null : { email: "required" };
+                },
+            }
+        );
+        // Leer canSubmit varias veces
+        form.canSubmit.value;
+        form.fields.email.value.value = "x";
+        form.canSubmit.value;
+        expect(schemaCalls).toBe(0); // schema solo en submit
+    });
+
+    it("clears external errors on programmatic value writes", () => {
+        const form = createForm({ email: "" });
+        form.setErrors({ email: "taken" });
+        expect(form.canSubmit.value).toBe(false);
+
+        // Programmatic write — no DOM event, no onInput
+        form.fields.email.value.value = "fresh@example.com";
+        expect(form.canSubmit.value).toBe(true);
+        expect(form.fields.email.rawError.value).toBe(null);
+    });
+
+    it("clears external errors on DOM input events", () => {
+        const form = createForm({ email: "" });
+        form.setErrors({ email: "taken" });
+
+        const fakeEvent = { target: { value: "fresh@example.com" } } as unknown as Event;
+        form.fields.email.onInput(fakeEvent);
+        expect(form.canSubmit.value).toBe(true);
     });
 });

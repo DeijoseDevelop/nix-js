@@ -44,9 +44,9 @@ All notable changes to this project will be documented in this file.
 
 ## v1.9.2
 
-- **feat(router): DI-first router resolution with legacy fallback** — `useRouter()` now resolves an injected router from context first (via `RouterKey`) and falls back to the singleton created by `createRouter()` when no DI router is available.
+- **feat(router): DI-first router resolution with legacy fallback** — `nixRouter()` now resolves an injected router from context first (via `RouterKey`) and falls back to the singleton created by `createRouter()` when no DI router is available.
 - **feat(component): router injection at mount root** — `mount(component, container, { router })` now provides the router instance to the mounted tree, including `NixComponent` and `NixTemplate` roots.
-- **refactor(router): RouterView and Link consume `useRouter()`** — internal router consumers now respect DI-scoped router instances, enabling isolated parallel app trees (tests/micro-frontends).
+- **refactor(router): RouterView and Link consume `nixRouter()`** — internal router consumers now respect DI-scoped router instances, enabling isolated parallel app trees (tests/micro-frontends).
 - **docs: README and npm README router DI guidance** — quick-start and API summary now include `mount(..., { router })` and `RouterKey`, with explicit backward-compatibility notes.
 
 ## v1.9.1
@@ -122,15 +122,15 @@ Benchmark results (1,000 rows, compared against v1.3.0 stable baseline):
 
 ## v1.7.1
 
-- **fix(exports): missing useFieldArray** — added `useFieldArray` and its related types to the public library entry points.
+- **fix(exports): missing nixFieldArray** — added `nixFieldArray` and its related types to the public library entry points.
 - **feat(store): added $patch and $state** — included `$patch` and `$state` in the store implementation and documentation.
 
 ## v1.7.0
 
-- **feat(form): dynamic field arrays** — added `useFieldArray` hook for managing lists of fields with `append`, `remove`, `move`, and `replace` operations.
-- **feat(form): validation modes** — added `validateOn` option (`blur`, `input`, `submit`) to `useField` and `createForm` for fine-grained control over when errors appear.
+- **feat(form): dynamic field arrays** — added `nixFieldArray` hook for managing lists of fields with `append`, `remove`, `move`, and `replace` operations.
+- **feat(form): validation modes** — added `validateOn` option (`blur`, `input`, `submit`) to `nixField` and `createForm` for fine-grained control over when errors appear.
 - **feat(form): enhanced state tracking** — added `isSubmitting`, `submitCount`, and a global `touched` signal to `createForm`.
-- **feat(form): memory management** — added `dispose()` methods to `createForm` and `useFieldArray` to explicitly clean up internal computed signals.
+- **feat(form): memory management** — added `dispose()` methods to `createForm` and `nixFieldArray` to explicitly clean up internal computed signals.
 - **feat(form): validation coercion safety** — improved `onInput` event handling to gracefully handle non-input event targets.
 
 ## v1.6.1

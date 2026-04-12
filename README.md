@@ -44,7 +44,7 @@ This is optional: `import { ... } from "@deijose/nix-js"` remains fully supporte
 ## Quick Start
 
 ```typescript
-import { signal, html, NixTemplate, NixComponent, mount, createRouter, RouterView, Link, useRouter } from "@deijose/nix-js";
+import { signal, html, NixTemplate, NixComponent, mount, createRouter, RouterView, Link, nixRouter } from "@deijose/nix-js";
 
 // --- Pages as function components (NixTemplate) ---
 // Plain functions returning html`` are recommended for pages and
@@ -60,7 +60,7 @@ function HomePage(): NixTemplate {
 }
 
 function UserPage(): NixTemplate {
-  const router = useRouter();
+  const router = nixRouter();
   return html`<h1>User: ${() => router.params.value.id}</h1>`;
 }
 
@@ -115,7 +115,7 @@ mount(AppA(), "#app-a", { router: routerA });
 mount(AppB(), "#app-b", { router: routerB });
 ```
 
-`useRouter()` now resolves in this order:
+`nixRouter()` now resolves in this order:
 
 1. injected router from context (`mount(..., { router })`)
 2. singleton fallback (legacy `createRouter(...)` behavior)
@@ -289,8 +289,8 @@ Everything ships in a single zero-dependency import:
 | **Reactivity** | `signal`, `computed`, `effect`, `batch`, `watch`, `untrack`, `nextTick` |
 | **Templates** | `` html` ` ``, `repeat`, `ref`, `portal`, `transition`, `showWhen` |
 | **Components** | `NixTemplate` (function components), `NixComponent` (lifecycle class), `mount`, children & named slots |
-| **Router** | `createRouter` (meta + scrollBehavior + mode), `RouterView`, `Link`, `useRouter`, `RouterKey`, guards, nested routes, named routes (`name` + `navigate({ name })`), `mount(..., { router })` |
-| **Forms** | `useField`, `createForm` (including nested dot-path fields), built-in validators, Zod/Valibot interop |
+| **Router** | `createRouter` (meta + scrollBehavior + mode), `RouterView`, `Link`, `nixRouter`, `RouterKey`, guards, nested routes, named routes (`name` + `navigate({ name })`), `mount(..., { router })` |
+| **Forms** | `nixField`, `createForm` (including nested dot-path fields), built-in validators, Zod/Valibot interop |
 | **State** | `createStore` (actions + getters), `$subscribe`, `provide`, `inject`, `createInjectionKey` |
 | **Async** | `suspend` (with `invalidate` for re-fetching), `lazy` |
 | **Error handling** | `createErrorBoundary` |

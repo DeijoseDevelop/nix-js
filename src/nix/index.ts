@@ -8,7 +8,7 @@ export { NixComponent } from "./lifecycle";
 export type { NixChildren } from "./lifecycle";
 export { createStore } from "./store";
 export type { Store, StoreSignals } from "./store";
-export { createRouter, RouterView, Link, useRouter, RouterKey } from "./router";
+export { createRouter, RouterView, Link, nixRouter, RouterKey } from "./router";
 export type {
     Router,
     NamedRouteLocation,
@@ -28,8 +28,8 @@ export type { SuspenseOptions } from "./async";
 export { provide, inject, createInjectionKey } from "./context";
 export type { InjectionKey } from "./context";
 export {
-    useField,
-    useFieldArray,
+    nixField,
+    nixFieldArray,
     createForm,
     required,
     minLength,

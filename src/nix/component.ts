@@ -80,7 +80,7 @@ export function mount(
         return (component as NixTemplate).mount(container);
     }
 
-    // For template roots, create a context frame so useRouter()/inject() can resolve.
+    // For template roots, create a context frame so nixRouter()/inject() can resolve.
     const el = _resolveContainer(container);
     _pushComponentContext();
     let cleanup: () => void;
