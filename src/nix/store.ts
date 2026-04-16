@@ -1,42 +1,151 @@
-import { Signal, signal, watch } from "./reactivity";
+import {
+    Signal,
+    signal,
+    computed,
+    batch,
+    watch,
+    type WatchOptions,
+} from "./reactivity";
 
-// --- Types ---
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
-/** Maps each state property to its corresponding Signal. */
 export type StoreSignals<T extends Record<string, unknown>> = {
     readonly [K in keyof T]: Signal<T[K]>;
 };
 
-/** Subscriber callback used by `$subscribe`. */
-export type StoreSubscriber<T extends Record<string, unknown>> = (
-    key: keyof T,
-    newValue: T[keyof T],
-    oldValue: T[keyof T] | undefined,
-) => void;
+export type ReadonlySignal<T> = Omit<Signal<T>, "value" | "update" | "dispose"> & {
+    readonly value: T;
+    readonly dispose: never;
+};
 
-/** The store as seen by the consumer: signals + actions + getters + built-ins. */
+export type StoreGetters<G extends Record<string, Signal<unknown>>> = {
+    readonly [K in keyof G]: ReadonlySignal<
+        G[K] extends Signal<infer V> ? V : never
+    >;
+};
+
 export type Store<
     T extends Record<string, unknown>,
     A extends Record<string, unknown> = Record<never, never>,
     G extends Record<string, Signal<unknown>> = Record<never, never>,
-> = StoreSignals<T> & A & G & {
-    /** The current state snapshot. Reactive. */
-    readonly $state: T;
-    /** Resets all signals to their initial values. */
-    $reset(): void;
-    /** Patches the store with a partial state. */
-    $patch(partial: Partial<T>): void;
-    /** Subscribes to all store signal changes. Returns an unsubscribe function. */
-    $subscribe(listener: StoreSubscriber<T>): () => void;
-};
+> = StoreSignals<T> &
+    A &
+    StoreGetters<G> & {
+        readonly $id: string;
+        /** Current snapshot — reading inside effect/computed creates subscription. */
+        readonly $state: T;
+        /**
+         * The computed Signal that backs $state.
+         * Plugins receive this to compose new reactive nodes on top.
+         * This is what makes the plugin system reactive-native:
+         * no hooks, just signals all the way down.
+         */
+        readonly $stateSignal: ReadonlySignal<T>;
+        /** Reset to initial values (batched). */
+        $reset(): void;
+        /** Partial update (batched). */
+        $patch(partial: Partial<T>): void;
+        /**
+         * Watches state changes. This is exactly watch() from reactivity.ts —
+         * no new primitive to learn.
+         */
+        $watch(cb: (next: T, prev: T | undefined) => void, options?: WatchOptions): () => void;
+        /** Disposes the store and runs all plugin cleanups. */
+        $dispose(): void;
+    };
 
-// --- createStore ---
+// ---------------------------------------------------------------------------
+// Plugin type
+// ---------------------------------------------------------------------------
 
 /**
- * Creates a reactive global store. Each property becomes a Signal.
- * Optional `actionsFactory` receives the signals and returns action methods.
- * Optional `gettersFactory` receives the signals and returns derived getter signals.
+ * A NixPlugin is a function that receives the assembled store and
+ * optionally returns a cleanup function.
+ *
+ * There are NO lifecycle hooks. The plugin extends the signal graph directly:
+ *
+ *   watch(store.$stateSignal, ...)        — react to any state change
+ *   computed(() => store.someSignal.value) — derive new nodes
+ *   store.mySignal = signal(...)           — attach new reactive state
+ *   wrapMethod(store, '$patch', ...)       — intercept mutations
+ *
+ * Because plugins only use Nix.js primitives, they compose with each other
+ * naturally — one plugin can observe a signal that another plugin added.
  */
+export type NixPlugin<
+    T extends Record<string, unknown>,
+    A extends Record<string, unknown> = Record<never, never>,
+    G extends Record<string, Signal<unknown>> = Record<never, never>,
+> = (store: Store<T, A, G>) => (() => void) | void;
+
+export interface CreateStoreOptions<
+    T extends Record<string, unknown>,
+    A extends Record<string, unknown> = Record<never, never>,
+    G extends Record<string, Signal<unknown>> = Record<never, never>,
+> {
+    name?: string;
+    plugins?: NixPlugin<T, A, G>[];
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+const RESERVED = new Set([
+    "$id", "$state", "$stateSignal",
+    "$reset", "$patch", "$watch", "$dispose",
+]);
+
+function assertKey(key: string): void {
+    if (key === "__proto__" || key === "constructor" || key === "prototype") {
+        throw new Error(`[Nix] Store key "${key}" is not allowed for security reasons.`);
+    }
+    if (RESERVED.has(key)) throw new Error(`[Nix] Store key "${key}" is reserved.`);
+}
+
+function warnReserved(key: string, ctx: "action" | "getter"): boolean {
+    if (!RESERVED.has(key)) return true;
+    console.warn(`[Nix] Store ${ctx} "${key}" is reserved and will be ignored.`);
+    return false;
+}
+
+function makeReadonly<T>(sig: Signal<T>, label: string): ReadonlySignal<T> {
+    const ro = Object.create(sig) as ReadonlySignal<T>;
+
+    Object.defineProperty(ro, "dispose", {
+        value: () => {
+            throw new Error(
+                `[Nix] Cannot dispose readonly getter "${label}". ` +
+                `Dispose the store instead with store.$dispose().`
+            );
+        },
+        writable: false,
+        configurable: false,
+    });
+
+    Object.defineProperty(ro, "value", {
+        get() { return sig.value; },
+        set() { throw new Error(`[Nix] "${label}" is read-only.`); },
+        configurable: false,
+    });
+
+    Object.defineProperty(ro, "update", {
+        value: () => {
+            throw new Error(`[Nix] "${label}" is read-only.`);
+        },
+        writable: false,
+        configurable: false,
+    });
+
+    return ro;
+}
+
+// ---------------------------------------------------------------------------
+// createStore
+// ---------------------------------------------------------------------------
+
 export function createStore<
     T extends Record<string, unknown>,
     A extends Record<string, unknown> = Record<never, never>,
@@ -45,96 +154,147 @@ export function createStore<
     initialState: T,
     actionsFactory?: (signals: StoreSignals<T>) => A,
     gettersFactory?: (signals: StoreSignals<T>) => G,
+    options: CreateStoreOptions<T, A, G> = {},
 ): Store<T, A, G> {
-    const signals = {} as Record<string, Signal<unknown>>;
-    const RESERVED = new Set(["$reset", "$patch", "$state", "$subscribe"]);
+    const { name = "store", plugins = [] } = options;
 
-    for (const key of Object.keys(initialState)) {
-        if (RESERVED.has(key)) {
-            throw new Error(`[Nix] Store key "${key}" is reserved.`);
-        }
+    const keys = Object.keys(initialState) as Array<keyof T & string>;
+
+    const signals = {} as { [K in keyof T]: Signal<T[K]> };
+    for (const key of keys) {
+        assertKey(key);
         signals[key] = signal(initialState[key]);
     }
+    const typedSignals: StoreSignals<T> = signals;
 
-    const typedSignals = signals as unknown as StoreSignals<T>;
-
-    function $reset() {
-        for (const key of Object.keys(initialState)) {
-            (signals[key] as Signal<unknown>).value = initialState[key];
+    const _stateComputed = computed<T>(() => {
+        const snap = {} as T;
+        for (const key of keys) {
+            snap[key] = signals[key].value;
         }
+        return snap;
+    });
+
+    const $stateSignal = makeReadonly(_stateComputed, `store "${name}".$stateSignal`);
+
+    let _baseline: T;
+    try {
+        _baseline = structuredClone(initialState);
+    } catch (e) {
+        throw new Error(
+            `[Nix] Store "${name}" initialState contains non-serializable data ` +
+            `(functions, DOM nodes, Symbols, or WeakRefs). ` +
+            `Remove these before creating the store. Original error: ${e}`
+        );
     }
 
-    function $patch(partial: Partial<T>) {
-        for (const key of Object.keys(partial)) {
-            if (key in signals) {
-                (signals[key] as Signal<unknown>).value = partial[key as keyof T];
+    function $reset(): void {
+        batch(() => {
+            for (const key of keys) {
+                signals[key].value = _baseline[key];
             }
-        }
+        });
     }
 
-    function $subscribe(listener: StoreSubscriber<T>): () => void {
-        const unsubs: Array<() => void> = [];
-        for (const key of Object.keys(initialState) as Array<keyof T & string>) {
-            const sig = typedSignals[key as keyof T];
-            const unsub = watch(sig, (newValue, oldValue) => {
-                listener(
-                    key as keyof T,
-                    newValue as T[keyof T],
-                    oldValue as T[keyof T] | undefined,
-                );
-            });
-            unsubs.push(unsub);
-        }
+    function $patch(partial: Partial<T>): void {
+        batch(() => {
+            for (const key of Object.keys(partial) as Array<keyof T & string>) {
+                if (Object.prototype.hasOwnProperty.call(signals, key)) {
+                    signals[key].value = partial[key] as T[keyof T & string];
+                }
+            }
+        });
+    }
 
-        return () => {
-            for (const unsub of unsubs) unsub();
-        };
+    function $watch(
+        cb: (next: T, prev: T | undefined) => void,
+        opts?: WatchOptions,
+    ): () => void {
+        return watch(_stateComputed, cb, opts);
     }
 
     const store = Object.assign(
         Object.create(null) as object,
         typedSignals,
-        {
-            $reset,
-            $patch,
-            $subscribe,
-        },
+        { $reset, $patch, $watch },
     ) as Store<T, A, G>;
 
-    Object.defineProperty(store, "$state", {
-        get(): T {
-            const snap = {} as T;
-            for (const key in signals) {
-                (snap as Record<string, unknown>)[key] =
-                    (signals[key] as Signal<unknown>).value;
-            }
-            return snap;
-        },
-        enumerable: true,
-        configurable: false,
+    Object.defineProperty(store, "$id", {
+        value: name, writable: false, enumerable: false, configurable: false,
     });
 
+    Object.defineProperty(store, "$state", {
+        get(): T { return _stateComputed.value; },
+        enumerable: true, configurable: false,
+    });
+
+    Object.defineProperty(store, "$stateSignal", {
+        value: $stateSignal, writable: false, enumerable: false, configurable: false,
+    });
+
+    const occupiedKeys = new Set<string>([...keys, ...Array.from(RESERVED)]);
+
     if (actionsFactory) {
-        const actions = actionsFactory(typedSignals);
-        for (const key of Object.keys(actions)) {
-            if (RESERVED.has(key)) {
-                console.warn(`[Nix] Store action name "${key}" is reserved and will be ignored.`);
+        const raw = actionsFactory(typedSignals);
+        for (const key of Object.keys(raw)) {
+            if (!warnReserved(key, "action")) continue;
+            if (occupiedKeys.has(key)) {
+                console.warn(
+                    `[Nix] Store "${name}": action "${key}" collides with an existing ` +
+                    `signal or getter and will be ignored.`,
+                );
                 continue;
             }
-            (store as Record<string, unknown>)[key] = (actions as Record<string, unknown>)[key];
+            occupiedKeys.add(key);
+            (store as Record<string, unknown>)[key] =
+                (raw as Record<string, unknown>)[key];
         }
     }
 
     if (gettersFactory) {
-        const getters = gettersFactory(typedSignals);
-        for (const key of Object.keys(getters)) {
-            if (RESERVED.has(key)) {
-                console.warn(`[Nix] Store getter name "${key}" is reserved and will be ignored.`);
+        const raw = gettersFactory(typedSignals);
+        for (const key of Object.keys(raw)) {
+            if (!warnReserved(key, "getter")) continue;
+            if (occupiedKeys.has(key)) {
+                console.warn(
+                    `[Nix] Store "${name}": getter "${key}" collides with an existing ` +
+                    `signal or action and will be ignored.`,
+                );
                 continue;
             }
-            (store as Record<string, unknown>)[key] = (getters as Record<string, unknown>)[key];
+
+            const sig = (raw as Record<string, Signal<unknown>>)[key];
+
+            if (!(sig instanceof Signal)) {
+                throw new TypeError(
+                    `[Nix] Store "${name}": getter "${key}" must return a Signal ` +
+                    `(wrap it with computed()). Got: ${typeof sig}`
+                );
+            }
+
+            occupiedKeys.add(key);
+            (store as Record<string, unknown>)[key] =
+                makeReadonly(sig, `getter "${key}" in store "${name}"`);
         }
     }
+
+    const cleanups: Array<() => void> = [() => _stateComputed.dispose()];
+
+    for (const plugin of plugins) {
+        try {
+            const cleanup = plugin(store);
+            if (typeof cleanup === "function") cleanups.push(cleanup);
+        } catch (error) {
+            console.error(
+                `[Nix] Plugin initialization failed for store "${name}":`,
+                error
+            );
+        }
+    }
+
+    (store as Record<string, unknown>)["$dispose"] = () => {
+        for (const fn of cleanups) fn();
+    };
 
     return store;
 }
