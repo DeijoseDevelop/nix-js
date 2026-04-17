@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.2.0
+
+- **feat(store)!: reactive plugin system with lifecycle support** — added `NixPlugin` architecture enabling decoupled middleware like persistence, devtools, and sync. Plugins can return a cleanup function called on store disposal.
+- **feat(store)!: new `$watch`, `$id`, and `$dispose` APIs** — replaced `$subscribe` with `$watch` (using core reactivity) and added store identification and resource cleanup mechanisms.
+- **feat(store): atomic state updates via `batch()`** — `$reset` and `$patch` are now internally batched to prevent unnecessary reactive cycles and improve performance.
+- **feat(store): raw state signal accessibility** — exposed `$stateSignal` (computed) so power users and plugins can derive custom reactive graphs from the store root.
+- **fix(store): prototype pollution hardening** — hardened `assertKey` to explicitly block `__proto__`, `constructor`, and `prototype` keys.
+- **fix(store): robust state serialization validation** — `initialState` is now verified with `structuredClone` (with descriptive error messages) to ensure state remains pure and serializable.
+- **fix(store): read-only signal enforcement** — enhanced `makeReadonly` for getters and `$stateSignal` to provide descriptive errors on mutation or invalid disposal attempts.
+- **fix(store): safe property reflection** — `$patch` now uses `Object.prototype.hasOwnProperty` for safer key detection, avoiding prototype chain leakage.
+- **fix(store): strict getter type validation** — added `instanceof Signal` checks with `TypeError` reporting for getter factory outputs.
+
 ## v2.1.0
 
 - **refactor(api)!: `use*` prefix renamed to `nix*` across the framework** — composables/hooks and related API names now use the `nix` prefix for consistency with package naming.
