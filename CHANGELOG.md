@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.2.2
+
+- **feat(store): native plugins exported as library entries** — `persistPlugin`, `loggerPlugin`, `guardPlugin`, and `bridgePlugin` are now exported from the main package and have their own entry points in `dist/lib/`. This enables better tree-shaking and allows importing them directly as `@deijose/nix-js/plugins`.
+- **feat(store): asynchronous `persistPlugin` with custom storage adapters** — refactored the persistence plugin to support any `StorageAdapter` (compatible with `localStorage`, `sessionStorage`, `AsyncStorage`, etc.). The plugin now handles asynchronous storage operations and includes a `debounce` option to batch high-frequency writes.
+- **core: optimized library build configuration** — updated Vite build to include `plugins.ts` as a library entry point and bumped the version across the ecosystem.
+
 ## v2.2.1
  
 - **refactor(store)!: unified `createStore` options object API** — `actionsFactory` and `gettersFactory` positional arguments have been merged into `CreateStoreOptions` as `actions` and `getters` fields. The new signature is `createStore(initialState, options?)`, eliminating the need to pass `undefined` as a placeholder when only `plugins` or `name` are required.

@@ -27,6 +27,7 @@ export default defineConfig({
                 "router": resolve("src/nix/router.ts"),
                 "form": resolve("src/nix/form.ts"),
                 "store": resolve("src/nix/store.ts"),
+                "plugins": resolve("src/nix/plugins.ts"),
                 "async": resolve("src/nix/async.ts"),
                 "template": resolve("src/nix/template/index.ts"),
                 "component": resolve("src/nix/component.ts"),
