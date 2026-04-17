@@ -15,10 +15,22 @@ export type StoreSignals<T extends Record<string, unknown>> = {
     readonly [K in keyof T]: Signal<T[K]>;
 };
 
-export type ReadonlySignal<T> = Omit<Signal<T>, "value" | "update" | "dispose"> & {
-    readonly value: T;
-    readonly dispose: never;
-};
+export class ReadonlySignal<T> extends Signal<T> {
+    private readonly label: string;
+    constructor(source: Signal<T>, label: string = "ReadonlySignal") {
+        super(source.peek());
+        this.label = label;
+
+        Object.defineProperty(this, "value", {
+            get: () => source.value,
+            set: () => { throw new Error(`[Nix] "${this.label}" is read-only.`); },
+            configurable: false,
+        });
+
+        this.update = () => { throw new Error(`[Nix] "${this.label}" is read-only.`); };
+        this.dispose = () => { throw new Error(`[Nix] Cannot dispose "${this.label}" directly.`); };
+    }
+}
 
 export type StoreGetters<G extends Record<string, Signal<unknown>>> = {
     readonly [K in keyof G]: ReadonlySignal<
@@ -80,12 +92,22 @@ export type NixPlugin<
     G extends Record<string, Signal<unknown>> = Record<never, never>,
 > = (store: Store<T, A, G>) => (() => void) | void;
 
+// ---------------------------------------------------------------------------
+// CreateStoreOptions
+// ---------------------------------------------------------------------------
+
 export interface CreateStoreOptions<
     T extends Record<string, unknown>,
     A extends Record<string, unknown> = Record<never, never>,
     G extends Record<string, Signal<unknown>> = Record<never, never>,
 > {
+    /** Display name for the store. Used in error messages and devtools. */
     name?: string;
+    /** Factory that receives the raw signals and returns action methods. */
+    actions?: (signals: StoreSignals<T>) => A;
+    /** Factory that receives the raw signals and returns computed getters. */
+    getters?: (signals: StoreSignals<T>) => G;
+    /** Plugins to extend the store. Each receives the assembled store. */
     plugins?: NixPlugin<T, A, G>[];
 }
 
@@ -112,34 +134,7 @@ function warnReserved(key: string, ctx: "action" | "getter"): boolean {
 }
 
 function makeReadonly<T>(sig: Signal<T>, label: string): ReadonlySignal<T> {
-    const ro = Object.create(sig) as ReadonlySignal<T>;
-
-    Object.defineProperty(ro, "dispose", {
-        value: () => {
-            throw new Error(
-                `[Nix] Cannot dispose readonly getter "${label}". ` +
-                `Dispose the store instead with store.$dispose().`
-            );
-        },
-        writable: false,
-        configurable: false,
-    });
-
-    Object.defineProperty(ro, "value", {
-        get() { return sig.value; },
-        set() { throw new Error(`[Nix] "${label}" is read-only.`); },
-        configurable: false,
-    });
-
-    Object.defineProperty(ro, "update", {
-        value: () => {
-            throw new Error(`[Nix] "${label}" is read-only.`);
-        },
-        writable: false,
-        configurable: false,
-    });
-
-    return ro;
+    return new ReadonlySignal(sig, label);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,11 +147,14 @@ export function createStore<
     G extends Record<string, Signal<unknown>> = Record<never, never>,
 >(
     initialState: T,
-    actionsFactory?: (signals: StoreSignals<T>) => A,
-    gettersFactory?: (signals: StoreSignals<T>) => G,
     options: CreateStoreOptions<T, A, G> = {},
 ): Store<T, A, G> {
-    const { name = "store", plugins = [] } = options;
+    const {
+        name = "store",
+        actions: actionsFactory,
+        getters: gettersFactory,
+        plugins = [],
+    } = options;
 
     const keys = Object.keys(initialState) as Array<keyof T & string>;
 
