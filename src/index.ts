@@ -30,6 +30,10 @@ export {
     NixComponent,
     // Store
     createStore,
+    persistPlugin,
+    loggerPlugin,
+    guardPlugin,
+    bridgePlugin,
     // Router
     createRouter,
     RouterView,
@@ -76,6 +80,7 @@ export type {
     // Store
     Store,
     StoreSignals,
+    NixPlugin,
     // Router
     Router,
     NamedRouteLocation,
