@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.2.1
+ 
+- **refactor(store)!: unified `createStore` options object API** — `actionsFactory` and `gettersFactory` positional arguments have been merged into `CreateStoreOptions` as `actions` and `getters` fields. The new signature is `createStore(initialState, options?)`, eliminating the need to pass `undefined` as a placeholder when only `plugins` or `name` are required.
+- **feat(store): `ReadonlySignal` as a first-class class** — replaced the structural `type ReadonlySignal<T>` + `makeReadonly()` approach with a proper `ReadonlySignal<T> extends Signal<T>` class. This resolves TypeScript compatibility with `watch()` (which checks `instanceof Signal`) and removes the need for type casts in `bridgePlugin` and other plugin consumers.
+- **fix(store): `bridgePlugin` type error resolved** — `watch(sourceStore.$stateSignal, ...)` no longer produces a type error because `ReadonlySignal<T>` now satisfies `Signal<T>` structurally and at runtime via class inheritance.
+
 ## v2.2.0
 
 - **feat(store)!: reactive plugin system with lifecycle support** — added `NixPlugin` architecture enabling decoupled middleware like persistence, devtools, and sync. Plugins can return a cleanup function called on store disposal.
