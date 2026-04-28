@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.3.0
+
+- **fix(store): type inference restored for `createStore` options-object** — the named `CreateStoreOptions<T, A, G>` interface introduced in v2.2.1 caused TypeScript's generic inference to collapse, leaking the input shape into IDE autocompletion (e.g. `store.options.actions.someAction`, `store.$state.initialState`) instead of resolving to `Store<T, A, G>`. The options type is now declared inline in the `createStore` signature and applies `NoInfer<T>` (TS 5.4+) to factory parameters, so `T` is inferred exclusively from `initialState` and `(s) => ({ ... })` factories receive correctly typed signals without manual annotations.
+- **fix(store): compile-time enforcement of getter immutability** — `ReadonlySignal` already threw at runtime on `.value` assignment, but TypeScript allowed the assignment silently at the type level. `StoreGetters` now uses an `Omit + readonly value` intersection pattern so `store.myGetter.value = x` is rejected by the compiler before reaching runtime.
+- **fix(store): interface-declared state and actions now accepted** — the `T` and `A` generic constraints were relaxed from `Record<string, unknown>` to `object`, allowing user-declared `interface MyState { ... }` to be passed directly without TypeScript rejecting it in strict mode for missing index signatures.
+- **feat(store): `$snapshot()` for passive state reads** — added `store.$snapshot(): T` that returns the current state values without creating a reactive subscription. Complements `$state` (reactive, creates subscription when read inside `effect`/`computed`). Plugins, loggers, and persistence layers can now choose between observing state changes (`$watch` / `$state`) and one-shot reads (`$snapshot()`), which uses `signal.peek()` internally to bypass dependency tracking entirely.
+- **chore(types): TypeScript 5.4 minimum for `NoInfer`** — updated `peerDependencies` to `"typescript": ">=5.4.0"`.
+- **runtime: no breaking changes** — code written against v2.2.1 / v2.2.2 runs identically. The only user-visible changes are correct IDE autocompletion, compiler errors on getter mutation, and the new `$snapshot()` method.
+
 ## v2.2.2
 
 - **feat(store): native plugins exported as library entries** — `persistPlugin`, `loggerPlugin`, `guardPlugin`, and `bridgePlugin` are now exported from the main package and have their own entry points in `dist/lib/`. This enables better tree-shaking and allows importing them directly as `@deijose/nix-js/plugins`.

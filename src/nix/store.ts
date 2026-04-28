@@ -11,10 +11,21 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type StoreSignals<T extends Record<string, unknown>> = {
+/**
+ * Maps a plain state object T into a record of Signals — one per key.
+ * This is what the actions/getters factories receive as their argument.
+ *
+ * Given:   { count: number, name: string }
+ * Becomes: { count: Signal<number>, name: Signal<string> }
+ */
+export type StoreSignals<T extends object> = {
     readonly [K in keyof T]: Signal<T[K]>;
 };
 
+/**
+ * A read-only Signal — extends Signal so it satisfies `instanceof Signal`
+ * checks (used by `watch()`), but throws on any mutation attempt.
+ */
 export class ReadonlySignal<T> extends Signal<T> {
     private readonly label: string;
     constructor(source: Signal<T>, label: string = "ReadonlySignal") {
@@ -32,41 +43,66 @@ export class ReadonlySignal<T> extends Signal<T> {
     }
 }
 
+/**
+ * Maps a getters factory result (a record of Signals) into a record of
+ * read-only Signals exposed on the store.
+ *
+ * The Omit pattern enforces `readonly value` at the type level — TypeScript
+ * blocks `getter.value = x` at compile time. The runtime ReadonlySignal class
+ * also throws on mutation as defense in depth.
+ */
 export type StoreGetters<G extends Record<string, Signal<unknown>>> = {
-    readonly [K in keyof G]: ReadonlySignal<
-        G[K] extends Signal<infer V> ? V : never
-    >;
+    readonly [K in keyof G]: Omit<ReadonlySignal<G[K] extends Signal<infer V> ? V : never>, "value"> & {
+        readonly value: G[K] extends Signal<infer V> ? V : never;
+    };
 };
 
+/**
+ * The full store type — combines reactive state signals, action methods,
+ * computed getters (as ReadonlySignals), and the framework-level $-prefixed API.
+ */
 export type Store<
-    T extends Record<string, unknown>,
-    A extends Record<string, unknown> = Record<never, never>,
+    T extends object,
+    A extends object = Record<never, never>,
     G extends Record<string, Signal<unknown>> = Record<never, never>,
-> = StoreSignals<T> &
-    A &
-    StoreGetters<G> & {
-        readonly $id: string;
-        /** Current snapshot — reading inside effect/computed creates subscription. */
-        readonly $state: T;
-        /**
-         * The computed Signal that backs $state.
-         * Plugins receive this to compose new reactive nodes on top.
-         * This is what makes the plugin system reactive-native:
-         * no hooks, just signals all the way down.
-         */
-        readonly $stateSignal: ReadonlySignal<T>;
-        /** Reset to initial values (batched). */
-        $reset(): void;
-        /** Partial update (batched). */
-        $patch(partial: Partial<T>): void;
-        /**
-         * Watches state changes. This is exactly watch() from reactivity.ts —
-         * no new primitive to learn.
-         */
-        $watch(cb: (next: T, prev: T | undefined) => void, options?: WatchOptions): () => void;
-        /** Disposes the store and runs all plugin cleanups. */
-        $dispose(): void;
-    };
+> = StoreSignals<T> & A & StoreGetters<G> & {
+    readonly $id: string;
+    /** Reactive snapshot — reading inside effect/computed creates a subscription to the whole state. */
+    readonly $state: T;
+    /**
+     * Passive snapshot — returns the current state values WITHOUT creating
+     * a reactive subscription. Use this in plugins, loggers, persistence,
+     * or anywhere you need a one-shot read.
+     */
+    $snapshot(): T;
+    /**
+     * The computed Signal that backs $state. Plugins receive this to
+     * compose new reactive nodes on top.
+     */
+    readonly $stateSignal: ReadonlySignal<T>;
+    /** Reset to initial values (batched). */
+    $reset(): void;
+    /** Partial update (batched). */
+    $patch(partial: Partial<T>): void;
+    /** Watches state changes. Equivalent to `watch(store.$stateSignal, cb, opts)`. */
+    $watch(cb: (next: T, prev: T | undefined) => void, options?: WatchOptions): () => void;
+    /** Disposes the store and runs all plugin cleanups. */
+    $dispose(): void;
+};
+
+// ---------------------------------------------------------------------------
+// Factory types
+// ---------------------------------------------------------------------------
+
+export type ActionsFactory<
+    T extends object,
+    A extends object,
+> = (signals: StoreSignals<T>) => A;
+
+export type GettersFactory<
+    T extends object,
+    G extends Record<string, Signal<unknown>>,
+> = (signals: StoreSignals<T>) => G;
 
 // ---------------------------------------------------------------------------
 // Plugin type
@@ -74,49 +110,51 @@ export type Store<
 
 /**
  * A NixPlugin is a function that receives the assembled store and
- * optionally returns a cleanup function.
+ * optionally returns a cleanup function called on $dispose().
  *
- * There are NO lifecycle hooks. The plugin extends the signal graph directly:
+ * There are NO lifecycle hooks. Plugins extend the signal graph directly
+ * using the framework primitives:
  *
  *   watch(store.$stateSignal, ...)        — react to any state change
  *   computed(() => store.someSignal.value) — derive new nodes
- *   store.mySignal = signal(...)           — attach new reactive state
- *   wrapMethod(store, '$patch', ...)       — intercept mutations
- *
- * Because plugins only use Nix.js primitives, they compose with each other
- * naturally — one plugin can observe a signal that another plugin added.
+ *   store.$snapshot()                      — passive read for logging/persistence
  */
 export type NixPlugin<
-    T extends Record<string, unknown>,
-    A extends Record<string, unknown> = Record<never, never>,
+    T extends object,
+    A extends object = Record<never, never>,
     G extends Record<string, Signal<unknown>> = Record<never, never>,
 > = (store: Store<T, A, G>) => (() => void) | void;
 
 // ---------------------------------------------------------------------------
-// CreateStoreOptions
+// Options
 // ---------------------------------------------------------------------------
 
-export interface CreateStoreOptions<
-    T extends Record<string, unknown>,
-    A extends Record<string, unknown> = Record<never, never>,
-    G extends Record<string, Signal<unknown>> = Record<never, never>,
-> {
-    /** Display name for the store. Used in error messages and devtools. */
+/**
+ * Options object for createStore. NoInfer<T> on factory parameters ensures
+ * T is inferred ONLY from initialState, never from the factories — this is
+ * what restores the type inference that broke in v2.2.1.
+ */
+export type CreateStoreOptions<
+    T extends object,
+    A extends object,
+    G extends Record<string, Signal<unknown>>,
+> = {
+    /** Display name. Used in error messages, devtools, and $id. */
     name?: string;
-    /** Factory that receives the raw signals and returns action methods. */
-    actions?: (signals: StoreSignals<T>) => A;
-    /** Factory that receives the raw signals and returns computed getters. */
-    getters?: (signals: StoreSignals<T>) => G;
+    /** Action factory — receives raw signals, returns methods exposed on the store. */
+    actions?: (signals: StoreSignals<NoInfer<T>>) => A;
+    /** Getter factory — receives raw signals, returns computed Signals exposed as ReadonlySignals. */
+    getters?: (signals: StoreSignals<NoInfer<T>>) => G;
     /** Plugins to extend the store. Each receives the assembled store. */
-    plugins?: NixPlugin<T, A, G>[];
-}
+    plugins?: NixPlugin<NoInfer<T>, A, G>[];
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
 const RESERVED = new Set([
-    "$id", "$state", "$stateSignal",
+    "$id", "$state", "$stateSignal", "$snapshot",
     "$reset", "$patch", "$watch", "$dispose",
 ]);
 
@@ -141,20 +179,50 @@ function makeReadonly<T>(sig: Signal<T>, label: string): ReadonlySignal<T> {
 // createStore
 // ---------------------------------------------------------------------------
 
+/**
+ * Creates a reactive store with optional actions, getters, and plugins.
+ *
+ * @example Just state
+ * ```ts
+ * const counter = createStore({ count: 0 });
+ * counter.count.value++;
+ * ```
+ *
+ * @example State + actions
+ * ```ts
+ * const counter = createStore({ count: 0 }, {
+ *   actions: (s) => ({ increment: () => s.count.value++ }),
+ * });
+ * counter.increment();
+ * ```
+ *
+ * @example State + getters (no actions)
+ * ```ts
+ * const inventory = createStore({ items: [] as Item[] }, {
+ *   getters: (s) => ({ count: computed(() => s.items.value.length) }),
+ * });
+ * inventory.count.value;
+ * ```
+ *
+ * @example Full store
+ * ```ts
+ * const cart = createStore({ items: [] as Item[], discount: 0 }, {
+ *   name: "cart",
+ *   actions: (s) => ({ addItem: (i: Item) => { s.items.value = [...s.items.value, i] } }),
+ *   getters: (s) => ({ total: computed(() => s.items.value.reduce((sum, i) => sum + i.price, 0) * (1 - s.discount.value)) }),
+ *   plugins: [persistPlugin({ key: "cart" })],
+ * });
+ * ```
+ */
 export function createStore<
-    T extends Record<string, unknown>,
-    A extends Record<string, unknown> = Record<never, never>,
+    T extends object,
+    A extends object = Record<never, never>,
     G extends Record<string, Signal<unknown>> = Record<never, never>,
 >(
     initialState: T,
-    options: CreateStoreOptions<T, A, G> = {},
+    options?: CreateStoreOptions<T, A, G>,
 ): Store<T, A, G> {
-    const {
-        name = "store",
-        actions: actionsFactory,
-        getters: gettersFactory,
-        plugins = [],
-    } = options;
+    const { name = "store", actions: actionsFactory, getters: gettersFactory, plugins = [] } = options ?? {};
 
     const keys = Object.keys(initialState) as Array<keyof T & string>;
 
@@ -204,6 +272,15 @@ export function createStore<
         });
     }
 
+    function $snapshot(): T {
+        // Passive read — uses peek() to avoid creating a reactive subscription.
+        const snap = {} as T;
+        for (const key of keys) {
+            snap[key] = signals[key].peek();
+        }
+        return snap;
+    }
+
     function $watch(
         cb: (next: T, prev: T | undefined) => void,
         opts?: WatchOptions,
@@ -214,7 +291,7 @@ export function createStore<
     const store = Object.assign(
         Object.create(null) as object,
         typedSignals,
-        { $reset, $patch, $watch },
+        { $reset, $patch, $watch, $snapshot },
     ) as Store<T, A, G>;
 
     Object.defineProperty(store, "$id", {
