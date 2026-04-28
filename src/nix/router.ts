@@ -11,11 +11,21 @@ import { createInjectionKey, inject } from "./context";
 
 /**
  * Value returned (or resolved) by a navigation guard.
- * - `false`  — cancel the navigation.
+ *
+ * - `true` / `void` / `undefined` — allow.
+ * - `false` — cancel (no redirect).
  * - `string` — redirect to that path.
- * - `void` / `undefined` — allow the navigation.
+ * - `{ redirect: string }` — redirect, object form.
+ *
+ * The object form exists so guards written for the outlet API can be reused
+ * verbatim by the core. See `nix-ionic`'s `GuardResult`.
  */
-export type NavigationGuardResult = void | undefined | false | string;
+export type NavigationGuardResult =
+    | void
+    | undefined
+    | boolean
+    | string
+    | { redirect: string };
 
 /** Guard function invoked before navigation commits. */
 export type NavigationGuard = (
@@ -28,8 +38,14 @@ export interface RouteRecord {
     name?: string;
     /** Route path segment. Supports literals, params (`:id`), and wildcards (`*`). */
     path: string;
-    /** Factory returning the view for this route level. */
-    component: () => NixTemplate | NixComponent;
+    /**
+     * Factory returning the view for this route level.
+     *
+     * OPTIONAL — when the core router is auto-bootstrapped by an outlet
+     * (Ionic's IonRouterOutlet, future others), the outlet owns component
+     * mounting and the core never invokes this. In that case, omit it.
+     */
+    component?: () => NixTemplate | NixComponent;
     /** Optional arbitrary metadata for guards, layouts, and auth checks. */
     meta?: Record<string, unknown>;
     /** Child routes. Paths are joined with the parent. */
@@ -57,22 +73,14 @@ export interface ScrollPosition {
     top: number;
 }
 
-/**
- * Scroll behavior callback.
- * - `savedPosition` is non-null on popstate (back/forward) when a saved position exists.
- * - Return `{ left, top }` to scroll there.
- * - Return `false` or `undefined` to skip router scrolling.
- */
 export type ScrollBehavior = (
     to: string,
     from: string,
     savedPosition: ScrollPosition | null,
 ) => ScrollPosition | false | void;
 
-/** Router URL mode strategy. */
 export type RouterMode = "history" | "hash";
 
-/** Result of `router.resolve(path)`. */
 export interface ResolvedRoute {
     matched: boolean;
     params: Record<string, string>;
@@ -80,44 +88,27 @@ export interface ResolvedRoute {
 }
 
 // -----------------------------------------------------------------------------
-//  Navigation intent — NEW in v2.4
-//
-//  Animated outlets (e.g. IonRouterOutlet from @deijose/nix-ionic) need to
-//  know HOW the user got to the current route, not just where they are. The
-//  `intent` signal carries that information so outlets can pick the correct
-//  transition direction without owning their own history machinery.
+//  Navigation intent
 // -----------------------------------------------------------------------------
 
 export type NavigationAction = "push" | "replace" | "pop" | "initial";
 export type NavigationDirection = "forward" | "back" | "root" | "none";
 
 export interface NavigationIntent {
-    /** Which router method produced the navigation. */
     action: NavigationAction;
-    /** Logical direction — used by Ionic, custom animation builders, etc. */
     direction: NavigationDirection;
-    /** Opaque animation builder passed through to the outlet. */
     animation?: unknown;
 }
 
-/** Options accepted by `navigate` / `replace`. */
 export interface NavigateOptions {
     query?: Record<string, string | number | boolean | null | undefined>;
-    /** Override the inferred direction (e.g. tab change should be `"none"`). */
     direction?: NavigationDirection;
-    /** Animation builder passed to outlets that animate. Ionic AnimationBuilder, etc. */
     animation?: unknown;
 }
 
 export interface RouterOptions {
-    /**
-     * Base path for the application (sub-path deployments).
-     * If omitted, auto-detected from `<base href>`.
-     */
     base?: string;
-    /** URL handling mode. `history` by default. */
     mode?: RouterMode;
-    /** Optional custom scroll behavior. */
     scrollBehavior?: ScrollBehavior;
 }
 
@@ -126,16 +117,7 @@ export interface Router {
     readonly params: Signal<Record<string, string>>;
     readonly query: Signal<Record<string, string>>;
     readonly base: string;
-    /**
-     * Last navigation intent. Updated SYNCHRONOUSLY before `current` whenever
-     * navigation commits, so an effect that reads `current` will also see the
-     * matching `intent`.
-     */
     readonly intent: Signal<NavigationIntent>;
-    /**
-     * Whether there is a previous entry in this router's logical stack.
-     * Differs from `history.length` — only counts entries this router pushed.
-     */
     readonly canGoBack: Signal<boolean>;
     navigate(location: RouteLocation, options?: NavigateOptions): void;
     replace(location: RouteLocation, options?: NavigateOptions): void;
@@ -149,11 +131,10 @@ export interface Router {
     afterEach(hook: AfterEachHook): () => void;
 }
 
-/** DI key for router instances. */
 export const RouterKey = createInjectionKey<Router>("nix:router");
 
 // =============================================================================
-//  Internal types
+//  Internals
 // =============================================================================
 
 type Segment =
@@ -164,7 +145,7 @@ type Segment =
 interface FlatRoute {
     fullPath: string;
     segments: Segment[];
-    chain: Array<() => NixTemplate | NixComponent>;
+    chain: Array<(() => NixTemplate | NixComponent) | undefined>;
     name?: string;
     meta?: Record<string, unknown>;
     beforeEnter?: NavigationGuard;
@@ -186,9 +167,20 @@ const POSITION_STATE_KEY = "__nix_pos";
 
 function getRouter(): RouterInternal {
     if (!_currentRouter) {
-        throw new Error("[Nix] No active router. Call createRouter() first.");
+        throw new Error(
+            "[Nix] No active router. Call createRouter() first, " +
+            "or instantiate an outlet that auto-bootstraps one (e.g. IonRouterOutlet)."
+        );
     }
     return _currentRouter;
+}
+
+/**
+ * @internal Whether a router is currently active. Used by outlets that
+ * want to auto-bootstrap if the user didn't call `createRouter()` themselves.
+ */
+export function _hasActiveRouter(): boolean {
+    return _currentRouter !== null;
 }
 
 // =============================================================================
@@ -232,7 +224,7 @@ function buildHistoryState(
 }
 
 // =============================================================================
-//  Query string / path helpers
+//  Query / path helpers
 // =============================================================================
 
 function parseQuery(search: string): Record<string, string> {
@@ -273,7 +265,7 @@ function joinPaths(parent: string, child: string): string {
 function flattenRoutes(
     routes: RouteRecord[],
     parentPath = "",
-    parentChain: Array<() => NixTemplate | NixComponent> = [],
+    parentChain: Array<(() => NixTemplate | NixComponent) | undefined> = [],
 ): FlatRoute[] {
     const result: FlatRoute[] = [];
     for (const route of routes) {
@@ -299,18 +291,14 @@ function flattenRoutes(
 function tryMatch(path: string, route: FlatRoute): Record<string, string> | null {
     const parts = path.split("/").filter(Boolean);
     const segs = route.segments;
-
     if (segs.length === 1 && segs[0].kind === "wildcard") return {};
-
     const lastIsWild = segs.length > 0 && segs[segs.length - 1].kind === "wildcard";
     const fixedSegs = lastIsWild ? segs.slice(0, -1) : segs;
-
     if (lastIsWild) {
         if (parts.length < fixedSegs.length) return null;
     } else {
         if (parts.length !== fixedSegs.length) return null;
     }
-
     const params: Record<string, string> = {};
     for (let i = 0; i < fixedSegs.length; i++) {
         const seg = fixedSegs[i];
@@ -342,7 +330,6 @@ function matchFlat(
     let best: FlatRoute | undefined;
     let bestParams: Record<string, string> = {};
     let bestScore = -1;
-
     for (const route of flat) {
         const params = tryMatch(path, route);
         if (params === null) continue;
@@ -379,6 +366,27 @@ function detectBase(): string {
     } catch {
         return normalizeBase(href);
     }
+}
+
+// =============================================================================
+//  Guard result normalization
+// =============================================================================
+
+/**
+ * Normalize any guard result into the internal flow's {allow, redirect} shape.
+ * Accepts: `true`, `false`, `void`/`undefined`, `string`, `{ redirect: string }`.
+ */
+function normalizeGuardResult(
+    r: NavigationGuardResult,
+): { allow: boolean; redirect?: string } {
+    if (r === false) return { allow: false };
+    if (r === true || r === undefined || r === null) return { allow: true };
+    if (typeof r === "string") return { allow: false, redirect: r };
+    if (typeof r === "object" && "redirect" in r && typeof r.redirect === "string") {
+        return { allow: false, redirect: r.redirect };
+    }
+    // Unknown — be permissive rather than break navigation.
+    return { allow: true };
 }
 
 // =============================================================================
@@ -464,23 +472,18 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     const params = signal<Record<string, string>>(initialMatch?.params ?? {});
     const query = signal<Record<string, string>>(initialQuery);
 
-    // Position counter — survives reloads via history.state, lets us infer
-    // pop direction (back vs forward) without keeping a stack ourselves.
     let _currentPosition = readPositionFromState(history.state) ?? 0;
 
-    // Intent signal — see header comment.
     const intent = signal<NavigationIntent>({
         action: "initial",
         direction: "none",
     });
 
-    // canGoBack signal — derived from position. Updated whenever we commit.
     const canGoBack = signal<boolean>(_currentPosition > 0);
 
     if (_isHashMode) {
         _hashScrollPositions.set(routeKey(initialPath, initialQuery), getCurrentScrollPosition());
     } else {
-        // Stamp current entry with scroll + position so popstate inference works.
         history.replaceState(
             buildHistoryState(history.state, getCurrentScrollPosition(), _currentPosition),
             "",
@@ -543,10 +546,18 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         function runNext(prev: NavigationGuardResult): void {
             if (gen !== _navGeneration) return;
 
-            if (prev === false) { onCancel?.(); return; }
-            if (typeof prev === "string") {
-                if (prev !== to) navigate(prev);
-                else onCommit();
+            const norm = normalizeGuardResult(prev);
+            if (!norm.allow) {
+                if (norm.redirect && norm.redirect !== to) {
+                    navigate(norm.redirect);
+                    return;
+                }
+                if (norm.redirect === to) {
+                    // Guarding TO the same path — treat as allow to avoid loops
+                    onCommit();
+                    return;
+                }
+                onCancel?.();
                 return;
             }
             if (idx >= guards.length) { onCommit(); return; }
@@ -619,10 +630,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         _currentPopstateCleanup = null;
     }
 
-    /**
-     * Commit a navigation triggered by the browser (popstate / hashchange).
-     * This is where we INFER the direction from the position counter.
-     */
     const handleBrowserNav = (
         p: string,
         newQuery: Record<string, string>,
@@ -634,8 +641,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
         const fromQuery = { ...query.value };
         const m = matchFlat(p, flat);
 
-        // Infer direction BEFORE running guards, so if the user reads `intent`
-        // mid-guard they see the right thing.
         let direction: NavigationDirection = "none";
         if (nextPosition != null) {
             if (nextPosition < _currentPosition) direction = "back";
@@ -647,12 +652,7 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
             from,
             m?.route.beforeEnter,
             () => {
-                // Update position counter to the value carried by the entry we landed on
                 if (nextPosition != null) _currentPosition = nextPosition;
-
-                // Update intent BEFORE current — effects that read both will
-                // see consistent values. Pick up any animation set by
-                // `back(anim)` / `forward(anim)` and clear it after one use.
                 const animation = _pendingPopAnimation;
                 _pendingPopAnimation = undefined;
                 intent.value = { action: "pop", direction, animation };
@@ -660,7 +660,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
                 query.value = newQuery;
                 current.value = p;
                 canGoBack.value = _currentPosition > 0;
-
                 _applyScroll(p, from, savedPos);
                 for (const hook of _afterHooks) {
                     try { hook(p, from); } catch { /* ignore */ }
@@ -679,8 +678,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
             const loc = readLocation();
             const nextQuery = parseQuery(loc.search);
             const savedPos = _hashScrollPositions.get(routeKey(loc.pathname, nextQuery)) ?? null;
-            // Hash mode doesn't carry our position counter — fall back to
-            // assuming forward (best-effort).
             handleBrowserNav(
                 loc.pathname,
                 nextQuery,
@@ -737,9 +734,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
             _currentPosition += 1;
         }
 
-        // Update intent BEFORE writing any of the routing signals, so any
-        // effect that depends on `current`/`params`/`query` already sees the
-        // matching intent when it re-runs.
         intent.value = nextIntent;
         params.value = m?.params ?? {};
         query.value = stringQuery;
@@ -775,6 +769,8 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     // -------------------------------------------------------------------------
     //  Public navigation API
     // -------------------------------------------------------------------------
+
+    let _pendingPopAnimation: unknown = undefined;
 
     function navigate(location: RouteLocation, options?: NavigateOptions): void {
         _hasNavigated = true;
@@ -817,12 +813,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
             () => _commit(pathname, stringQuery, from, fromQuery, m, nextIntent, true),
         );
     }
-
-    /**
-     * Animation builder set by `back(anim)` / `forward(anim)` and consumed by
-     * the next popstate event. `let` because it's read-then-cleared.
-     */
-    let _pendingPopAnimation: unknown = undefined;
 
     function back(animation?: unknown): void {
         if (animation !== undefined) _pendingPopAnimation = animation;
@@ -881,10 +871,6 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
     }
     _currentRouter = router;
 
-    // -------------------------------------------------------------------------
-    //  Initial guard check
-    // -------------------------------------------------------------------------
-
     queueMicrotask(() => {
         if (_hasNavigated) return;
 
@@ -937,7 +923,7 @@ export function _resetRouter(): void {
 }
 
 // =============================================================================
-//  RouterView (web mode — unchanged behavior)
+//  RouterView (web mode — unchanged)
 // =============================================================================
 
 export class RouterView extends NixComponent {
@@ -949,20 +935,31 @@ export class RouterView extends NixComponent {
             const router = nixRouter() as RouterInternal;
             const matched = matchFlat(router.current.value, router._flat);
             if (!matched) {
-                return html`<div style="color:#f87171;padding:16px 0">
-          404 — Route not found: <strong>${router.current.value}</strong>
-        </div>`;
+                return html`
+                    <div style="color:#f87171;padding:16px 0">
+                        404 — Route not found: <strong>${router.current.value}</strong>
+                    </div>
+                `;
             }
             if (depth >= matched.route.chain.length) {
-                return html`<span></span>`;
+                return html`
+                    <span></span>
+                `;
             }
-            return matched.route.chain[depth]();
+            const factory = matched.route.chain[depth];
+            // chain entries can be undefined when the route was registered without
+            // a `component` (typical when an outlet auto-bootstraps the router).
+            // In that case there's nothing to render at this depth.
+            if (!factory) return html`
+                <span></span>
+            `;
+            return factory();
         }}</div>`;
     }
 }
 
 // =============================================================================
-//  Link (unchanged behavior)
+//  Link (unchanged)
 // =============================================================================
 
 export class Link extends NixComponent {
@@ -982,18 +979,16 @@ export class Link extends NixComponent {
         const appPath = to.startsWith("/") ? to : "/" + to;
         const fullPath = (router._base ? (router._base + appPath) : appPath).replace(/\/+/g, "/");
         const href = router._mode === "hash" ? "#" + fullPath : fullPath;
-        return html`<a
-      href=${href}
-      style=${() => router.current.value === to
+        return html`
+            <a     href=${href}     style=${() => router.current.value === to
                 ? "color:#38bdf8;font-weight:700;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px;background:#0c2a3a"
-                : "color:#a3a3a3;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px"}
-      @click=${(e: Event) => { e.preventDefault(); router.navigate(to); }}
-    >${label}</a>`;
+                : "color:#a3a3a3;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px"}     @click=${(e: Event) => { e.preventDefault(); router.navigate(to); }}>${label}</a>
+        `;
     }
 }
 
 // =============================================================================
-//  Debug introspection (unchanged)
+//  Debug (unchanged)
 // =============================================================================
 
 export interface _RouterDebugInternal {
