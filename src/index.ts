@@ -98,6 +98,7 @@ export type {
     NavigationIntent,
     NavigationAction,
     NavigateOptions,
+    _hasActiveRouter,
     // Async
     SuspenseOptions,
     // Dependency Injection
