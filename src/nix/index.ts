@@ -23,6 +23,10 @@ export type {
     ScrollPosition,
     ScrollBehavior,
     RouterMode,
+    NavigationDirection,
+    NavigationIntent,
+    NavigationAction,
+    NavigateOptions,
 } from "./router";
 export { suspend, lazy } from "./async";
 export type { SuspenseOptions } from "./async";
