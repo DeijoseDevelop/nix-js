@@ -94,6 +94,10 @@ export type {
     ScrollPosition,
     ScrollBehavior,
     RouterMode,
+    NavigationDirection,
+    NavigationIntent,
+    NavigationAction,
+    NavigateOptions,
     // Async
     SuspenseOptions,
     // Dependency Injection
