@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.4.0
+
+- **feat(router): new `intent` signal for animated transitions** — added a reactive `intent` signal that tracks the navigation `action` (`push`, `replace`, `pop`, `initial`), logical `direction` (`forward`, `back`, `root`, `none`), and an optional `animation` payload. This enables animated outlets (like `IonRouterOutlet`) to synchronize transitions with the router state without managing their own history machinery.
+- **feat(router): automatic direction inference** — implemented a position counter in `history.state` that allows the router to automatically infer if a `popstate` event (browser back/forward) is a "back" or "forward" navigation.
+- **feat(router): reactive `canGoBack` signal** — added a `canGoBack` signal that tracks if there is at least one previous entry in the current router's logical stack, simplifying the implementation of UI back buttons.
+- **feat(router): programmatic animation support** — `navigate`, `replace`, `back`, and `forward` now accept custom animation builders or metadata in their options/arguments, which are passed through to the `intent` signal for consumption by animated outlets.
+- **refactor(router): enhanced `NavigateOptions` API** — unified programmatic navigation options to include `query`, explicit `direction` overrides, and `animation` payloads.
+
 ## v2.3.0
 
 - **fix(store): type inference restored for `createStore` options-object** — the named `CreateStoreOptions<T, A, G>` interface introduced in v2.2.1 caused TypeScript's generic inference to collapse, leaking the input shape into IDE autocompletion (e.g. `store.options.actions.someAction`, `store.$state.initialState`) instead of resolving to `Store<T, A, G>`. The options type is now declared inline in the `createStore` signature and applies `NoInfer<T>` (TS 5.4+) to factory parameters, so `T` is inferred exclusively from `initialState` and `(s) => ({ ... })` factories receive correctly typed signals without manual annotations.
