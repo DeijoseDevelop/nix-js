@@ -40,6 +40,7 @@ export {
     Link,
     nixRouter,
     RouterKey,
+    _hasActiveRouter,
     // Async / Lazy
     suspend,
     lazy,
@@ -98,7 +99,6 @@ export type {
     NavigationIntent,
     NavigationAction,
     NavigateOptions,
-    _hasActiveRouter,
     // Async
     SuspenseOptions,
     // Dependency Injection
