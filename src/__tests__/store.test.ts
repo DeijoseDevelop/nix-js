@@ -29,10 +29,12 @@ describe("createStore", () => {
     it("supports custom actions", () => {
         const store = createStore(
             { count: 0 },
-            (s) => ({
-                increment: () => s.count.update(n => n + 1),
-                add: (n: number) => s.count.update(c => c + n),
-            })
+            {
+                actions: (s) => ({
+                    increment: () => s.count.update(n => n + 1),
+                    add: (n: number) => s.count.update(c => c + n),
+                }),
+            }
         );
         store.increment();
         expect(store.count.value).toBe(1);
@@ -40,14 +42,16 @@ describe("createStore", () => {
         expect(store.count.value).toBe(11);
     });
 
-    it("supports computed getters via third argument", () => {
+    it("supports computed getters via getters option", () => {
         const store = createStore(
             { count: 2, items: ["a", "b"] as string[] },
-            (s) => ({ increment: () => s.count.value++ }),
-            (s) => ({
-                double: computed(() => s.count.value * 2),
-                total: computed(() => s.items.value.length),
-            }),
+            {
+                actions: (s) => ({ increment: () => s.count.value++ }),
+                getters: (s) => ({
+                    double: computed(() => s.count.value * 2),
+                    total: computed(() => s.items.value.length),
+                }),
+            },
         );
 
         expect(store.double.value).toBe(4);
@@ -64,7 +68,7 @@ describe("createStore", () => {
     it("actions coexist with $reset", () => {
         const store = createStore(
             { count: 5 },
-            (s) => ({ double: () => s.count.update(n => n * 2) })
+            { actions: (s) => ({ double: () => s.count.update(n => n * 2) }) }
         );
         store.double();
         expect(store.count.value).toBe(10);
@@ -86,7 +90,7 @@ describe("createStore", () => {
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
         const store = createStore(
             { count: 0 },
-            (s) => ({ $reset: () => { s.count.value = 999; } })
+            { actions: (s) => ({ $reset: () => { s.count.value = 999; } }) }
         );
         // The built-in $reset should still work, not the user's override
         store.count.value = 42;
@@ -102,14 +106,13 @@ describe("createStore", () => {
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
         const store = createStore(
             { count: 1 },
-            undefined,
-            (s) => ({ $state: computed(() => s.count.value * 10) }),
+            { getters: (s) => ({ $state: computed(() => s.count.value * 10) }) },
         );
 
         // Built-in $state must still be available
         expect(store.$state.count).toBe(1);
         expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('Store getter name "$state" is reserved')
+            expect.stringContaining('getter "$state" is reserved')
         );
         warnSpy.mockRestore();
     });
@@ -201,56 +204,67 @@ describe("createStore", () => {
         });
     });
 
-    describe("$subscribe", () => {
-        it("notifica key/newValue/oldValue cuando cambian señales", () => {
+    describe("$watch", () => {
+        it("notifica el nuevo estado cuando cambian señales", () => {
             const store = createStore({ count: 0, name: "nix" });
-            const calls: Array<[string, unknown, unknown]> = [];
+            const calls: Array<[number, string]> = [];
 
-            const stop = store.$subscribe((key, newVal, oldVal) => {
-                calls.push([String(key), newVal, oldVal]);
+            const stop = store.$watch((next) => {
+                calls.push([next.count, next.name]);
             });
 
             store.count.value = 1;
             store.name.value = "nix-js";
 
             expect(calls).toEqual([
-                ["count", 1, 0],
-                ["name", "nix-js", "nix"],
+                [1, "nix"],
+                [1, "nix-js"],
             ]);
 
             stop();
         });
 
+        it("entrega el estado previo como segundo argumento", () => {
+            const store = createStore({ count: 0 });
+            const pairs: Array<[number, number | undefined]> = [];
+
+            const stop = store.$watch((next, prev) => {
+                pairs.push([next.count, prev?.count]);
+            });
+
+            store.count.value = 5;
+
+            expect(pairs).toEqual([[5, 0]]);
+            stop();
+        });
+
         it("retorna unsubscribe y deja de emitir cambios", () => {
             const store = createStore({ value: 1 });
-            const calls: Array<[string, unknown, unknown]> = [];
+            const calls: number[] = [];
 
-            const stop = store.$subscribe((key, newVal, oldVal) => {
-                calls.push([String(key), newVal, oldVal]);
+            const stop = store.$watch((next) => {
+                calls.push(next.value);
             });
 
             store.value.value = 2;
             stop();
             store.value.value = 3;
 
-            expect(calls).toEqual([["value", 2, 1]]);
+            expect(calls).toEqual([2]);
         });
 
-        it("observa cambios hechos via $patch y $reset", () => {
+        it("observa cambios hechos via $patch y $reset (una vez por lote)", () => {
             const store = createStore({ a: 1, b: 2 });
-            const calls: Array<[string, unknown, unknown]> = [];
+            const calls: number[] = [];
 
-            const stop = store.$subscribe((key, newVal, oldVal) => {
-                calls.push([String(key), newVal, oldVal]);
+            const stop = store.$watch((next) => {
+                calls.push(next.a);
             });
 
             store.$patch({ a: 10 });
             store.$reset();
 
-            expect(calls).toEqual([
-                ["a", 10, 1],
-                ["a", 1, 10],
-            ]);
+            expect(calls).toEqual([10, 1]);
 
             stop();
         });
@@ -264,7 +278,7 @@ describe("createStore", () => {
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
         const store = createStore(
             { count: 0 },
-            () => ({ $patch: () => { } })
+            { actions: () => ({ $patch: () => { } }) }
         );
         // $patch built-in sigue funcionando
         store.$patch({ count: 5 });
@@ -275,20 +289,20 @@ describe("createStore", () => {
         warnSpy.mockRestore();
     });
 
-    it("ignora acción nombrada '$subscribe' y advierte", () => {
+    it("ignora acción nombrada '$watch' y advierte", () => {
         const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => { });
         const store = createStore(
             { count: 0 },
-            () => ({ $subscribe: () => { } })
+            { actions: () => ({ $watch: () => { } }) }
         );
 
-        // built-in $subscribe debe seguir existiendo
-        const stop = store.$subscribe(() => { });
+        // built-in $watch debe seguir existiendo
+        const stop = store.$watch(() => { });
         expect(typeof stop).toBe("function");
         stop();
 
         expect(warnSpy).toHaveBeenCalledWith(
-            expect.stringContaining('"$subscribe" is reserved')
+            expect.stringContaining('"$watch" is reserved')
         );
         warnSpy.mockRestore();
     });

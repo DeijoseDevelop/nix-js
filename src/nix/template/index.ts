@@ -5,6 +5,8 @@ export { html, buildHTML } from "./html";
 
 export { showWhen } from "./bindings";
 
+export { sanitizeUrl, isUrlAttrName, isExecutableAttrName } from "./sanitize";
+
 export { repeat } from "./keyed";
 
 export { transition } from "./transitions";

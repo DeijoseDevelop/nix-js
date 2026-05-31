@@ -2,6 +2,7 @@ import { effect } from "../reactivity";
 import type { NixRef } from "./types";
 import { activateNodeBinding } from "./node-binding";
 import { queueDOMWrite } from "./dom-write";
+import { isUrlAttrName, isExecutableAttrName, sanitizeUrl } from "./sanitize";
 
 // =============================================================================
 // --- show / hide ---
@@ -23,7 +24,7 @@ export function showWhen(el: HTMLElement, condition: boolean): void {
 type BindingContext =
     | { type: "node" }
     | { type: "event"; eventName: string; modifiers: string[]; hadOpenQuote: boolean }
-    | { type: "attr"; attrName: string; hadOpenQuote: boolean };
+    | { type: "attr"; attrName: string; hadOpenQuote: boolean; url?: boolean; executable?: boolean };
 
 export type { BindingContext };
 
@@ -74,6 +75,10 @@ export function detectContext(prevString: string): BindingContext {
         type: "attr",
         attrName: fullAttr,
         hadOpenQuote,
+        // Precomputed once per template (compile time). Read as a cheap boolean
+        // in the render/update hot path.
+        url: isUrlAttrName(fullAttr),
+        executable: isExecutableAttrName(fullAttr),
     };
 }
 
@@ -298,6 +303,19 @@ export function activateBindings(
                 continue;
             }
 
+            // on*/srcdoc bindings are non-idiomatic in Nix (events use @click) and
+            // turn an untrusted value into executable code. Warn the developer but
+            // do not block — the attribute name is developer-authored.
+            if (ctx.executable ?? isExecutableAttrName(attrName)) {
+                console.warn(
+                    `[Nix] Dynamic binding on executable attribute "${attrName}". Use @event for handlers; avoid binding untrusted values here.`,
+                );
+            }
+
+            // Precomputed at compile time. Only URL attributes pay the sanitizer;
+            // class/style/aria-*/data-*/custom attributes skip it entirely.
+            const isUrl = ctx.url ?? isUrlAttrName(attrName);
+
             const isDomProp = (attrName === "value" || attrName === "checked" || attrName === "selected") && attrName in element;
 
             if (typeof value === "function") {
@@ -315,7 +333,8 @@ export function activateBindings(
                         } else if (v == null || v === false) {
                             element.removeAttribute(attrName);
                         } else {
-                            element.setAttribute(attrName, String(v));
+                            const s = String(v);
+                            element.setAttribute(attrName, isUrl ? sanitizeUrl(s) : s);
                         }
                     };
 
@@ -332,7 +351,8 @@ export function activateBindings(
                 if (isDomProp) {
                     (element as any)[attrName] = value ?? "";
                 } else if (value != null && value !== false) {
-                    element.setAttribute(attrName, String(value));
+                    const s = String(value);
+                    element.setAttribute(attrName, isUrl ? sanitizeUrl(s) : s);
                 }
             }
             continue;

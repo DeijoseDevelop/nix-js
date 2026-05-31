@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.5.0
+
+- **feat(template): XSS hardening for URL attribute bindings** — dynamic bindings on URL-bearing attributes (`href`, `src`, `action`, `formaction`, `xlink:href`, `poster`, `background`, `cite`, `ping`, `data`) are now sanitized through `sanitizeUrl`. Values whose scheme resolves to `javascript:`, `vbscript:`, `livescript:`, `mocha:`, or a non-image `data:` URI are blocked (the attribute is set to an empty string and a warning is logged). Obfuscation via leading/embedded control characters, whitespace, BOM, or line separators is neutralized by normalizing the value before the scheme check. Safe raster `data:image/*` URIs (png, jpeg, gif, webp, avif, bmp, ico) are allowed; `data:image/svg+xml` is intentionally rejected because SVG can carry inline script. Sanitization runs on both the initial mount and every reactive update.
+- **perf: zero-cost classification** — whether an attribute is URL-bearing or executable is computed once per template at compile time (cached on the `BindingContext`) and read as a cheap boolean in the render/update hot path. Non-URL attributes (`class`, `style`, `aria-*`, `data-*`, custom attributes) keep their exact previous code path and pay no sanitization cost. Only URL attributes run the scheme check, and only when their value changes.
+- **feat(template): executable-attribute warning** — binding a dynamic value to an `on*` event handler attribute or `srcdoc` now logs a warning (events should use the `@event` syntax). The binding is not blocked, since the attribute name is always developer-authored.
+- **feat(template): duplicate-key detection in `repeat()`** — `repeat()` now warns when `keyFn` produces a duplicate key, which previously caused silently orphaned DOM nodes and leaked reactive effects.
+- **api(template): exports** — `sanitizeUrl`, `isUrlAttrName`, and `isExecutableAttrName` are now exported from `@deijose/nix-js/template`.
+- **no breaking changes for legitimate usage** — only attribute values with dangerous URL schemes change behavior (they are now blocked instead of executed).
+
 ## v2.4.2
 
 - **feat(router): new `intent` signal for animated transitions** — added a reactive `intent` signal that tracks the navigation `action` (`push`, `replace`, `pop`, `initial`), logical `direction` (`forward`, `back`, `root`, `none`), and an optional `animation` payload. This enables animated outlets (like `IonRouterOutlet`) to synchronize transitions with the router state without managing their own history machinery.

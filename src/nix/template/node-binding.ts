@@ -169,6 +169,9 @@ export function activateNodeBinding(
                                 ? _mountComponentWithCtx(rendered, frag, end, ctxSnapshot)
                                 : rendered._render(frag, end);
 
+                            if (keyedState!.has(key)) {
+                                console.warn(`[Nix] repeat(): duplicate key "${key}". Keys must be unique; the previous entry leaks (orphaned nodes + live effects).`);
+                            }
                             keyedState?.set(key, { start, end, cleanup });
                         }
                     });
@@ -235,6 +238,9 @@ export function activateNodeBinding(
                         ? _mountComponentWithCtx(rendered, frag, eMarker, ctxSnapshot)
                         : rendered._render(frag, eMarker);
 
+                    if (keyedState.has(key)) {
+                        console.warn(`[Nix] repeat(): duplicate key "${key}". Keys must be unique; the previous entry leaks (orphaned nodes + live effects).`);
+                    }
                     keyedState.set(key, { start: sMarker, end: eMarker, cleanup });
                     parent.insertBefore(frag, insertionPoint);
                     insertionPoint = sMarker;

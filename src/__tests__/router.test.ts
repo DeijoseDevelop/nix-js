@@ -50,7 +50,7 @@ describe("createRouter", () => {
             { path: "/", component: () => html`<p>home</p>` },
             { path: "/search", component: () => html`<p>search</p>` },
         ]);
-        r.navigate("/search", { q: "test", page: 2 });
+        r.navigate("/search", { query: { q: "test", page: 2 } });
         expect(r.query.value.q).toBe("test");
         expect(r.query.value.page).toBe("2");
     });
@@ -110,7 +110,7 @@ describe("createRouter", () => {
 
         r.navigate(
             { name: "search", query: { q: "initial", page: 1 } },
-            { page: 2, ref: "navbar" },
+            { query: { page: 2, ref: "navbar" } },
         );
 
         expect(r.query.value).toEqual({ q: "initial", page: "2", ref: "navbar" });
@@ -540,7 +540,7 @@ describe("replace()", () => {
             { path: "/", component: () => html`<p>home</p>` },
             { path: "/search", component: () => html`<p>search</p>` },
         ]);
-        r.replace("/search", { q: "hello" });
+        r.replace("/search", { query: { q: "hello" } });
         expect(r.query.value).toEqual({ q: "hello" });
     });
 
@@ -840,7 +840,7 @@ describe("hash mode", () => {
             { mode: "hash" },
         );
 
-        r.navigate("/about", { q: "x" });
+        r.navigate("/about", { query: { q: "x" } });
 
         expect(window.location.hash).toBe("#/about?q=x");
         expect(r.current.value).toBe("/about");

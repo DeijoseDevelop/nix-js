@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js.svg)](https://www.npmjs.com/package/@deijose/nix-js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-484%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
+[![Tests](https://img.shields.io/badge/tests-524%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
 [![Coverage](https://img.shields.io/badge/coverage-95.86%25-brightgreen.svg)]()
 [![Bundle size](https://img.shields.io/badge/min%2Bgzip-~12%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
@@ -534,6 +534,30 @@ html`
 > html`<div class="item ${() => active.value ? 'active' : ''}">`
 > ```
 
+#### Attribute value safety (XSS)
+
+Interpolated values are always inserted as text nodes or via `setAttribute`, so they are never parsed as HTML — there is no markup-injection vector through interpolation.
+
+On top of that, **URL-bearing attributes are sanitized**. When you bind a value to `href`, `src`, `action`, `formaction`, `xlink:href`, `poster`, `background`, `cite`, `ping`, or `data`, Nix blocks dangerous schemes:
+
+```typescript
+// Blocked — the attribute is set to "" and a warning is logged
+html`<a href=${() => userProvidedUrl}>Profile</a>`;
+// userProvidedUrl = "javascript:steal()"        → href=""
+// userProvidedUrl = "data:text/html,<script>…"  → href=""
+
+// Allowed
+html`<a href=${"https://example.com"}>ok</a>`;       // normal URLs
+html`<img src=${"data:image/png;base64,iVBOR…"}>`;   // raster data URIs
+```
+
+- Obfuscation via whitespace, control characters, BOM, or line separators (e.g. `"java\tscript:…"`) is normalized away before the scheme check.
+- `data:image/svg+xml` is rejected on purpose (SVG can carry inline script); raster `data:image/*` URIs are allowed.
+- **Performance:** only URL attributes run the check, and only when their value changes. `class`, `style`, `aria-*`, `data-*`, and custom attributes are never sanitized and keep their exact code path.
+- Sanitization is exposed for reuse: `import { sanitizeUrl } from "@deijose/nix-js/template"`.
+
+> Events must use the `@event` syntax. Binding a value to an `on*` attribute (e.g. `onclick=${…}`) or `srcdoc` logs a warning, since that turns an untrusted value into executable code.
+
 ### Event bindings & modifiers
 
 Events are bound with `@eventname=`:
@@ -980,7 +1004,7 @@ const USER_KEY:   InjectionKey<User>           = createInjectionKey("user");
 
 ### `createStore`
 
-Creates a reactive global store. Every property of the initial state becomes a `Signal`. An optional factory function adds typed actions.
+Creates a reactive global store. Every property of the initial state becomes a `Signal`. An optional `options` object (`{ name?, actions?, getters?, plugins? }`) adds typed actions, computed getters, and plugins.
 
 ```typescript
 import { createStore } from "./nix";
@@ -1004,11 +1028,13 @@ const cart = createStore(
     items: [] as string[],
     total: 0,
   },
-  (s) => ({
-    add:    (item: string) => s.items.update(arr => [...arr, item]),
-    remove: (item: string) => s.items.update(arr => arr.filter(i => i !== item)),
-    clear:  ()             => cart.$reset(),
-  })
+  {
+    actions: (s) => ({
+      add:    (item: string) => s.items.update(arr => [...arr, item]),
+      remove: (item: string) => s.items.update(arr => arr.filter(i => i !== item)),
+      clear:  ()             => cart.$reset(),
+    }),
+  }
 );
 
 cart.add("Milk");
@@ -1038,21 +1064,21 @@ type Store<T, A> = StoreSignals<T> & A & {
 ```typescript
 const store = createStore(
   { count: 0, items: [] as string[] },
-  (s) => ({
-    increment: () => s.count.value++,
-    addItem: (name: string | string[]) => {
-      // Automatic batching for multiple signal updates
-      if (Array.isArray(name)) s.items.value = [...s.items.value, ...name];
-      else s.items.value = [...s.items.value, name];
-    },
-  }),
-  (s) => ({
-    double: computed(() => s.count.value * 2), // Getters must return signals
-    total: computed(() => s.items.value.length),
-  }),
   {
     name: "my-store", // Optional ID for plugins/debugging
-    plugins: [persistPlugin]
+    actions: (s) => ({
+      increment: () => s.count.value++,
+      addItem: (name: string | string[]) => {
+        // Automatic batching for multiple signal updates
+        if (Array.isArray(name)) s.items.value = [...s.items.value, ...name];
+        else s.items.value = [...s.items.value, name];
+      },
+    }),
+    getters: (s) => ({
+      double: computed(() => s.count.value * 2), // Getters must return signals
+      total: computed(() => s.items.value.length),
+    }),
+    plugins: [persistPlugin],
   }
 );
 ```
@@ -1117,8 +1143,8 @@ The `Router` interface exposes:
 | `current` | `Signal<string>` | Active pathname (`/users/42`) |
 | `params` | `Signal<Record<string, string>>` | Dynamic route params (`{ id: "42" }`) |
 | `query` | `Signal<Record<string, string>>` | Query string params (`{ page: "2" }`) |
-| `navigate(path, query?)` | `void` | Navigate via `pushState` |
-| `replace(path, query?)` | `void` | Navigate via `replaceState` (no new history entry) |
+| `navigate(path, options?)` | `void` | Navigate via `pushState` (`options.query` for query params) |
+| `replace(path, options?)` | `void` | Navigate via `replaceState` (no new history entry; `options.query` for query params) |
 | `back()` | `void` | Go back one entry (`history.back()`) |
 | `forward()` | `void` | Go forward one entry (`history.forward()`) |
 | `go(delta)` | `void` | Move `delta` entries in history |
@@ -1300,8 +1326,8 @@ class DashboardLayout extends NixComponent {
 ```typescript
 const router = nixRouter();
 
-// Navigate with query params as an object
-router.navigate("/users", { page: 2, sort: "name" });
+// Navigate with query params via the options object
+router.navigate("/users", { query: { page: 2, sort: "name" } });
 // URL: /users?page=2&sort=name
 
 // Or inline in the path string
@@ -1311,7 +1337,7 @@ router.navigate("/users?page=2&sort=name");
 html`<p>Page: ${() => router.query.value.page}</p>`
 
 // null/undefined removes the key
-router.navigate("/users", { page: null });
+router.navigate("/users", { query: { page: null } });
 // URL: /users
 ```
 
@@ -2370,7 +2396,7 @@ transition(content, {
 
 | Export | Description |
 |--------|-------------|
-| `createStore(state, actions?, getters?, opts?)` | Create a reactive global store |
+| `createStore(state, options?)` | Create a reactive global store (`options`: `{ name?, actions?, getters?, plugins? }`) |
 | `Store<T, A>` | Type of the returned store. Includes `$id`, `$state`, `$stateSignal`, `$patch`, `$reset`, `$watch`, `$dispose`. |
 | `StoreSignals<T>` | Signal-mapped type of a state shape |
 | `NixPlugin<T>` | Plugin function type |
