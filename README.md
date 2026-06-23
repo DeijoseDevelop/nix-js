@@ -2649,6 +2649,30 @@ Workaround: compute the full string outside the template and bind the result.
 
 ---
 
+## DevTools
+
+Enable the in-app devtools panel for signal and router inspection:
+
+```typescript
+import { enableDevTools } from "@deijose/nix-js/devtools";
+
+const { disable } = enableDevTools({
+    initiallyOpen: true,
+    position: "bottom-right",
+    refreshMs: 350,
+    historyLimit: 50,
+});
+```
+
+- `initiallyOpen` — open the panel immediately.
+- `position` — `"bottom-right"` or `"bottom-left"`.
+- `refreshMs` — UI refresh interval in milliseconds.
+- `historyLimit` — maximum number of entries kept per signal history (default `50`).
+
+Routers injected via `mount(component, host, { router })` are automatically visible in the Router tab. The panel reuses a single overlay instance, so calling `enableDevTools()` multiple times is safe.
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please follow these guidelines:

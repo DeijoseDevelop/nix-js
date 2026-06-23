@@ -347,4 +347,40 @@ describe("createErrorBoundary()", () => {
 
         document.body.removeChild(mountEl);
     });
+
+    it("captura errores del fallback y no rompe la app", () => {
+        const comp = makeThrowingComponent();
+        const boundary = createErrorBoundary(
+            comp as any,
+            () => {
+                throw new Error("fallback failed");
+            }
+        );
+
+        boundary.mount(container);
+
+        // The boundary should still render a minimal error placeholder.
+        expect(container.querySelector("[data-nix-error-boundary]")).not.toBeNull();
+    });
+
+    it("captura errores reactivos del fallback", async () => {
+        const shouldThrow = signal(false);
+        const comp = makeThrowingComponent();
+        const boundary = createErrorBoundary(
+            comp as any,
+            html`<div>${() => {
+                if (shouldThrow.value) throw new Error("reactive fallback error");
+                return "fallback";
+            }}</div>`
+        );
+
+        boundary.mount(container);
+        expect(container.textContent).toContain("fallback");
+
+        shouldThrow.value = true;
+        await nextTick();
+
+        // Reactive error in fallback should not propagate; the placeholder should be present.
+        expect(container.querySelector("[data-nix-error-boundary]")).not.toBeNull();
+    });
 });

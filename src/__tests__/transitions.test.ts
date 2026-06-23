@@ -431,6 +431,32 @@ describe("transition()", () => {
         expect(el.className).not.toMatch(/enter/);
     });
 
+    it("no mantiene dos elementos visibles durante transiciones concurrentes", async () => {
+        const state = signal<1 | 2 | 3>(1);
+
+        const tpl = transition(() => {
+            if (state.value === 1) return html`<div class="box box-1">1</div>`;
+            if (state.value === 2) return html`<div class="box box-2">2</div>`;
+            return html`<div class="box box-3">3</div>`;
+        }, { duration: 30 });
+
+        tpl.mount(container);
+        await nextTick();
+
+        state.value = 2;
+        await nextTick();
+        expect(container.querySelectorAll(".box").length).toBeLessThanOrEqual(1);
+        expect(container.querySelector(".box-2")).not.toBeNull();
+
+        state.value = 3;
+        await nextTick();
+        expect(container.querySelectorAll(".box").length).toBeLessThanOrEqual(1);
+        expect(container.querySelector(".box-3")).not.toBeNull();
+
+        await wait(50);
+        expect(container.querySelectorAll(".box").length).toBe(1);
+    });
+
     // =========================================================================
     // --- NixComponent como contenido
     // =========================================================================

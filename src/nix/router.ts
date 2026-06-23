@@ -162,6 +162,10 @@ interface RouterInternal extends Router {
 let _currentRouter: RouterInternal | null = null;
 let _currentPopstateCleanup: (() => void) | null = null;
 
+// Routers injected via mount({ router }) are not the global singleton. DevTools
+// tracks them separately so it can inspect the router actually active in the UI.
+const _mountedRouters: Router[] = [];
+
 const SCROLL_STATE_KEY = "__nix_scroll";
 const POSITION_STATE_KEY = "__nix_pos";
 
@@ -920,6 +924,7 @@ export function _resetRouter(): void {
         _currentPopstateCleanup = null;
     }
     _currentRouter = null;
+    _mountedRouters.length = 0;
 }
 
 // =============================================================================
@@ -1011,22 +1016,41 @@ export interface _RouterDebugInternal {
     activeGuards: { globalCount: number; hasRouteGuard: boolean; names: string[] };
 }
 
+/** @internal Register a router that was injected via mount({ router }). */
+export function _debugRegisterRouter(router: Router): void {
+    const idx = _mountedRouters.indexOf(router);
+    if (idx >= 0) _mountedRouters.splice(idx, 1);
+    _mountedRouters.push(router);
+}
+
+/** @internal Unregister a router when its mount point is unmounted. */
+export function _debugUnregisterRouter(router: Router): void {
+    const idx = _mountedRouters.indexOf(router);
+    if (idx >= 0) _mountedRouters.splice(idx, 1);
+}
+
 export function _debugGetRouterInternal(): _RouterDebugInternal | null {
-    if (!_currentRouter) return null;
-    const currentPath = _currentRouter.current.value;
-    const matched = matchFlat(currentPath, _currentRouter._flat);
+    // Prefer the most recently mounted injected router over the global singleton
+    // so devtools inspect the router actually active in the current UI.
+    const router = _mountedRouters.length
+        ? _mountedRouters[_mountedRouters.length - 1]
+        : _currentRouter;
+    if (!router) return null;
+    const internal = router as RouterInternal;
+    const currentPath = internal.current.value;
+    const matched = matchFlat(currentPath, internal._flat);
     const routeGuard = matched?.route.beforeEnter;
-    const names = _currentRouter._guards.map((g, idx) => g.name || `beforeEach#${idx + 1}`);
+    const names = internal._guards.map((g, idx) => g.name || `beforeEach#${idx + 1}`);
     if (routeGuard) names.push(routeGuard.name || "beforeEnter");
     return {
-        mode: _currentRouter._mode,
-        base: _currentRouter._base || "/",
+        mode: internal._mode,
+        base: internal._base || "/",
         currentPath,
-        params: { ..._currentRouter.params.value },
-        query: { ..._currentRouter.query.value },
+        params: { ...internal.params.value },
+        query: { ...internal.query.value },
         matchedPath: matched?.route.fullPath ?? null,
         activeGuards: {
-            globalCount: _currentRouter._guards.length,
+            globalCount: internal._guards.length,
             hasRouteGuard: Boolean(routeGuard),
             names,
         },

@@ -84,6 +84,7 @@ type _ComponentRef = { deref(): NixComponent | undefined };
 const _signalRefs = new Set<_SignalRef>();
 let _signalMeta = new WeakMap<Signal<any>, _SignalMeta>();
 let _signalSeq = 1;
+let _signalHistoryLimit = 50;
 
 let _componentIds = new WeakMap<NixComponent, number>();
 const _componentMounted = new Map<number, _ComponentRecord>();
@@ -100,9 +101,18 @@ function _makeComponentRef(inst: NixComponent): _ComponentRef {
     return { deref: () => inst };
 }
 
+function _trimSignalHistory(meta: _SignalMeta): void {
+    if (meta.history.length > _signalHistoryLimit) {
+        meta.history.splice(0, meta.history.length - _signalHistoryLimit);
+    }
+}
+
 function _ensureSignalMeta<T>(s: Signal<T>, initialValue: T): _SignalMeta {
     const existing = _signalMeta.get(s);
-    if (existing) return existing;
+    if (existing) {
+        _trimSignalHistory(existing);
+        return existing;
+    }
 
     const now = Date.now();
     const meta: _SignalMeta = {
@@ -116,7 +126,8 @@ function _ensureSignalMeta<T>(s: Signal<T>, initialValue: T): _SignalMeta {
     return meta;
 }
 
-function _listSignals(): _SignalSnapshot[] {
+/** @internal Exported for testing. */
+export function _listSignals(): _SignalSnapshot[] {
     const out: _SignalSnapshot[] = [];
 
     for (const ref of Array.from(_signalRefs)) {
@@ -293,6 +304,7 @@ function _renderSignals(target: HTMLDivElement): void {
                 <td style="padding:6px 8px;white-space:nowrap;">${s.id}</td>
                 <td style="padding:6px 8px;max-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:ui-monospace, SFMono-Regular, Menlo, monospace;" title="${_escapeHtml(fullValue)}">${_escapeHtml(preview)}</td>
                 <td>${s.subscriberCount}</td>
+                <td data-nix-devtools-history-count="${s.history.length}">${s.history.length}</td>
                 <td>${_relativeTime(s.lastUpdated)}</td>
             </tr>`;
         })
@@ -310,6 +322,7 @@ function _renderSignals(target: HTMLDivElement): void {
                         <th style="text-align:left;padding:6px 8px;width:42px;">ID</th>
                         <th style="text-align:left;padding:6px 8px;">Value</th>
                         <th style="text-align:left;padding:6px 8px;width:50px;">Subs</th>
+                        <th style="text-align:left;padding:6px 8px;width:50px;">History</th>
                         <th style="text-align:left;padding:6px 8px;width:84px;">Updated</th>
                     </tr>
                 </thead>
@@ -612,11 +625,22 @@ export function enableDevTools(options: DevToolsOptions = {}): { disable: () => 
     }
 
     const refreshMs = Math.max(100, options.refreshMs ?? 350);
-    const historyLimit = Math.max(1, options.historyLimit ?? 50);
+    _signalHistoryLimit = Math.max(1, options.historyLimit ?? 50);
     const position = options.position ?? "bottom-right";
 
     _state.enabled = true;
     _state.activeTab = "signals";
+
+    // Apply the new limit to histories that were already created before enableDevTools.
+    for (const ref of Array.from(_signalRefs)) {
+        const s = ref.deref();
+        if (!s) {
+            _signalRefs.delete(ref);
+            continue;
+        }
+        const meta = _signalMeta.get(s);
+        if (meta) _trimSignalHistory(meta);
+    }
 
     _setSignalDebugHooks({
         onCreate(signal, initialValue) {
@@ -627,9 +651,7 @@ export function enableDevTools(options: DevToolsOptions = {}): { disable: () => 
             const now = Date.now();
             meta.lastUpdated = now;
             meta.history.push({ at: now, value });
-            if (meta.history.length > historyLimit) {
-                meta.history.splice(0, meta.history.length - historyLimit);
-            }
+            _trimSignalHistory(meta);
         },
     });
 

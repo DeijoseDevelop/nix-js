@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.5.3
+
+- **fix(template): error boundary fallback rendering is now protected** — if the fallback UI itself throws during render or during a reactive update, the boundary renders a minimal placeholder instead of letting the error propagate and crash the application.
+- **fix(devtools): injected routers are now visible in devtools** — routers passed via `mount(component, host, { router })` are registered and inspected; devtools prefer the most recently mounted injected router over the global singleton.
+- **fix(template): concurrent transitions no longer overlap** — rapid content swaps in `transition()` keep only the current content in the DOM; overlapping leave/enter animations are cancelled cleanly via `leaveGen` so stale after-leave callbacks never fire on replaced content.
+- **fix(devtools): signal history growth is now bounded** — added a configurable `historyLimit` option (default `50`) to `enableDevTools()`. Histories are trimmed on every signal write and when devtools are enabled, preventing unbounded memory growth.
+- **test:** added regression coverage for all four fixes above.
+
 ## v2.5.2
 
 - **fix(store): `guardPlugin` no longer mutates `$patch`/`$reset`** — guards are now registered in an internal store registry, so multiple `guardPlugin` instances compose safely and each cleanup removes only its own guards instead of restoring stale originals.

@@ -2,9 +2,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { html } from "../nix/template";
 import { mount } from "../nix/component";
 import { NixComponent } from "../nix/lifecycle";
-import { createRouter, _resetRouter } from "../nix/router";
+import { createRouter, _debugGetRouterInternal, _resetRouter } from "../nix/router";
 import { effect, signal } from "../nix/reactivity";
-import { disableDevTools, enableDevTools } from "../nix/devtools";
+import { disableDevTools, enableDevTools, _listSignals } from "../nix/devtools";
 
 afterEach(() => {
     disableDevTools();
@@ -220,6 +220,60 @@ describe("devtools overlay", () => {
 
             expect(content.textContent).toContain("/about");
 
+            handle.disable();
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it("sees router injected via mount options", () => {
+        _resetRouter();
+        const injectedRouter = createRouter([
+            { path: "/", component: () => html`<div>Home</div>` },
+            { path: "/injected", component: () => html`<div>Injected</div>` },
+        ]);
+        injectedRouter.navigate("/injected");
+
+        // Intentionally create a global router after the injected one so the
+        // devtools must prefer the injected router over the singleton.
+        createRouter([
+            { path: "/", component: () => html`<div>Global</div>` },
+        ]);
+
+        const host = document.createElement("div");
+        document.body.appendChild(host);
+        const comp = new (class extends NixComponent {
+            render() { return html`<div>App</div>`; }
+        })();
+        const handle = mount(comp, host, { router: injectedRouter });
+
+        const debug = _debugGetRouterInternal();
+        expect(debug).not.toBeNull();
+        expect(debug?.currentPath).toBe("/injected");
+
+        handle.unmount();
+        host.remove();
+    });
+
+    it("caps signal history to the configured limit", async () => {
+        vi.useFakeTimers();
+        try {
+            const handle = enableDevTools({ historyLimit: 3 });
+            const s = signal(0);
+            const stop = effect(() => { s.value; });
+
+            for (let i = 1; i <= 10; i++) {
+                s.value = i;
+            }
+
+            // _listSignals reads the internal history that should be capped.
+            const signals = _listSignals();
+            expect(signals.length).toBeGreaterThan(0);
+            const tracked = signals.find((sig) => sig.id === (s as unknown as { _debugId?: number })._debugId);
+            const target = tracked ?? signals[0];
+            expect(target.history.length).toBeLessThanOrEqual(3);
+
+            stop();
             handle.disable();
         } finally {
             vi.useRealTimers();

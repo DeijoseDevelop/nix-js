@@ -7,7 +7,7 @@ import {
     type NixComponent,
 } from "./lifecycle";
 import { _pushComponentContext, _popComponentContext, provide } from "./context";
-import { RouterKey, type Router } from "./router";
+import { RouterKey, type Router, _debugRegisterRouter, _debugUnregisterRouter } from "./router";
 
 export interface MountOptions {
     router?: Router;
@@ -49,6 +49,7 @@ export function mount(
         try {
             if (options?.router) {
                 provide(RouterKey, options.router);
+                _debugRegisterRouter(options.router);
             }
             try { component.onInit?.(); } catch (e) { if (component.onError) component.onError(e); else throw e; }
             try {
@@ -83,6 +84,7 @@ export function mount(
                 try { component.onUnmount?.(); } catch { /* ignore */ }
                 try { mountCleanup?.(); } catch { /* ignore */ }
                 cleanup();
+                if (options?.router) _debugUnregisterRouter(options.router);
                 _debugComponentUnmount(component);
             },
         };
@@ -99,6 +101,7 @@ export function mount(
     let cleanup: () => void;
     try {
         provide(RouterKey, options.router);
+        _debugRegisterRouter(options.router);
         cleanup = (component as NixTemplate)._render(el, null);
     } finally {
         _popComponentContext();
@@ -107,6 +110,7 @@ export function mount(
     return {
         unmount() {
             cleanup();
+            _debugUnregisterRouter(options.router!);
         },
     };
 }
