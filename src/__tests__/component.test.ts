@@ -1,7 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { html } from "../nix/template";
+import type { NixTemplate } from "../nix/template";
 import { NixComponent, isNixComponent } from "../nix/lifecycle";
 import { mount } from "../nix/component";
+
+function failRender(msg: string): NixTemplate {
+    throw new Error(msg);
+}
 
 // ── NixComponent ──────────────────────────────────────────────────────────────
 
@@ -204,5 +209,38 @@ describe("mount() with NixComponent", () => {
 
         expect(errorSpy).toHaveBeenCalledOnce();
         expect(errorSpy.mock.calls[0][0].message).toBe("mount crashed handled");
+    });
+
+    it("delegates error to onError if render fails", () => {
+        const errorSpy = vi.fn();
+        const onMountSpy = vi.fn();
+
+        class HandledRenderThrowingComp extends NixComponent {
+            onMount() { onMountSpy(); }
+            onError(err: unknown) { errorSpy(err); }
+            render() { return failRender("render crashed"); }
+        }
+
+        const el = document.createElement("div");
+
+        expect(() => {
+            mount(new HandledRenderThrowingComp(), el);
+        }).not.toThrow();
+
+        expect(errorSpy).toHaveBeenCalledOnce();
+        expect(errorSpy.mock.calls[0][0].message).toBe("render crashed");
+        expect(onMountSpy).not.toHaveBeenCalled();
+    });
+
+    it("throws if render fails and there is no onError handler", () => {
+        class UnhandledRenderThrowingComp extends NixComponent {
+            render() { return failRender("render unhandled"); }
+        }
+
+        const el = document.createElement("div");
+
+        expect(() => {
+            mount(new UnhandledRenderThrowingComp(), el);
+        }).toThrow("render unhandled");
     });
 });

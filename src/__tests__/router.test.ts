@@ -449,6 +449,21 @@ describe("RouterView", () => {
         expect(el.querySelector(".rv-home")).not.toBeNull();
         document.body.removeChild(el);
     });
+
+    it("renders using an explicit router without global router", () => {
+        const r = createRouter([
+            { path: "/", component: () => html`<p class="explicit-rv">Home</p>` },
+            { path: "/about", component: () => html`<p class="explicit-rv">About</p>` },
+        ]);
+        _resetRouter();
+        r.navigate("/about");
+
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        html`<div>${new RouterView(0, r)}</div>`.mount(el);
+        expect(el.querySelector(".explicit-rv")!.textContent).toBe("About");
+        document.body.removeChild(el);
+    });
 });
 
 // ── Security fixes ────────────────────────────────────────────────────────────
@@ -978,6 +993,24 @@ describe("Link component", () => {
         const a = el.querySelector("a")!;
         expect(a.getAttribute("href")).toBe("/about");
         expect(a.textContent).toBe("About Us");
+    });
+
+    it("uses an explicit router for href and navigation", () => {
+        const r = createRouter([{ path: "/", component: () => html`<p>home</p>` }]);
+        _resetRouter();
+        const navSpy = vi.spyOn(r, "navigate").mockImplementation(() => { });
+
+        const link = new Link("/about", "About", r);
+
+        const el = document.createElement("div");
+        document.body.appendChild(el);
+        link.render().mount(el);
+
+        const a = el.querySelector("a")!;
+        expect(a.getAttribute("href")).toBe("/about");
+        a.click();
+        expect(navSpy).toHaveBeenCalledWith("/about");
+        document.body.removeChild(el);
     });
 
     it("prepends base path to href", () => {

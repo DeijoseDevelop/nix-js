@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.5.1
+
+- **fix(component): `mount()` now catches errors thrown from `render()`** — previously `onError` only caught exceptions from `onInit()` and `onMount()`. Now `render()` failures are also routed through `onError` when present; if no handler exists, the error still propagates. This makes class components recoverable during the render phase and improves testability.
+- **fix(forms): more robust `coerce()` for booleans and numbers** — numeric fields now return `NaN` for an empty input instead of `0`, preventing silent data corruption. Boolean fields now support checkbox/radio via `checked`, plus `<select>` and text inputs with `"true"`/`"false"`/`"1"`/`"0"` values. Unknown values fall back to the initial value instead of blindly casting `checked`.
+- **feat(router): explicit router support for `RouterView` and `Link`** — both components now accept an optional `router` as the last constructor argument: `new RouterView(0, router)` and `new Link("/about", "About", router)`. When provided, the explicit router is used instead of the global/injected singleton. This enables isolated tests and multi-router applications.
+- **test:** added regression coverage for the three fixes above.
+
 ## v2.5.0
 
 - **feat(template): XSS hardening for URL attribute bindings** — dynamic bindings on URL-bearing attributes (`href`, `src`, `action`, `formaction`, `xlink:href`, `poster`, `background`, `cite`, `ping`, `data`) are now sanitized through `sanitizeUrl`. Values whose scheme resolves to `javascript:`, `vbscript:`, `livescript:`, `mocha:`, or a non-image `data:` URI are blocked (the attribute is set to an empty string and a warning is logged). Obfuscation via leading/embedded control characters, whitespace, BOM, or line separators is neutralized by normalizing the value before the scheme check. Safe raster `data:image/*` URIs (png, jpeg, gif, webp, avif, bmp, ico) are allowed; `data:image/svg+xml` is intentionally rejected because SVG can carry inline script. Sanitization runs on both the initial mount and every reactive update.

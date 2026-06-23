@@ -189,6 +189,46 @@ describe("nixField", () => {
         field.onInput(fakeEvent);
         expect(field.value.value).toBe("fallback");
     });
+
+    it("coerce number returns NaN for empty input", () => {
+        const field = nixField(0);
+        const event = new Event("input");
+        Object.defineProperty(event, "target", { value: { value: "" } });
+        field.onInput(event);
+        expect(Number.isNaN(field.value.value)).toBe(true);
+    });
+
+    it("coerce number parses numeric input", () => {
+        const field = nixField(0);
+        const event = new Event("input");
+        Object.defineProperty(event, "target", { value: { value: "42" } });
+        field.onInput(event);
+        expect(field.value.value).toBe(42);
+    });
+
+    it("coerce boolean uses checked for checkbox", () => {
+        const field = nixField(false);
+        const event = new Event("input");
+        Object.defineProperty(event, "target", { value: { value: "on", checked: true, type: "checkbox" } });
+        field.onInput(event);
+        expect(field.value.value).toBe(true);
+    });
+
+    it("coerce boolean uses checked for radio", () => {
+        const field = nixField(true);
+        const event = new Event("input");
+        Object.defineProperty(event, "target", { value: { value: "on", checked: false, type: "radio" } });
+        field.onInput(event);
+        expect(field.value.value).toBe(false);
+    });
+
+    it("coerce boolean parses string values for select", () => {
+        const field = nixField(true);
+        const event = new Event("input");
+        Object.defineProperty(event, "target", { value: { value: "false" } });
+        field.onInput(event);
+        expect(field.value.value).toBe(false);
+    });
 });
 
 // ── nixField — validateOn ─────────────────────────────────────────────────────

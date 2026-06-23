@@ -44,6 +44,7 @@
     - [`html` tag](#html-tag)
     - [Text bindings](#text-bindings)
     - [Attribute bindings](#attribute-bindings)
+      - [Attribute value safety (XSS)](#attribute-value-safety-xss)
     - [Event bindings \& modifiers](#event-bindings--modifiers)
     - [Conditional rendering](#conditional-rendering)
     - [List rendering](#list-rendering)
@@ -65,6 +66,9 @@
   - [Global Stores](#global-stores)
     - [`createStore`](#createstore)
     - [Advanced Store Patterns (v2.2.0)](#advanced-store-patterns-v220)
+      - [Store Primitives \& Lifecycle](#store-primitives--lifecycle)
+      - [Plugin System](#plugin-system)
+      - [Security \& Robustness](#security--robustness)
   - [Router](#router)
     - [`createRouter`](#createrouter)
     - [Router DI at Mount Root](#router-di-at-mount-root)
@@ -83,21 +87,64 @@
     - [`createQuery()` / `invalidateQueries()`](#createquery--invalidatequeries)
     - [`lazy()`](#lazy)
     - [Route Guards](#route-guards)
+      - [`router.beforeEach(guard)` — global guard](#routerbeforeeachguard--global-guard)
+      - [`beforeEnter` — per-route guard](#beforeenter--per-route-guard)
+      - [Async guards](#async-guards)
+      - [Type](#type)
   - [Forms](#forms)
     - [`useField()`](#usefield)
+      - [`validateOn`](#validateon)
+      - [Field type coercion](#field-type-coercion)
     - [`createForm()`](#createform)
     - [Nested Form Fields (Dot-Path)](#nested-form-fields-dot-path)
     - [Cross-Field Validation](#cross-field-validation)
+    - [`useFieldArray()`](#usefieldarray)
     - [Built-in validators](#built-in-validators)
     - [Zod / Valibot interop](#zod--valibot-interop)
     - [Server-side errors](#server-side-errors)
   - [show / hide directive](#show--hide-directive)
+    - [`show` attribute](#show-attribute)
+    - [`hide` attribute](#hide-attribute)
+    - [`showWhen()`](#showwhen)
+    - [show vs conditional rendering](#show-vs-conditional-rendering)
   - [Portal](#portal)
+    - [Basic usage](#basic-usage)
+    - [Reactive portal](#reactive-portal)
+    - [Custom target](#custom-target)
   - [Portal Ergonomics](#portal-ergonomics)
+    - [Option A: Outlet token](#option-a-outlet-token)
+    - [Option B: Ref as target](#option-b-ref-as-target)
+    - [Option C: Provide / inject](#option-c-provide--inject)
   - [Error Boundaries](#error-boundaries)
+    - [Basic usage](#basic-usage-1)
+    - [NixComponent content](#nixcomponent-content)
+    - [Reactive errors](#reactive-errors)
+    - [Nested boundaries](#nested-boundaries)
+    - [What is and isn't caught](#what-is-and-isnt-caught)
   - [Transitions](#transitions)
+    - [Basic enter/leave transition](#basic-enterleave-transition)
+    - [appear — transition on first render](#appear--transition-on-first-render)
+    - [Custom class names](#custom-class-names)
+    - [JS hooks](#js-hooks)
+    - [TransitionOptions reference](#transitionoptions-reference)
   - [API Reference](#api-reference)
+    - [Reactivity](#reactivity-1)
+    - [Signal methods](#signal-methods)
+    - [Templates](#templates-1)
+    - [Components](#components-1)
+    - [Dependency Injection](#dependency-injection-1)
+    - [Stores](#stores)
+    - [Router](#router-1)
+    - [Async](#async)
+    - [Forms](#forms-1)
+    - [show / hide](#show--hide)
+    - [Portal](#portal-1)
+    - [Error Boundaries](#error-boundaries-1)
+    - [Transitions](#transitions-1)
+  - [What's Included](#whats-included)
   - [Comparison with Other Frameworks](#comparison-with-other-frameworks)
+    - [Runtime \& Architecture](#runtime--architecture)
+    - [Built-in Features](#built-in-features)
   - [Known Limitations](#known-limitations)
   - [Contributing](#contributing)
   - [License](#license)
@@ -777,7 +824,7 @@ class MyComponent extends NixComponent {
     console.log("bye!");
   }
 
-  // ⑤ Catches errors thrown inside onInit() and onMount().
+  // ⑤ Catches errors thrown inside onInit(), render() and onMount().
   //    If not implemented, errors are re-thrown.
   onError(err: unknown) {
     console.error("Component error:", err);
@@ -1249,6 +1296,8 @@ Named route errors are explicit:
 
 A `NixComponent` that renders the matched component for a given depth level. Use `new RouterView()` for the root, `new RouterView(1)` for nested child routes.
 
+Both `RouterView` and `Link` accept an optional explicit router as the last constructor argument. When provided, that router is used instead of the global/injected singleton — useful for isolated tests or multi-router applications.
+
 ```typescript
 class App extends NixComponent {
   render() {
@@ -1263,6 +1312,14 @@ class App extends NixComponent {
 }
 
 mount(new App(), "#app");
+
+// With an explicit router (no global singleton needed)
+const isolatedRouter = createRouter([
+  { path: "/", component: () => html`<p>home</p>` },
+  { path: "/about", component: () => html`<p>about</p>` },
+]);
+const view = new RouterView(0, isolatedRouter);
+const link = new Link("/about", "About", isolatedRouter);
 ```
 
 ### `Link`
@@ -1272,6 +1329,9 @@ A reactive `<a>` tag that automatically applies active/inactive styles based on 
 ```typescript
 new Link("/about", "About Us")
 // <a href="/about" style="...active/inactive styles...">About Us</a>
+
+// With an explicit router
+new Link("/about", "About Us", router)
 ```
 
 Clicking a `Link` calls `router.navigate()` and updates the URL via `history.pushState` — no page reload.
@@ -1674,6 +1734,19 @@ Both `useField` and `createForm` accept a `validateOn` option (`blur` | `input` 
 
 ```typescript
 const name = useField("", [required()], "input");
+```
+
+#### Field type coercion
+
+`useField` / `nixField` automatically coerce the DOM value based on the initial type:
+
+- **String**: used as-is (default).
+- **Number**: parsed with `Number(value)`. An empty input becomes `NaN` instead of `0` so you can detect cleared fields.
+- **Boolean**: checkbox/radio use `checked`; `<select>` and text inputs accept `"true"`, `"false"`, `"1"`, `"0"` or `""`. Unknown values fall back to the initial value.
+
+```typescript
+const age = useField(0);       // numeric input
+const accept = useField(false); // checkbox or select "true"/"false"
 ```
 
 ### `createForm()`

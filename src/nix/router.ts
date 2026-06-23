@@ -928,11 +928,19 @@ export function _resetRouter(): void {
 
 export class RouterView extends NixComponent {
     private _depth: number;
-    constructor(depth = 0) { super(); this._depth = depth; }
+    private _router?: RouterInternal;
+
+    constructor(depth = 0, router?: Router) {
+        super();
+        this._depth = depth;
+        this._router = router as RouterInternal | undefined;
+    }
+
     render(): NixTemplate {
         const depth = this._depth;
+        const explicitRouter = this._router;
         return html`<div class="router-view">${() => {
-            const router = nixRouter() as RouterInternal;
+            const router = explicitRouter ?? nixRouter() as RouterInternal;
             const matched = matchFlat(router.current.value, router._flat);
             if (!matched) {
                 return html`
@@ -965,17 +973,19 @@ export class RouterView extends NixComponent {
 export class Link extends NixComponent {
     private _to: string;
     private _label: string;
+    private _router?: RouterInternal;
 
-    constructor(to: string, label: string) {
+    constructor(to: string, label: string, router?: Router) {
         super();
         this._to = to;
         this._label = label;
+        this._router = router as RouterInternal | undefined;
     }
 
     render(): NixTemplate {
         const to = this._to;
         const label = this._label;
-        const router = nixRouter() as RouterInternal;
+        const router = this._router ?? nixRouter() as RouterInternal;
         const appPath = to.startsWith("/") ? to : "/" + to;
         const fullPath = (router._base ? (router._base + appPath) : appPath).replace(/\/+/g, "/");
         const href = router._mode === "hash" ? "#" + fullPath : fullPath;

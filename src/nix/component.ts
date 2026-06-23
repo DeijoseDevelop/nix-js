@@ -44,25 +44,38 @@ export function mount(
 
         _debugComponentMountStart(component);
         _pushComponentContext();
-        let cleanup: () => void;
+        let cleanup: () => void = () => { };
+        let renderFailed = false;
         try {
             if (options?.router) {
                 provide(RouterKey, options.router);
             }
             try { component.onInit?.(); } catch (e) { if (component.onError) component.onError(e); else throw e; }
-            cleanup = component.render()._render(el, null);
+            try {
+                cleanup = component.render()._render(el, null);
+            } catch (e) {
+                if (component.onError) {
+                    component.onError(e);
+                    cleanup = () => { };
+                    renderFailed = true;
+                } else {
+                    throw e;
+                }
+            }
         } finally {
             _debugComponentMountEnd(component);
             _popComponentContext();
         }
-        let mountCleanup: (() => void) | undefined;
 
-        try {
-            const ret = component.onMount?.();
-            if (typeof ret === "function") mountCleanup = ret;
-        } catch (e) {
-            if (component.onError) component.onError(e);
-            else throw e;
+        let mountCleanup: (() => void) | undefined;
+        if (!renderFailed) {
+            try {
+                const ret = component.onMount?.();
+                if (typeof ret === "function") mountCleanup = ret;
+            } catch (e) {
+                if (component.onError) component.onError(e);
+                else throw e;
+            }
         }
 
         return {

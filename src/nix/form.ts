@@ -188,18 +188,36 @@ export function nixField<T, AllValues = unknown>(
     const error = computed<string | null>(() => {
         const isVisible =
             validateOn === "input" ? dirty.value || touched.value :
-            validateOn === "submit" ? _submitted.value :
-                                    touched.value;
+                validateOn === "submit" ? _submitted.value :
+                    touched.value;
         if (!isVisible) return null;
         return rawError.value;
     });
 
+    function isCheckable(input: HTMLInputElement): boolean {
+        return input.type === "checkbox" || input.type === "radio";
+    }
+
     function coerce(target: EventTarget | null): T {
         if (!target || !("value" in target)) return initialValue;
         const t = target as HTMLInputElement;
-        if (typeof initialValue === "boolean") return t.checked as unknown as T;
-        if (typeof initialValue === "number") return Number(t.value) as unknown as T;
-        return t.value as unknown as T;
+        const value = t.value;
+
+        if (typeof initialValue === "boolean") {
+            const checked = t.checked;
+            if (checked === true) return true as unknown as T;
+            if (isCheckable(t)) return false as unknown as T;
+            if (value === "true" || value === "1") return true as unknown as T;
+            if (value === "false" || value === "0" || value === "") return false as unknown as T;
+            return initialValue;
+        }
+
+        if (typeof initialValue === "number") {
+            if (value === "") return NaN as unknown as T;
+            return Number(value) as unknown as T;
+        }
+
+        return value as unknown as T;
     }
 
     const onInput = (e: Event): void => {
