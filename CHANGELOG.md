@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.5.2
+
+- **fix(store): `guardPlugin` no longer mutates `$patch`/`$reset`** — guards are now registered in an internal store registry, so multiple `guardPlugin` instances compose safely and each cleanup removes only its own guards instead of restoring stale originals.
+- **feat(reactivity): `computed()` accepts a custom equality comparator** — `computed(fn, equals)` lets you avoid unnecessary updates when derived values produce new objects/arrays with structurally equal content. Defaults to `Object.is` (previous behavior).
+- **feat(async): `lazy()` supports named exports** — `lazy(importFn, { selector: (mod) => mod.MyComponent })` allows dynamic loading of modules that export components by name, while the existing `lazy(importFn, fallback)` API remains unchanged.
+- **test:** added regression coverage for the three changes above.
+
 ## v2.5.1
 
 - **fix(component): `mount()` now catches errors thrown from `render()`** — previously `onError` only caught exceptions from `onInit()` and `onMount()`. Now `render()` failures are also routed through `onError` when present; if no handler exists, the error still propagates. This makes class components recoverable during the render phase and improves testability.

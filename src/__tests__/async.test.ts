@@ -256,4 +256,24 @@ describe("lazy()", () => {
         expect(el2.querySelector(".page")).not.toBeNull();
         expect(importCount).toBe(1);
     });
+
+    it("supports named exports via selector", async () => {
+        class NamedPage extends NixComponent {
+            render() { return html`<div class="named-page">Named Export</div>`; }
+        }
+
+        const loadNamed = () => Promise.resolve({ PageComponent: NamedPage } as Record<string, unknown>);
+
+        const LazyComp = lazy(loadNamed, {
+            selector: (mod) => mod.PageComponent as new () => NixComponent,
+            fallback: html`<div class="lazy-fallback">loading...</div>`
+        });
+
+        const el = document.createElement("div");
+        mount(LazyComp(), el);
+        expect(el.querySelector(".lazy-fallback")).not.toBeNull();
+
+        await new Promise(r => setTimeout(r, 10));
+        expect(el.querySelector(".named-page")).not.toBeNull();
+    });
 });

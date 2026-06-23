@@ -266,8 +266,13 @@ export function effect(fn: () => void | (() => void)): () => void {
 }
 
 /** Derived signal that recalculates when its dependencies change. */
-export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
-    const s = new Signal<T>(undefined as T);
+const _computedSentinel = Symbol("nix-computed-uninitialized");
+
+export function computed<T>(
+    fn: () => T,
+    equals: (a: T, b: T) => boolean = Object.is,
+): Signal<T> & { dispose(): void } {
+    const s = new Signal<T | typeof _computedSentinel>(_computedSentinel);
     let disposeEffect: (() => void) | null = null;
     let initialized = false;
     let disposed = false;
@@ -279,7 +284,13 @@ export function computed<T>(fn: () => T): Signal<T> & { dispose(): void } {
         // accidentally subscribe the currently running external effect.
         untrack(() => {
             disposeEffect = effect(() => {
-                s.value = fn();
+                const next = fn();
+                const prev = s.peek();
+                // The first computed value must always be written; afterwards use
+                // the supplied equality comparator (defaults to Object.is).
+                if (prev === _computedSentinel || !equals(next, prev)) {
+                    s.value = next;
+                }
             });
         });
     };

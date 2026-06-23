@@ -406,6 +406,18 @@ console.log(total.value); // 60 — updated automatically
 
 `computed` returns a `Signal<T>`, so it has `.value`, `.peek()`, etc.
 
+By default it uses `Object.is` to decide whether to notify subscribers. For derived values that return new objects/arrays with the same content, pass a custom equality comparator:
+
+```typescript
+const items = signal(["a", "b"]);
+const upper = computed(
+  () => items.value.map(i => i.toUpperCase()),
+  (a, b) => a.length === b.length && a.every((v, i) => v === b[i])
+);
+
+items.value = ["a", "b"]; // same upper-case result; no notification
+```
+
 ### `effect`
 
 Runs a function immediately and re-runs it whenever any signal read inside it changes. Returns a `dispose` function to stop the effect.
@@ -1607,6 +1619,18 @@ export default class HomePage extends NixComponent {
 }
 ```
 
+For modules that use a named export, pass a selector:
+
+```typescript
+const LazyAdmin = lazy(
+  () => import("./pages/Admin"),
+  {
+    selector: (mod) => mod.AdminPage,
+    fallback: html`<p>Loading admin panel…</p>`
+  }
+);
+```
+
 ---
 
 ### Route Guards
@@ -2423,7 +2447,7 @@ transition(content, {
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `signal` | `<T>(initial: T) → Signal<T>` | Create a reactive value |
-| `computed` | `<T>(fn: () => T) → Signal<T>` | Derived reactive value |
+| `computed` | `<T>(fn: () => T, equals?: (a: T, b: T) => boolean) → Signal<T>` | Derived reactive value with optional custom equality |
 | `effect` | `(fn: () => void\|cleanup) → dispose` | Run and re-run on signal changes |
 | `batch` | `(fn: () => void) → void` | Flush multiple writes as one update |
 | `watch` | `(source, cb, opts?) → dispose` | Observe a source, receive old+new values |

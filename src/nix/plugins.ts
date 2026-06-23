@@ -1,5 +1,5 @@
 import { watch, untrack } from "./reactivity";
-import { type NixPlugin, type Store } from "./store";
+import { type NixPlugin, type Store, type GuardFn } from "./store";
 
 /**
  * Minimal interface that any storage adapter must implement.
@@ -47,7 +47,7 @@ export function persistPlugin<T extends Record<string, unknown>>(
                 const raw = await storage.getItem(storageKey);
                 if (!raw) return;
                 const saved = deserialize(raw) as Partial<T>;
-                
+
                 const patch: Partial<T> = {};
                 for (const key of Object.keys(saved)) {
                     if (key in store.$state && !exclude.includes(key as keyof T)) {
@@ -61,7 +61,7 @@ export function persistPlugin<T extends Record<string, unknown>>(
         });
 
         let timeoutId: ReturnType<typeof setTimeout>;
-        
+
         return watch(store.$stateSignal, (next) => {
             const persist = () => {
                 try {
@@ -130,47 +130,21 @@ export function loggerPlugin<T extends Record<string, unknown>>(
 }
 
 /**
- * Function type for mutation guards.
- */
-type GuardFn<T extends Record<string, unknown>> = (
-    next: Partial<T>,
-    current: T,
-) => Partial<T> | void;
-
-/**
  * Intercepts $patch and $reset calls to validate or transform state before it is applied.
  */
 export function guardPlugin<T extends Record<string, unknown>>(
     guards: GuardFn<T>[],
 ): NixPlugin<T> {
     return (store) => {
-        const original$patch = store.$patch.bind(store);
-        const original$reset = store.$reset.bind(store);
-
-        (store as unknown as { $patch: typeof store.$patch })["$patch"] = function (partial: Partial<T>) {
-            let payload: Partial<T> = partial;
-            const current = untrack(() => store.$state);
-
-            for (const guard of guards) {
-                const result = guard(payload, current);
-                if (result !== undefined) {
-                    payload = result;
-                }
-            }
-            original$patch(payload);
-        };
-
-        (store as unknown as { $reset: typeof store.$reset })["$reset"] = function () {
-            const current = untrack(() => store.$state);
-            for (const guard of guards) {
-                guard(current, current);
-            }
-            original$reset();
-        };
-
+        const registry = (store as unknown as { _guardFns: GuardFn<T>[] })._guardFns;
+        for (const guard of guards) {
+            registry.push(guard);
+        }
         return () => {
-            (store as unknown as { $patch: typeof store.$patch })["$patch"] = original$patch;
-            (store as unknown as { $reset: typeof store.$reset })["$reset"] = original$reset;
+            for (const guard of guards) {
+                const idx = registry.indexOf(guard);
+                if (idx >= 0) registry.splice(idx, 1);
+            }
         };
     };
 }

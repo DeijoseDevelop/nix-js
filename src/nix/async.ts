@@ -1,7 +1,6 @@
 import { signal, effect, Signal } from "./reactivity";
 import { NixComponent } from "./lifecycle";
-import type { NixTemplate } from "./template";
-import { html } from "./template";
+import { type NixTemplate, html, isNixTemplate } from "./template";
 
 // --- Types ---
 
@@ -213,14 +212,27 @@ export function suspend<T>(
 
 // --- lazy() ---
 
+export interface LazyOptions {
+    /** Component selector when the module uses a named export. Defaults to `mod.default`. */
+    selector?: (mod: Record<string, unknown>) => new () => NixComponent;
+    /** Template shown while the component is loading. */
+    fallback?: NixTemplate;
+}
+
 /**
  * Wraps a dynamic import for lazy-loading route components.
- * The module is loaded once and cached. The imported module must use a default export.
+ * The module is loaded once and cached. Supports both default and named exports.
  */
 export function lazy(
-    importFn: () => Promise<{ default: new () => NixComponent }>,
-    fallback?: NixTemplate
+    importFn: () => Promise<Record<string, unknown>>,
+    options?: NixTemplate | LazyOptions
 ): () => NixComponent {
+    const opts: LazyOptions =
+        options === undefined || isNixTemplate(options as object)
+            ? { fallback: options as NixTemplate | undefined }
+            : (options as LazyOptions);
+
+    const selector = opts.selector ?? ((mod) => mod.default as new () => NixComponent);
     let Cached: (new () => NixComponent) | null = null;
 
     return (): NixComponent => {
@@ -229,11 +241,11 @@ export function lazy(
         return suspend(
             async () => {
                 const mod = await importFn();
-                Cached = mod.default;
+                Cached = selector(mod);
                 return Cached;
             },
             (Comp) => new Comp(),
-            { fallback }
+            { fallback: opts.fallback }
         );
     };
 }

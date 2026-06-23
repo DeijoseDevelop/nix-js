@@ -314,3 +314,50 @@ describe("effect recursion guard", () => {
         expect(result).toBe(12);
     });
 });
+
+// ── computed custom equality ──────────────────────────────────────────────────
+
+describe("computed custom equality", () => {
+    it("uses Object.is by default", () => {
+        const s = signal({ a: 1 });
+        let runs = 0;
+        const c = computed(() => {
+            runs++;
+            return { a: s.value.a };
+        });
+        c.value; // initialize
+        runs = 0;
+        s.value = { a: 1 };
+        c.value;
+        expect(runs).toBe(1); // new object, re-ran
+    });
+
+    it("accepts a custom equality comparator to skip updates", () => {
+        const s = signal({ a: 1 });
+        const c = computed(
+            () => ({ a: s.value.a }),
+            (a, b) => a.a === b.a
+        );
+        let runs = 0;
+        effect(() => { c.value; runs++; });
+        runs = 0;
+        s.value = { a: 1 }; // structurally equal
+        expect(runs).toBe(0); // subscribers were not notified
+
+        s.value = { a: 2 };
+        expect(runs).toBe(1);
+    });
+
+    it("does not notify subscribers when comparator returns true", () => {
+        const s = signal({ a: 1 });
+        const c = computed(
+            () => ({ a: s.value.a }),
+            (a, b) => a.a === b.a
+        );
+        let runs = 0;
+        effect(() => { c.value; runs++; });
+        runs = 0;
+        s.value = { a: 1 };
+        expect(runs).toBe(0);
+    });
+});

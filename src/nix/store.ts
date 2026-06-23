@@ -119,6 +119,15 @@ export type GettersFactory<
  *   computed(() => store.someSignal.value) — derive new nodes
  *   store.$snapshot()                      — passive read for logging/persistence
  */
+/**
+ * Function type for mutation guards.
+ * Intercepts $patch and $reset to validate or transform state before it is applied.
+ */
+export type GuardFn<T extends object> = (
+    next: Partial<T>,
+    current: T,
+) => Partial<T> | void;
+
 export type NixPlugin<
     T extends object,
     A extends object = Record<never, never>,
@@ -254,7 +263,13 @@ export function createStore<
         );
     }
 
+    const _guardFns: GuardFn<T>[] = [];
+
     function $reset(): void {
+        const current = $snapshot();
+        for (const guard of _guardFns) {
+            guard(current, current);
+        }
         batch(() => {
             for (const key of keys) {
                 signals[key].value = _baseline[key];
@@ -263,10 +278,18 @@ export function createStore<
     }
 
     function $patch(partial: Partial<T>): void {
+        let payload: Partial<T> = partial;
+        const current = $snapshot();
+        for (const guard of _guardFns) {
+            const result = guard(payload, current);
+            if (result !== undefined) {
+                payload = result;
+            }
+        }
         batch(() => {
-            for (const key of Object.keys(partial) as Array<keyof T & string>) {
+            for (const key of Object.keys(payload) as Array<keyof T & string>) {
                 if (Object.prototype.hasOwnProperty.call(signals, key)) {
-                    signals[key].value = partial[key] as T[keyof T & string];
+                    signals[key].value = payload[key] as T[keyof T & string];
                 }
             }
         });
@@ -305,6 +328,10 @@ export function createStore<
 
     Object.defineProperty(store, "$stateSignal", {
         value: $stateSignal, writable: false, enumerable: false, configurable: false,
+    });
+
+    Object.defineProperty(store, "_guardFns", {
+        value: _guardFns, writable: false, enumerable: false, configurable: false,
     });
 
     const occupiedKeys = new Set<string>([...keys, ...Array.from(RESERVED)]);

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { computed, effect } from "../nix/reactivity";
 import { createStore } from "../nix/store";
+import { guardPlugin } from "../nix/plugins";
 
 describe("createStore", () => {
     it("creates signals for each property", () => {
@@ -305,5 +306,57 @@ describe("createStore", () => {
             expect.stringContaining('"$watch" is reserved')
         );
         warnSpy.mockRestore();
+    });
+});
+
+// ── guardPlugin ───────────────────────────────────────────────────────────────
+
+describe("guardPlugin", () => {
+    it("transforms $patch payloads", () => {
+        const store = createStore(
+            { count: 0, name: "a" },
+            { plugins: [guardPlugin<{ count: number; name: string }>([(payload) => ({ count: Math.max(0, payload.count ?? 0) })])] }
+        );
+        store.$patch({ count: -5 });
+        expect(store.count.value).toBe(0);
+        store.$patch({ count: 10 });
+        expect(store.count.value).toBe(10);
+    });
+
+    it("composes multiple guards safely", () => {
+        const store = createStore(
+            { count: 0 },
+            {
+                plugins: [
+                    guardPlugin<{ count: number }>([(payload) => ({ count: (payload.count ?? 0) + 1 })]),
+                    guardPlugin<{ count: number }>([(payload) => ({ count: (payload.count ?? 0) * 2 })]),
+                ],
+            }
+        );
+        // $patch starts with 0, guard1 -> 0+1=1, guard2 -> 1*2=2
+        store.$patch({ count: 0 });
+        expect(store.count.value).toBe(2);
+    });
+
+    it("cleanup removes only its own guards", () => {
+        const store = createStore({ count: 0 });
+        const cleanup1 = guardPlugin<{ count: number }>([(payload) => ({ count: (payload.count ?? 0) + 1 })])(store) as () => void;
+        guardPlugin<{ count: number }>([(payload) => ({ count: (payload.count ?? 0) * 2 })])(store);
+        cleanup1();
+        // With guard1 removed, only guard2 remains: 5 -> 5*2 = 10
+        store.$patch({ count: 5 });
+        expect(store.count.value).toBe(10);
+    });
+
+    it("runs guards on $reset", () => {
+        const guard = vi.fn();
+        const store = createStore(
+            { count: 0 },
+            { plugins: [guardPlugin<{ count: number }>([guard])] }
+        );
+        store.count.value = 5;
+        store.$reset();
+        expect(guard).toHaveBeenCalledWith({ count: 5 }, { count: 5 });
+        expect(store.count.value).toBe(0);
     });
 });
