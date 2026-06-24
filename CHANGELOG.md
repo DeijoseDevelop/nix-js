@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.5.4
+
+- **chore(build): removed unused `src/nix/template_old.ts`** — deleted 62 KB of dead code that was not referenced by any import or build entry. No runtime impact.
+
 ## v2.5.3
 
 - **fix(template): error boundary fallback rendering is now protected** — if the fallback UI itself throws during render or during a reactive update, the boundary renders a minimal placeholder instead of letting the error propagate and crash the application.
