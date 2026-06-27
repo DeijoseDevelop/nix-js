@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-524%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
 [![Coverage](https://img.shields.io/badge/coverage-95.86%25-brightgreen.svg)]()
-[![Bundle size](https://img.shields.io/badge/min%2Bgzip-~12%20KB-orange.svg)]()
+[![Bundle size](https://img.shields.io/badge/min%2Bgzip-~14%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)]()
 [![Website](https://img.shields.io/badge/website-nix--js-indigo.svg)](https://nix-js.dev/)
@@ -15,7 +15,7 @@
 > **[→ Documentation & Live Demo](https://nix-js.dev/) | [→ Performance Benchmarks](https://js-benchmark.nix-js.dev/)**
 
 ```
-~12 KB gzipped · zero dependencies · TypeScript-first · ES2022
+~14 KB gzipped · zero dependencies · TypeScript-first · ES2022
 ```
 
 ---
@@ -158,7 +158,7 @@ Nix.js is a signal-based reactive micro-framework. Its design goals are:
 - **No virtual DOM.** Bindings update individual DOM nodes directly via `effect()`.
 - **No compiler.** Templates are standard JavaScript tagged template literals.
 - **Fine-grained reactivity.** Only the exact text nodes and attributes that depend on a changed signal are updated — no diffing of full component trees.
-- **Zero runtime dependencies.** The minified bundle is ~24 KB (~12 KB gzipped) with no `node_modules` at runtime.
+- **Zero runtime dependencies.** The minified bundle is ~24 KB (~14 KB gzipped) with no `node_modules` at runtime.
 - **TypeScript-first.** Every public API is fully typed, including typed injection keys and typed store signals.
 
 ### Architecture at a glance
@@ -2608,7 +2608,7 @@ Everything ships in a single zero-dependency import:
 | **Virtual DOM** | No | Yes | Yes | No | No |
 | **Compiler required** | No | JSX transform | SFC compiler | JSX transform | Svelte compiler |
 | **Template system** | Tagged templates | JSX | SFC / JSX | JSX | Svelte syntax |
-| **Min + gzip** | ~12 KB | ~45 KB | ~33 KB | ~10 KB | ~18 KB |
+| **Min + gzip** | ~14 KB | ~45 KB | ~33 KB | ~10 KB | ~18 KB |
 | **TypeScript-first** | Native | Via JSX types | Via SFC tooling | Native | Via compiler |
 
 ### Built-in Features
