@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## v2.6.0
+
+- **feat(form): programmatic value manipulation** — `nixField`, `nixFieldArray`, and `createForm` now expose methods for setting and resetting values without user interaction:
+  - `nixField.setValue(value, opts?)` with `shouldDirty`, `shouldTouch`, and `shouldValidate` options.
+  - `nixFieldArray.setValues(items)` replaces the entire list; `nixFieldArray.patchValues(items)` updates existing items and appends extras while preserving untouched state; `nixFieldArray.reset(items?)` optionally accepts a new baseline.
+  - `createForm.setValue(path, value, opts?)` sets a single top-level or nested dot-path field.
+  - `createForm.setValues(values, opts?)` sets multiple fields at once with `keepDirty`, `keepTouched`, and `keepErrors` options.
+  - `createForm.reset(newValues?)` resets all fields and, when called with an argument, updates the baseline so subsequent resets return to it.
+- **feat(form): `DeepPartial<T>` exported** — the recursive partial type used by `setValues` is now exported from `@deijose/nix-js` and `@deijose/nix-js/form` for reuse in user code.
+- **docs:** updated README forms section to use current `nixField` / `nixFieldArray` names and documented the new programmatic value APIs.
+- **test:** added 39 new tests covering `setValue`, `setValues`, `patchValues`, and overloaded `reset` for fields, arrays, and forms. Form test suite now at 139 tests; full suite at 583 tests.
+
 ## v2.5.4
 
 - **chore(build): removed unused `src/nix/template_old.ts`** — deleted 62 KB of dead code that was not referenced by any import or build entry. No runtime impact.

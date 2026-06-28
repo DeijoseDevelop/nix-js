@@ -1050,3 +1050,294 @@ describe("createForm.canSubmit", () => {
         expect(form.canSubmit.value).toBe(true);
     });
 });
+
+// ── nixField.setValue / _setInitialValue ──────────────────────────────────────
+
+describe("nixField.setValue", () => {
+    it("updates the field value", () => {
+        const f = nixField("");
+        f.setValue("hello");
+        expect(f.value.value).toBe("hello");
+    });
+
+    it("marks the field dirty by default", () => {
+        const f = nixField("");
+        f.setValue("hello");
+        expect(f.dirty.value).toBe(true);
+        expect(f.touched.value).toBe(false);
+    });
+
+    it("does not mark dirty when shouldDirty is false", () => {
+        const f = nixField("");
+        f.setValue("hello", { shouldDirty: false });
+        expect(f.dirty.value).toBe(false);
+    });
+
+    it("marks touched when shouldTouch is true", () => {
+        const f = nixField("");
+        f.setValue("hello", { shouldTouch: true });
+        expect(f.touched.value).toBe(true);
+    });
+
+    it("forces validation visibility by default", () => {
+        const f = nixField("", [required()], "submit");
+        f.setValue(""); // invalid value, but shouldValidate=true marks submitted
+        expect(f.error.value).toBeTruthy();
+    });
+
+    it("does not force validation when shouldValidate is false", () => {
+        const f = nixField("", [required()], "submit");
+        f.setValue("", { shouldValidate: false });
+        expect(f.error.value).toBeNull();
+    });
+
+    it("clears external errors on value change", () => {
+        const f = nixField("");
+        f._setExternalError("Server error");
+        expect(f.error.value).toBe("Server error");
+        f.setValue("new");
+        expect(f.error.value).toBeNull();
+    });
+});
+
+describe("nixField._setInitialValue", () => {
+    it("redirects reset() to the new initial value", () => {
+        const f = nixField("initial");
+        f.setValue("changed");
+        f._setInitialValue("new baseline");
+        f.reset();
+        expect(f.value.value).toBe("new baseline");
+    });
+
+    it("does not affect the current value until reset()", () => {
+        const f = nixField("initial");
+        f.setValue("changed");
+        f._setInitialValue("new baseline");
+        expect(f.value.value).toBe("changed");
+    });
+});
+
+// ── nixFieldArray.setValues / patchValues / reset ─────────────────────────────
+
+describe("nixFieldArray.setValues", () => {
+    it("replaces the whole array with new items", () => {
+        const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
+        arr.setValues([{ name: "x" }, { name: "y" }, { name: "z" }]);
+        expect(arr.fields.value).toHaveLength(3);
+        expect(arr.fields.value[0].name.value.value).toBe("x");
+        expect(arr.fields.value[2].name.value.value).toBe("z");
+    });
+
+    it("disposes old groups and creates new ones", () => {
+        const arr = nixFieldArray([{ name: "a" }]);
+        const original = arr.fields.value[0];
+        arr.setValues([{ name: "b" }]);
+        expect(arr.fields.value[0]).not.toBe(original);
+    });
+
+    it("new groups start with clean state", () => {
+        const arr = nixFieldArray([{ name: "a" }]);
+        arr.fields.value[0].name.onBlur();
+        arr.setValues([{ name: "b" }]);
+        expect(arr.fields.value[0].name.touched.value).toBe(false);
+        expect(arr.fields.value[0].name.dirty.value).toBe(false);
+    });
+});
+
+describe("nixFieldArray.patchValues", () => {
+    it("updates existing items without touching state", () => {
+        const arr = nixFieldArray([{ name: "a" }, { name: "b" }]);
+        arr.fields.value[0].name.onBlur();
+        arr.patchValues([{ name: "x" }, { name: "y" }]);
+        expect(arr.fields.value[0].name.value.value).toBe("x");
+        expect(arr.fields.value[1].name.value.value).toBe("y");
+        expect(arr.fields.value[0].name.touched.value).toBe(true); // preserved
+        expect(arr.fields.value[0].name.dirty.value).toBe(false); // not dirtied
+    });
+
+    it("appends extra items", () => {
+        const arr = nixFieldArray([{ name: "a" }]);
+        arr.patchValues([{ name: "b" }, { name: "c" }]);
+        expect(arr.fields.value).toHaveLength(2);
+        expect(arr.fields.value[1].name.value.value).toBe("c");
+    });
+
+    it("ignores unknown keys in the patch", () => {
+        const arr = nixFieldArray<{ name: string }>([{ name: "a" }]);
+        arr.patchValues([{ name: "x", unknown: "y" } as Partial<{ name: string }>]);
+        expect(arr.fields.value[0].name.value.value).toBe("x");
+    });
+});
+
+describe("nixFieldArray.reset", () => {
+    it("resets to the initial items", () => {
+        const arr = nixFieldArray([{ name: "a" }]);
+        arr.append({ name: "b" });
+        arr.reset();
+        expect(arr.fields.value).toHaveLength(1);
+        expect(arr.fields.value[0].name.value.value).toBe("a");
+    });
+
+    it("resets to new items when reset(newItems) is used", () => {
+        const arr = nixFieldArray([{ name: "a" }]);
+        arr.reset([{ name: "x" }, { name: "y" }]);
+        expect(arr.fields.value).toHaveLength(2);
+        expect(arr.fields.value[0].name.value.value).toBe("x");
+    });
+
+    it("subsequent reset() uses the new baseline", () => {
+        const arr = nixFieldArray([{ name: "a" }]);
+        arr.reset([{ name: "x" }]);
+        arr.append({ name: "y" });
+        arr.reset();
+        expect(arr.fields.value).toHaveLength(1);
+        expect(arr.fields.value[0].name.value.value).toBe("x");
+    });
+});
+
+// ── createForm.setValue / setValues / reset ───────────────────────────────────
+
+describe("createForm.setValue", () => {
+    it("sets a single top-level field", () => {
+        const form = createForm({ name: "" });
+        form.setValue("name", "John");
+        expect(form.fields.name.value.value).toBe("John");
+        expect(form.values.value).toEqual({ name: "John" });
+    });
+
+    it("sets a nested field by dot path", () => {
+        const form = createForm({ address: { city: "", zip: "" } });
+        form.setValue("address.city", "Lima");
+        expect(form.fields["address.city"].value.value).toBe("Lima");
+        expect(form.values.value.address.city).toBe("Lima");
+    });
+
+    it("ignores unknown paths", () => {
+        const form = createForm({ name: "" });
+        expect(() => form.setValue("unknown", "x")).not.toThrow();
+        expect(form.fields.name.value.value).toBe("");
+    });
+
+    it("passes options to the field", () => {
+        const form = createForm({ name: "" }, { validators: { name: [required()] }, validateOn: "submit" });
+        form.setValue("name", "", { shouldValidate: false });
+        expect(form.fields.name.error.value).toBeNull();
+    });
+});
+
+describe("createForm.setValues", () => {
+    it("sets multiple top-level fields at once", () => {
+        const form = createForm({ name: "", email: "" });
+        form.setValues({ name: "John", email: "john@example.com" });
+        expect(form.fields.name.value.value).toBe("John");
+        expect(form.fields.email.value.value).toBe("john@example.com");
+    });
+
+    it("sets nested fields at once", () => {
+        const form = createForm({ address: { city: "", zip: "" } });
+        form.setValues({ address: { city: "Lima" } });
+        expect(form.fields["address.city"].value.value).toBe("Lima");
+        expect(form.fields["address.zip"].value.value).toBe("");
+    });
+
+    it("marks fields dirty by default", () => {
+        const form = createForm({ name: "" });
+        form.setValues({ name: "John" });
+        expect(form.fields.name.dirty.value).toBe(true);
+        expect(form.fields.name.touched.value).toBe(false);
+    });
+
+    it("preserves dirty state when keepDirty is true", () => {
+        const form = createForm({ name: "" });
+        form.fields.name.dirty.value = true;
+        form.setValues({ name: "John" }, { keepDirty: true });
+        expect(form.fields.name.dirty.value).toBe(true);
+    });
+
+    it("preserves touched state when keepTouched is true", () => {
+        const form = createForm({ name: "" });
+        form.fields.name.onBlur();
+        form.setValues({ name: "John" }, { keepTouched: true });
+        expect(form.fields.name.touched.value).toBe(true);
+    });
+
+    it("does not force validation by default (keepErrors=true)", () => {
+        const form = createForm({ name: "" }, { validators: { name: [required()] }, validateOn: "submit" });
+        form.setValues({ name: "" });
+        expect(form.fields.name.error.value).toBeNull();
+    });
+
+    it("forces validation when keepErrors is false", () => {
+        const form = createForm({ name: "" }, { validators: { name: [required()] }, validateOn: "submit" });
+        form.setValues({ name: "" }, { keepErrors: false });
+        expect(form.fields.name.error.value).toBeTruthy();
+    });
+
+    it("clears external errors when setting values", () => {
+        const form = createForm({ name: "" });
+        form.setErrors({ name: "Server error" });
+        form.setValues({ name: "John" });
+        expect(form.fields.name.error.value).toBeNull();
+    });
+
+    it("updates the values computed signal once", () => {
+        const form = createForm({ a: "", b: "" });
+        let calls = 0;
+        const dispose = effect(() => {
+            form.values.value;
+            calls++;
+        });
+        calls = 0;
+        form.setValues({ a: "1", b: "2" });
+        expect(calls).toBe(1);
+        dispose();
+    });
+});
+
+describe("createForm.reset", () => {
+    it("resets fields to their initial values", () => {
+        const form = createForm({ name: "initial" });
+        form.setValues({ name: "changed" });
+        form.reset();
+        expect(form.fields.name.value.value).toBe("initial");
+    });
+
+    it("resets dirty, touched, and submit state", () => {
+        const form = createForm({ name: "" });
+        form.setValues({ name: "changed" });
+        form.fields.name.onBlur();
+        form.submitCount.value = 3;
+        form.reset();
+        expect(form.fields.name.dirty.value).toBe(false);
+        expect(form.fields.name.touched.value).toBe(false);
+        expect(form.submitCount.value).toBe(0);
+    });
+
+    it("uses new initial values when reset(newValues) is called", () => {
+        const form = createForm({ name: "" });
+        form.reset({ name: "new baseline" });
+        expect(form.fields.name.value.value).toBe("new baseline");
+    });
+
+    it("subsequent reset() uses the new baseline", () => {
+        const form = createForm({ name: "initial" });
+        form.reset({ name: "new baseline" });
+        form.setValues({ name: "changed" });
+        form.reset();
+        expect(form.fields.name.value.value).toBe("new baseline");
+    });
+
+    it("clears external errors", () => {
+        const form = createForm({ name: "" });
+        form.setErrors({ name: "Server error" });
+        form.reset();
+        expect(form.fields.name.error.value).toBeNull();
+    });
+
+    it("forces isSubmitting back to false", () => {
+        const form = createForm({ name: "" });
+        form.isSubmitting.value = true;
+        form.reset();
+        expect(form.isSubmitting.value).toBe(false);
+    });
+});

@@ -137,12 +137,25 @@ export interface FieldState<T> {
     /** Reset to initial value and clear touched/dirty/error state. */
     reset(): void;
     /**
+     * Set the field value programmatically.
+     *
+     * @param value — new value for the field.
+     * @param options — control whether to touch/dirty the field and whether to force
+     *   validation visibility.
+     */
+    setValue(
+        value: T,
+        options?: { shouldTouch?: boolean; shouldDirty?: boolean; shouldValidate?: boolean },
+    ): void;
+    /**
      * @internal — inject an external error message (server / schema validator).
      * The error clears automatically when the user next edits the field.
      */
     _setExternalError(msg: string | null): void;
     /** @internal — force error visibility (e.g., on submit). */
     _forceVisible(): void;
+    /** @internal — update the stored initial value so a later reset() returns here. */
+    _setInitialValue(value: T): void;
     /** @internal — dispose computed signals. */
     _dispose(): void;
 }
@@ -162,6 +175,8 @@ export function nixField<T, AllValues = unknown>(
     const _ext = signal<string | null>(null);
     // Tracks whether the form has been submitted at least once (injected externally)
     const _submitted = signal(false);
+    // Mutable reference so that reset() can be redirected by createForm.reset(newValues).
+    let currentInitialValue = initialValue;
 
     let _skipFirstClear = true;
     const _disposeExtCleanup = effect(() => {
@@ -229,11 +244,24 @@ export function nixField<T, AllValues = unknown>(
 
     function reset(): void {
         batch(() => {
-            value.value = initialValue;
+            value.value = currentInitialValue;
             touched.value = false;
             dirty.value = false;
             _ext.value = null;
             _submitted.value = false;
+        });
+    }
+
+    function setValue(
+        next: T,
+        options: { shouldTouch?: boolean; shouldDirty?: boolean; shouldValidate?: boolean } = {},
+    ): void {
+        const { shouldTouch = false, shouldDirty = true, shouldValidate = true } = options;
+        batch(() => {
+            value.value = next;
+            if (shouldDirty) dirty.value = true;
+            if (shouldTouch) touched.value = true;
+            if (shouldValidate) _submitted.value = true;
         });
     }
 
@@ -247,13 +275,17 @@ export function nixField<T, AllValues = unknown>(
         _submitted.value = true;
     }
 
+    function _setInitialValue(next: T): void {
+        currentInitialValue = next;
+    }
+
     function _dispose(): void {
         _disposeExtCleanup();
         error.dispose();
         rawError.dispose();
     }
 
-    return { value, error, rawError, touched, dirty, onInput, onBlur, reset, _setExternalError, _forceVisible, _dispose };
+    return { value, error, rawError, touched, dirty, onInput, onBlur, reset, setValue, _setExternalError, _forceVisible, _setInitialValue, _dispose };
 }
 
 // --- FieldArrayState ---
@@ -275,8 +307,12 @@ export interface FieldArrayState<T extends Record<string, unknown>> {
     replace(index: number, value: T): void;
     /** Number of items in the array. Reactive. */
     readonly length: Signal<number>;
-    /** Resets the array to its initial value. */
-    reset(): void;
+    /** Replaces the whole array with a new list of items. */
+    setValues(items: T[]): void;
+    /** Patches existing items and appends any extras without touching untouched items. */
+    patchValues(items: Partial<T>[]): void;
+    /** Resets the array to its initial value, optionally updating that initial value. */
+    reset(items?: T[]): void;
     /** @internal */
     _dispose(): void;
 }
@@ -308,6 +344,8 @@ export function nixFieldArray<T extends Record<string, unknown>>(
     const fields = signal<Array<{ [K in keyof T]: FieldState<T[K]> }>>(
         initialItems.map(makeGroup)
     );
+    // Mutable so that reset(newItems) can redirect the baseline.
+    let currentInitialItems = initialItems;
 
     const length = computed(() => fields.value.length);
 
@@ -348,12 +386,37 @@ export function nixFieldArray<T extends Record<string, unknown>>(
         fields.value = current;
     }
 
-    function reset(): void {
-        // Dispose all current groups
+    function setValues(items: T[]): void {
         for (const group of fields.value) {
             for (const key in group) group[key]._dispose();
         }
-        fields.value = initialItems.map(makeGroup);
+        fields.value = items.map(makeGroup);
+    }
+
+    function patchValues(items: Partial<T>[]): void {
+        const current = [...fields.value];
+        for (let i = 0; i < items.length; i++) {
+            const patch = items[i] as Record<string, unknown>;
+            if (i >= current.length) {
+                current.push(makeGroup(patch as T));
+                continue;
+            }
+            const group = current[i] as Record<string, FieldState<unknown>>;
+            for (const [key, val] of Object.entries(patch)) {
+                if (group[key]) {
+                    group[key].setValue(val, { shouldDirty: false, shouldTouch: false, shouldValidate: false });
+                }
+            }
+        }
+        fields.value = current;
+    }
+
+    function reset(items?: T[]): void {
+        if (items) currentInitialItems = items;
+        for (const group of fields.value) {
+            for (const key in group) group[key]._dispose();
+        }
+        fields.value = currentInitialItems.map(makeGroup);
     }
 
     function _dispose(): void {
@@ -363,7 +426,7 @@ export function nixFieldArray<T extends Record<string, unknown>>(
         length.dispose();
     }
 
-    return { fields, append, remove, move, replace, length, reset, _dispose };
+    return { fields, append, remove, move, replace, length, setValues, patchValues, reset, _dispose };
 }
 
 // --- FormState ---
@@ -380,6 +443,9 @@ export type FieldErrors<T extends Record<string, unknown>> =
 export type FormValidators<T extends Record<string, unknown>> =
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { [K in keyof T]?: Validator<T[K], T>[] } & Record<string, Validator<any, any>[] | undefined>;
+
+// Utility used by setValues so callers can patch nested objects (e.g. { address: { city: "Lima" } }).
+export type DeepPartial<T> = T extends object ? { [P in keyof T]?: DeepPartial<T[P]> } : T;
 
 export interface FormState<T extends Record<string, unknown>> {
     /** Individual field states — access value, error, event handlers. */
@@ -442,8 +508,29 @@ export interface FormState<T extends Record<string, unknown>> {
      * 5. Manages `isSubmitting` across async callbacks
      */
     handleSubmit(fn: (values: T) => void | Promise<void>): (e: Event) => void;
-    /** Reset all fields to their initial values. */
-    reset(): void;
+    /**
+     * Reset all fields to their initial values. If `newInitialValues` is provided,
+     * it becomes the new baseline and subsequent reset() calls will use it.
+     */
+    reset(newInitialValues?: T): void;
+    /**
+     * Set a single field value by its path (top-level or nested dot-path).
+     */
+    setValue(
+        path: string,
+        value: unknown,
+        options?: { shouldTouch?: boolean; shouldDirty?: boolean; shouldValidate?: boolean },
+    ): void;
+    /**
+     * Set multiple field values at once.
+     *
+     * @param values — partial object with top-level and/or nested values.
+     * @param options — control whether to preserve existing touched/dirty/error state.
+     */
+    setValues(
+        values: DeepPartial<T>,
+        options?: { keepDirty?: boolean; keepTouched?: boolean; keepErrors?: boolean },
+    ): void;
     /**
      * Inject external errors (e.g., from a server response) into specific fields.
      * Each field's error clears automatically the next time the user edits it.
@@ -594,7 +681,42 @@ export function createForm<T extends Record<string, unknown>>(
         for (const k in errs) fields[k]?._setExternalError(errs[k] ?? null);
     }
 
-    function reset(): void {
+    function setValue(
+        path: string,
+        value: unknown,
+        options: { shouldTouch?: boolean; shouldDirty?: boolean; shouldValidate?: boolean } = {},
+    ): void {
+        const field = fields[path];
+        if (!field) return;
+        field.setValue(value, options);
+    }
+
+    function setValues(
+        values: DeepPartial<T>,
+        options: { keepDirty?: boolean; keepTouched?: boolean; keepErrors?: boolean } = {},
+    ): void {
+        const { keepDirty = false, keepTouched = false, keepErrors = true } = options;
+        batch(() => {
+            for (const [path, v] of flattenValuePaths(values as Record<string, unknown>)) {
+                const field = fields[path];
+                if (!field) continue;
+                field.setValue(v, {
+                    shouldDirty: !keepDirty,
+                    shouldTouch: false,
+                    shouldValidate: !keepErrors,
+                });
+                if (!keepTouched) field.touched.value = false;
+            }
+        });
+    }
+
+    function reset(newInitialValues?: T): void {
+        if (newInitialValues) {
+            for (const [path, v] of flattenValuePaths(newInitialValues)) {
+                const field = fields[path];
+                if (field) field._setInitialValue(v);
+            }
+        }
         for (const k in fields) fields[k].reset();
         isSubmitting.value = false;
         submitCount.value = 0;
@@ -667,6 +789,8 @@ export function createForm<T extends Record<string, unknown>>(
         submitCount,
         handleSubmit,
         reset,
+        setValue,
+        setValues,
         setErrors,
         dispose,
     };

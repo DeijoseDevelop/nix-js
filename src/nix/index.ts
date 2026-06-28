@@ -47,4 +47,4 @@ export {
     validators,
     extendValidators,
 } from "./form";
-export type { Validator, ValidateOn, FieldState, FieldArrayState, FieldErrors, FormState, FormOptions, ValidatorsBase } from "./form";
+export type { DeepPartial, Validator, ValidateOn, FieldState, FieldArrayState, FieldErrors, FormState, FormOptions, ValidatorsBase } from "./form";

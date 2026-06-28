@@ -104,6 +104,7 @@ export type {
     // Dependency Injection
     InjectionKey,
     // Forms
+    DeepPartial,
     Validator,
     ValidateOn,
     FieldState,

@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js.svg)](https://www.npmjs.com/package/@deijose/nix-js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-524%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
+[![Tests](https://img.shields.io/badge/tests-583%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
 [![Coverage](https://img.shields.io/badge/coverage-95.86%25-brightgreen.svg)]()
 [![Bundle size](https://img.shields.io/badge/min%2Bgzip-~14%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
@@ -92,16 +92,17 @@
       - [Async guards](#async-guards)
       - [Type](#type)
   - [Forms](#forms)
-    - [`useField()`](#usefield)
+    - [`nixField()`](#nixfield)
       - [`validateOn`](#validateon)
       - [Field type coercion](#field-type-coercion)
     - [`createForm()`](#createform)
     - [Nested Form Fields (Dot-Path)](#nested-form-fields-dot-path)
     - [Cross-Field Validation](#cross-field-validation)
-    - [`useFieldArray()`](#usefieldarray)
+    - [`nixFieldArray()`](#nixfieldarray)
     - [Built-in validators](#built-in-validators)
     - [Zod / Valibot interop](#zod--valibot-interop)
     - [Server-side errors](#server-side-errors)
+    - [Programmatic value manipulation](#programmatic-value-manipulation)
   - [show / hide directive](#show--hide-directive)
     - [`show` attribute](#show-attribute)
     - [`hide` attribute](#hide-attribute)
@@ -187,7 +188,7 @@ Nix.js is a signal-based reactive micro-framework. Its design goals are:
                               │
   ┌─── Application Layer ─────┼───────────────────────────────────────────────┐
   │  createRouter()     createStore()     provide() / inject()               │
-  │  useField()         createForm()      suspend() / lazy()                 │
+  │  nixField()         createForm()      suspend() / lazy()                 │
   │  createErrorBoundary()                showWhen()                         │
   └───────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1716,14 +1717,14 @@ Nix.js includes a built-in form management system inspired by react-hook-form.
 It works entirely via signals — no magic, no decorators, and zero extra dependencies.
 Validation libraries like Zod, Valibot, or Yup are supported as optional add-ons.
 
-### `useField()`
+### `nixField()`
 
 For managing a **single field** independently:
 
 ```typescript
-import { useField, required, minLength } from "@deijose/nix-js";
+import { nixField, required, minLength } from "@deijose/nix-js";
 
-const name = useField("", [required(), minLength(2)]);
+const name = nixField("", [required(), minLength(2)]);
 
 // In a template:
 html`
@@ -1746,31 +1747,32 @@ html`
 | `dirty` | `Signal<boolean>` | True after first `input` |
 | `onInput` | `(e: Event) => void` | Attach to `@input` |
 | `onBlur` | `() => void` | Attach to `@blur` |
+| `setValue(v, opts?)` | `(value, opts?) => void` | Set value programmatically. `shouldDirty` (default `true`), `shouldTouch` (default `false`), `shouldValidate` (default `true`) |
 | `reset()` | `() => void` | Restore initial state |
 
 #### `validateOn`
 
-Both `useField` and `createForm` accept a `validateOn` option (`blur` | `input` | `submit`):
+Both `nixField` and `createForm` accept a `validateOn` option (`blur` | `input` | `submit`):
 
 - **`blur` (default)**: Errors appear only after the input loses focus.
 - **`input`**: Errors appear as soon as the user starts typing.
 - **`submit`**: Errors are hidden until the first `handleSubmit` call.
 
 ```typescript
-const name = useField("", [required()], "input");
+const name = nixField("", [required()], "input");
 ```
 
 #### Field type coercion
 
-`useField` / `nixField` automatically coerce the DOM value based on the initial type:
+`nixField` automatically coerce the DOM value based on the initial type:
 
 - **String**: used as-is (default).
 - **Number**: parsed with `Number(value)`. An empty input becomes `NaN` instead of `0` so you can detect cleared fields.
 - **Boolean**: checkbox/radio use `checked`; `<select>` and text inputs accept `"true"`, `"false"`, `"1"`, `"0"` or `""`. Unknown values fall back to the initial value.
 
 ```typescript
-const age = useField(0);       // numeric input
-const accept = useField(false); // checkbox or select "true"/"false"
+const age = nixField(0);       // numeric input
+const accept = nixField(false); // checkbox or select "true"/"false"
 ```
 
 ### `createForm()`
@@ -1824,8 +1826,10 @@ html`
 | `isSubmitting` | `Signal<boolean>` | True while async `handleSubmit` is running |
 | `submitCount` | `Signal<number>` | Number of submit attempts |
 | `handleSubmit(fn)` | `Function` | Wraps submit logic with validation |
+| `setValue(path, v, opts?)` | `Function` | Set a single field (top-level or dot-path) |
+| `setValues(values, opts?)` | `Function` | Set multiple fields at once. `keepDirty`, `keepTouched`, `keepErrors` |
 | `setErrors(map)` | `Function` | Inject external/server errors |
-| `reset()` | `Function` | Restore all fields to initial values |
+| `reset(newValues?)` | `Function` | Restore all fields. Optional new baseline becomes the new initial state |
 | `dispose()` | `Function` | Cleanup internal computed signals |
 
 `handleSubmit(fn)` automatically:
@@ -1889,14 +1893,14 @@ type Validator<T, AllValues = unknown> = (
 ) => string | null | undefined;
 ```
 
-### `useFieldArray()`
+### `nixFieldArray()`
 
 For managing dynamic lists of field groups (add, remove, reorder).
 
 ```typescript
-import { useFieldArray, required } from "@deijose/nix-js";
+import { nixFieldArray, required } from "@deijose/nix-js";
 
-const items = useFieldArray(
+const items = nixFieldArray(
   [{ name: "Item 1" }],
   { name: [required()] }
 );
@@ -1924,7 +1928,9 @@ html`
 | `move(from, to)`| Reorder items |
 | `replace(idx, val)` | Swap item at index |
 | `length` | `Signal<number>` — current count |
-| `reset()` | Restore initial items |
+| `setValues(items)` | Replace the whole list with new items |
+| `patchValues(items)` | Update existing items and append extras (preserves untouched state) |
+| `reset(items?)` | Restore initial items. Optional new baseline becomes the new initial state |
 
 ### Built-in validators
 
@@ -1945,7 +1951,7 @@ You can write your own: a validator is just `(value: T) => string | null`.
 // Custom validator
 const noSpaces = (v: string) => /\s/.test(v) ? "No spaces allowed" : null;
 
-const username = useField("", [required(), noSpaces]);
+const username = nixField("", [required(), noSpaces]);
 ```
 
 ### Zod / Valibot interop
@@ -1991,6 +1997,31 @@ validate(values) {
       errs[String(issue.path[0].key)] = issue.message;
   return errs;
 }
+```
+
+### Programmatic value manipulation
+
+Load external data, fill a form after fetching, or reset it to a new baseline without touching every field manually.
+
+```typescript
+// Set a single field by dot-path
+form.setValue("address.city", "Lima");
+
+// Set many fields at once (marks dirty by default; does not mark touched)
+form.setValues(
+  { name: "John", address: { city: "Lima" } },
+  { keepDirty: false, keepTouched: false, keepErrors: true }
+);
+
+// Reset everything to a new baseline (e.g. after loading an entity)
+form.reset({ name: "John", email: "john@example.com", age: 30 });
+// Subsequent form.reset() calls now return to this baseline.
+
+// Array fields
+const items = nixFieldArray([{ name: "A" }]);
+items.setValues([{ name: "X" }, { name: "Y" }]);
+items.patchValues([{ name: "X-updated" }, { name: "Z" }]); // updates + appends
+items.reset([{ name: "New baseline" }]);
 ```
 
 ### Server-side errors
@@ -2528,9 +2559,9 @@ transition(content, {
 
 | Export | Description |
 |--------|-------------|
-| `useField(initial, vs?, mode?)` | Manage a single form field |
-| `createForm(state, opts?)` | Manage a full form (supports dot-path nested fields and cross-field validators) |
-| `useFieldArray(items, vs?, mode?)` | Manage dynamic lists of fields |
+| `nixField(initial, vs?, mode?)` | Manage a single form field |
+| `createForm(state, opts?)` | Manage a full form (supports dot-path nested fields, cross-field validators, and programmatic value setting) |
+| `nixFieldArray(items, vs?, mode?)` | Manage dynamic lists of fields |
 | `required(msg?)` | Non-empty value validator |
 | `minLength(n, msg?)` | Minimum string length validator |
 | `maxLength(n, msg?)` | Maximum string length validator |
