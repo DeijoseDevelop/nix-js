@@ -76,7 +76,7 @@ export function sanitizeUrl(raw: string): string {
             return raw;
         }
         console.warn(
-            `[Nix] Blocked attribute URL with unsafe scheme: "${normalized.slice(0, 48)}${normalized.length > 48 ? "…" : ""}"`,
+            `[nix-js] Blocked attribute URL with unsafe scheme: "${normalized.slice(0, 48)}${normalized.length > 48 ? "…" : ""}"`,
         );
         return "";
     }

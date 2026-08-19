@@ -19,7 +19,7 @@ function _resolveContainer(container: Element | string): Element {
             ? (document.querySelector(container) as Element)
             : container;
     if (!el) {
-        throw new Error(`[Nix] mount: container not found: ${container}`);
+        throw new Error(`[nix-js] mount: container not found: ${container}`);
     }
     return el;
 }

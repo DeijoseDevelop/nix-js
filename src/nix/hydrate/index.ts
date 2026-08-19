@@ -46,7 +46,7 @@ export function hydrate(
         return { unmount: cleanup };
     } catch (error) {
         if (options.mismatch === "throw") throw error;
-        if (options.mismatch !== "remount") console.warn("[Nix] Hydration mismatch; remounting root:", error);
+        if (options.mismatch !== "remount") console.warn("[nix-js] Hydration mismatch; remounting root:", error);
         container.replaceChildren();
         const cleanup = isNixComponent(value)
             ? value.render()._render(container, null)
@@ -61,7 +61,7 @@ function hydrateComponent(
     options: HydrateOptions,
 ): NixMountHandle {
     _pushComponentContext();
-    let cleanup = () => {};
+    let cleanup = () => { };
     try {
         try {
             component.onInit?.();
@@ -227,7 +227,7 @@ function activateAttribute(
         return effect(() => update((value as () => unknown)()));
     }
     update(value);
-    return () => {};
+    return () => { };
 }
 
 function activateNode(
@@ -269,6 +269,14 @@ function hydrateNodeValue(
     value: unknown,
     options: HydrateOptions,
 ): (() => void) | undefined {
+    if (Array.isArray(value)) {
+        const cleanups: Array<() => void> = [];
+        for (const item of value) {
+            const cleanup = hydrateNodeValue(range, item, options);
+            if (cleanup) cleanups.push(cleanup);
+        }
+        return cleanups.length ? () => { for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i](); } : undefined;
+    }
     if (isNixTemplate(value)) {
         const descriptor = value[NIX_TEMPLATE_DESCRIPTOR];
         if (!descriptor) throwMismatch(options, -1, "descriptor", "Nested template has no hydration descriptor");
@@ -292,6 +300,14 @@ function hydrateNodeValue(
 
 function mountNodeValue(range: MarkerRange, value: unknown): (() => void) | undefined {
     if (value === null || value === undefined || value === false || value === true) return undefined;
+    if (Array.isArray(value)) {
+        const cleanups: Array<() => void> = [];
+        for (const item of value) {
+            const cleanup = mountNodeValue(range, item);
+            if (cleanup) cleanups.push(cleanup);
+        }
+        return cleanups.length ? () => { for (let i = cleanups.length - 1; i >= 0; i--) cleanups[i](); } : undefined;
+    }
     if (isNixTemplate(value)) return value._render(range.end.parentNode!, range.end);
     if (isNixComponent(value)) return value.render()._render(range.end.parentNode!, range.end);
     const node = document.createTextNode(String(value));
@@ -325,7 +341,7 @@ function throwMismatch(
 ): never {
     const mismatch = { index, kind, message } satisfies HydrationMismatch;
     options.onMismatch?.(mismatch);
-    const error = new Error(`[Nix] Hydration marker mismatch: ${message}`);
+    const error = new Error(`[nix-js] Hydration marker mismatch: ${message}`);
     Object.assign(error, { mismatch });
     throw error;
 }

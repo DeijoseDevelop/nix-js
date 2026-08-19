@@ -34,12 +34,12 @@ export class ReadonlySignal<T> extends Signal<T> {
 
         Object.defineProperty(this, "value", {
             get: () => source.value,
-            set: () => { throw new Error(`[Nix] "${this.label}" is read-only.`); },
+            set: () => { throw new Error(`[nix-js] "${this.label}" is read-only.`); },
             configurable: false,
         });
 
-        this.update = () => { throw new Error(`[Nix] "${this.label}" is read-only.`); };
-        this.dispose = () => { throw new Error(`[Nix] Cannot dispose "${this.label}" directly.`); };
+        this.update = () => { throw new Error(`[nix-js] "${this.label}" is read-only.`); };
+        this.dispose = () => { throw new Error(`[nix-js] Cannot dispose "${this.label}" directly.`); };
     }
 }
 
@@ -169,14 +169,14 @@ const RESERVED = new Set([
 
 function assertKey(key: string): void {
     if (key === "__proto__" || key === "constructor" || key === "prototype") {
-        throw new Error(`[Nix] Store key "${key}" is not allowed for security reasons.`);
+        throw new Error(`[nix-js] Store key "${key}" is not allowed for security reasons.`);
     }
-    if (RESERVED.has(key)) throw new Error(`[Nix] Store key "${key}" is reserved.`);
+    if (RESERVED.has(key)) throw new Error(`[nix-js] Store key "${key}" is reserved.`);
 }
 
 function warnReserved(key: string, ctx: "action" | "getter"): boolean {
     if (!RESERVED.has(key)) return true;
-    console.warn(`[Nix] Store ${ctx} "${key}" is reserved and will be ignored.`);
+    console.warn(`[nix-js] Store ${ctx} "${key}" is reserved and will be ignored.`);
     return false;
 }
 
@@ -257,7 +257,7 @@ export function createStore<
         _baseline = structuredClone(initialState);
     } catch (e) {
         throw new Error(
-            `[Nix] Store "${name}" initialState contains non-serializable data ` +
+            `[nix-js] Store "${name}" initialState contains non-serializable data ` +
             `(functions, DOM nodes, Symbols, or WeakRefs). ` +
             `Remove these before creating the store. Original error: ${e}`
         );
@@ -342,7 +342,7 @@ export function createStore<
             if (!warnReserved(key, "action")) continue;
             if (occupiedKeys.has(key)) {
                 console.warn(
-                    `[Nix] Store "${name}": action "${key}" collides with an existing ` +
+                    `[nix-js] Store "${name}": action "${key}" collides with an existing ` +
                     `signal or getter and will be ignored.`,
                 );
                 continue;
@@ -359,7 +359,7 @@ export function createStore<
             if (!warnReserved(key, "getter")) continue;
             if (occupiedKeys.has(key)) {
                 console.warn(
-                    `[Nix] Store "${name}": getter "${key}" collides with an existing ` +
+                    `[nix-js] Store "${name}": getter "${key}" collides with an existing ` +
                     `signal or action and will be ignored.`,
                 );
                 continue;
@@ -369,7 +369,7 @@ export function createStore<
 
             if (!(sig instanceof Signal)) {
                 throw new TypeError(
-                    `[Nix] Store "${name}": getter "${key}" must return a Signal ` +
+                    `[nix-js] Store "${name}": getter "${key}" must return a Signal ` +
                     `(wrap it with computed()). Got: ${typeof sig}`
                 );
             }
@@ -388,7 +388,7 @@ export function createStore<
             if (typeof cleanup === "function") cleanups.push(cleanup);
         } catch (error) {
             console.error(
-                `[Nix] Plugin initialization failed for store "${name}":`,
+                `[nix-js] Plugin initialization failed for store "${name}":`,
                 error
             );
         }

@@ -94,7 +94,7 @@ export function html(
         let cached = _templateCache.get(strings);
         if (cached) return cached;
         if (typeof document === "undefined") {
-            throw new Error("[Nix] DOM rendering requires a document. Use @deijose/nix-js/server on the server.");
+            throw new Error("[nix-js] DOM rendering requires a document. Use @deijose/nix-js/server on the server.");
         }
 
         const tpl = document.createElement("template");
@@ -184,7 +184,7 @@ export function html(
                     : container;
 
             if (!el) {
-                throw new Error(`[Nix] mount: contenedor no encontrado: ${container}`);
+                throw new Error(`[nix-js] mount: contenedor no encontrado: ${container}`);
             }
 
             const cleanup = _render(el, null);

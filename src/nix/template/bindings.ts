@@ -303,7 +303,7 @@ export function activateBindings(
             // do not block — the attribute name is developer-authored.
             if (ctx.executable ?? isExecutableAttrName(attrName)) {
                 console.warn(
-                    `[Nix] Dynamic binding on executable attribute "${attrName}". Use @event for handlers; avoid binding untrusted values here.`,
+                    `[nix-js] Dynamic binding on executable attribute "${attrName}". Use @event for handlers; avoid binding untrusted values here.`,
                 );
             }
 

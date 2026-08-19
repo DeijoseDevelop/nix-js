@@ -19,6 +19,10 @@ export default defineConfig({
         // vite clears the dir before building JS — tsc adds .d.ts files after
         emptyOutDir: true,
         sourcemap: true,
+        // Disable minification: library code should be readable and debuggable,
+        // and esbuild's name mangling can collide import bindings with local
+        // callback parameters when shared chunks are involved.
+        minify: false,
 
         lib: {
             entry: {

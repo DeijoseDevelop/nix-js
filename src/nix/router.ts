@@ -172,7 +172,7 @@ const POSITION_STATE_KEY = "__nix_pos";
 function getRouter(): RouterInternal {
     if (!_currentRouter) {
         throw new Error(
-            "[Nix] No active router. Call createRouter() first, " +
+            "[nix-js] No active router. Call createRouter() first, " +
             "or instantiate an outlet that auto-bootstraps one (e.g. IonRouterOutlet)."
         );
     }
@@ -869,7 +869,7 @@ export function createRouter(routes: RouteRecord[], options?: RouterOptions): Ro
 
     if (_currentRouter) {
         console.warn(
-            "[Nix] A router already exists. The previous router is being replaced. " +
+            "[nix-js] A router already exists. The previous router is being replaced. " +
             "Only one router instance should be active at a time.",
         );
     }

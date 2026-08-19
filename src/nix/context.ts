@@ -73,7 +73,7 @@ export function provide<T>(
     const top = stack[stack.length - 1];
     if (!top) {
         throw new Error(
-            "[Nix] provide() must be called inside onInit() of a NixComponent."
+            "[nix-js] provide() must be called inside onInit() of a NixComponent."
         );
     }
     top.set(key, value);

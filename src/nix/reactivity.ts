@@ -220,7 +220,7 @@ export function effect(fn: () => void | (() => void)): () => void {
             restored.deps = null;
             _state.ctxPool.push(restored);
             throw new Error(
-                "[Nix] Maximum effect re-execution depth exceeded (possible infinite loop)."
+                "[nix-js] Maximum effect re-execution depth exceeded (possible infinite loop)."
             );
         }
 
@@ -298,7 +298,7 @@ export function computed<T>(
     const signalProto = Object.getPrototypeOf(s) as Signal<T>;
     const valueDescriptor = Object.getOwnPropertyDescriptor(signalProto, "value");
     if (!valueDescriptor?.get || !valueDescriptor?.set) {
-        throw new Error("[Nix] Internal error: Signal.value descriptor not found.");
+        throw new Error("[nix-js] Internal error: Signal.value descriptor not found.");
     }
 
     Object.defineProperty(s, "value", {

@@ -12,6 +12,11 @@ import {
 } from "../template/types";
 import { sanitizeUrl } from "../template/sanitize";
 
+// Local guards avoid sharing the same minified import binding name with
+// callback parameters in the same module (esbuild bug with shared chunks).
+const isTemplate = isNixTemplate;
+const isKeyed = isKeyedList;
+
 export interface ServerRenderOptions {
     markers?: "none" | "hydration";
     signal?: AbortSignal;
@@ -63,11 +68,11 @@ async function renderValue(value: unknown, state: RenderState): Promise<string> 
         }
     }
     if (isNixComponent(value)) return renderComponent(value, state);
-    if (isKeyedList(value)) {
+    if (isKeyed(value)) {
         const rendered = await Promise.all(value.items.map((item, index) => renderValue(value.renderFn(item, index), state)));
         return rendered.join("");
     }
-    if (isNixTemplate(value)) return renderTemplate(value, state);
+    if (isTemplate(value)) return renderTemplate(value, state);
     return escapeText(String(value));
 }
 
@@ -99,7 +104,7 @@ async function renderComponent(component: NixComponent, state: RenderState): Pro
 
 async function renderTemplate(template: NixTemplate, state: RenderState): Promise<string> {
     const descriptor = template[NIX_TEMPLATE_DESCRIPTOR];
-    if (!descriptor) throw new TypeError("[Nix] Template does not support server rendering");
+    if (!descriptor) throw new TypeError("[nix-js] Template does not support server rendering");
     return renderDescriptor(descriptor, state);
 }
 

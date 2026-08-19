@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.0.1
+
+### Fixed — SSR rendering and hydration correctness
+
+- **Array of templates in SSR** — `renderValue` correctly handled arrays of `NixTemplate` objects, but esbuild's minifier with shared chunks collided the import binding name (`NIX_RENDER_PROTOCOL` renamed to `e`) with the `.map()` callback parameter (also renamed to `e`), causing `r.map(e => f(e, n))` to call the Symbol instead of the callback. This produced `[object Object],[object Object]` for any array of templates rendered server-side (e.g. `data.posts.map(postCard)`). Fixed by disabling minification in the library build (`minify: false` in `vite.lib.config.ts`) — library code should not be minified; that is the consumer bundler's job.
+- **Array of templates in hydration** — `hydrateNodeValue` and `mountNodeValue` in `src/nix/hydrate/index.ts` did not handle `Array.isArray(value)`, so reactive bindings returning arrays of templates (e.g. `filtered.value.map(post => html\`...\`)`) fell through to `document.createTextNode(String(array))` producing `[object Object],[object Object]` in the browser. Both functions now iterate arrays and hydrate/mount each item individually.
+- **Log prefix** — all `[Nix]` prefixes in errors and warnings changed to `[nix-js]` for consistency with the package name. Affected: `hydrate`, `reactivity`, `store`, `component`, `server`, `context`, `template/html`, `template/bindings`, `template/sanitize`, `template/node-binding`, `template/error-boundary`, `router`.
+
 ## v3.0.0
 
 ### Added — SSR and hydration subpaths (nix-js-core-ssr-hydration-design)

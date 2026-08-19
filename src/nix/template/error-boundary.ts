@@ -54,7 +54,7 @@ export function createErrorBoundary(
                             ? (fallback as (err: unknown) => NixTemplate | NixComponent)(err)
                             : (fallback as NixTemplate | NixComponent);
                 } catch (e) {
-                    console.error("[Nix] Error boundary fallback threw while producing the fallback UI:", e);
+                    console.error("[nix-js] Error boundary fallback threw while producing the fallback UI:", e);
                     activeCleanup = renderBrokenFallback(liveParent, before);
                     return;
                 }
@@ -68,7 +68,7 @@ export function createErrorBoundary(
                         activeCleanup = fb._render(liveParent, before);
                     }
                 } catch (e) {
-                    console.error("[Nix] Error boundary fallback threw during render:", e);
+                    console.error("[nix-js] Error boundary fallback threw during render:", e);
                     activeCleanup?.();
                     activeCleanup = renderBrokenFallback(liveParent, before);
                 } finally {
@@ -77,7 +77,7 @@ export function createErrorBoundary(
             };
 
             const fallbackReactiveErrorHandler = (e: unknown): void => {
-                console.error("[Nix] Error boundary fallback threw during a reactive update:", e);
+                console.error("[nix-js] Error boundary fallback threw during a reactive update:", e);
                 activeCleanup?.();
                 activeCleanup = null;
                 const liveParent = marker.parentNode;
@@ -89,7 +89,7 @@ export function createErrorBoundary(
             const renderBrokenFallback = (liveParent: Node, before: Node | null): (() => void) => {
                 const el = document.createElement("div");
                 el.setAttribute("data-nix-error-boundary", "fallback-failed");
-                el.textContent = "[Nix] Error boundary fallback failed to render.";
+                el.textContent = "[nix-js] Error boundary fallback failed to render.";
                 liveParent.insertBefore(el, before);
                 return () => el.remove();
             };
