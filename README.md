@@ -2,7 +2,7 @@
 
 [![npm version](https://img.shields.io/npm/v/@deijose/nix-js.svg)](https://www.npmjs.com/package/@deijose/nix-js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Tests](https://img.shields.io/badge/tests-583%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
+[![Tests](https://img.shields.io/badge/tests-595%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
 [![Coverage](https://img.shields.io/badge/coverage-95.86%25-brightgreen.svg)]()
 [![Bundle size](https://img.shields.io/badge/min%2Bgzip-~14%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
@@ -275,6 +275,24 @@ import { NixComponent } from "@deijose/nix-js/lifecycle";
 import { provide, inject, createInjectionKey } from "@deijose/nix-js/context";
 import { enableDevTools } from "@deijose/nix-js/devtools";
 ```
+
+### Server-side rendering (v3.0)
+
+```typescript
+import { renderToString } from "@deijose/nix-js/server";
+```
+
+The `server` subpath provides a DOM-free renderer that produces HTML from Nix.js templates without any browser environment or DOM simulation. Works directly on the template descriptor (strings, values, bindings) and serializes to HTML.
+
+### Hydration (v3.0)
+
+```typescript
+import { hydrate } from "@deijose/nix-js/hydrate";
+```
+
+The `hydrate` subpath provides real hydration that activates event bindings, signals, and effects on existing SSR DOM nodes instead of replacing them. Preserves DOM identity, focus, input state, and scroll position. Includes mismatch detection with fallback remount.
+
+Both `server` and `hydrate` are opt-in: the main bundle does not include them unless explicitly imported.
 
 This is optional: `import { ... } from "@deijose/nix-js"` remains fully supported.
 

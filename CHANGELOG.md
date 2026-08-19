@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.0.0
+
+### Added — SSR and hydration subpaths (nix-js-core-ssr-hydration-design)
+
+- **`@deijose/nix-js/server`** — new subpath with a DOM-free server renderer (`renderToString`) that produces HTML from Nix.js templates without requiring any browser environment or DOM simulation. The server renderer works directly on the template descriptor (strings, values, bindings) and serializes to HTML.
+- **`@deijose/nix-js/hydrate`** — new subpath with a real hydration API that activates event bindings, signals, and effects on existing SSR DOM nodes instead of replacing them. Preserves DOM identity, focus, input state, and scroll position. Includes mismatch detection and fallback remount when the SSR markup doesn't match the client template.
+- **Package exports** — `./server` and `./hydrate` added to `package.json` exports map with `types`, `import`, and `require` conditions. The main bundle does not include server/hydrate code unless explicitly imported.
+
+### Changed
+
+- **Node engine** — `>=20.19.0` (was `>=18`). Aligns with Vite 7/8 requirements and the Kit v2 peer dependency.
+- **Peer dependency for Kit** — `@deijose/nix-js-kit` now requires `@deijose/nix-js: ^3.0.0`.
+
 ## v2.6.0
 
 - **feat(form): programmatic value manipulation** — `nixField`, `nixFieldArray`, and `createForm` now expose methods for setting and resetting values without user interaction:

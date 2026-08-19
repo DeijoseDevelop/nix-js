@@ -2,8 +2,35 @@
 // --- Public types ---
 // =============================================================================
 
+export type TemplateBindingContext =
+    | { type: "node" }
+    | { type: "event"; eventName: string; modifiers: string[]; hadOpenQuote: boolean }
+    | { type: "attr"; attrName: string; hadOpenQuote: boolean; url?: boolean; executable?: boolean };
+
+export interface TemplateDescriptor {
+    readonly version: 1;
+    readonly strings: readonly string[];
+    readonly values: readonly unknown[];
+    readonly contexts: readonly TemplateBindingContext[];
+}
+
+export interface ServerRenderProtocolContext {
+    readonly markers: boolean;
+    readonly signal?: AbortSignal;
+    render(value: unknown, options?: { markers?: boolean }): Promise<string>;
+}
+
+export interface NixRenderProtocol {
+    renderServer?(context: ServerRenderProtocolContext): string | Promise<string>;
+}
+
+export const NIX_TEMPLATE_DESCRIPTOR = Symbol.for("@deijose/nix-js/template-descriptor");
+export const NIX_RENDER_PROTOCOL = Symbol.for("@deijose/nix-js/render-protocol");
+
 export interface NixTemplate {
     readonly __isNixTemplate: true;
+    readonly [NIX_TEMPLATE_DESCRIPTOR]?: TemplateDescriptor;
+    readonly [NIX_RENDER_PROTOCOL]?: NixRenderProtocol;
     /** Mounts the template into a container element (public / root API). */
     mount(container: Element | string): NixMountHandle;
     /** @internal Renders before `before` node (or appends to `parent`). Returns cleanup. */

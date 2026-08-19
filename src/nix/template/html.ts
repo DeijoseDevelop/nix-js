@@ -1,4 +1,4 @@
-import type { NixTemplate, NixMountHandle } from "./types";
+import { NIX_TEMPLATE_DESCRIPTOR, type NixTemplate, type NixMountHandle, type TemplateDescriptor } from "./types";
 import { detectContext, activateBindings } from "./bindings";
 import type { BindingContext } from "./bindings";
 
@@ -54,11 +54,16 @@ export function buildHTML(
 // --- Template cache ---
 // =============================================================================
 
-interface TemplateCache {
+interface DescriptorCache {
     contexts: BindingContext[];
+}
+
+interface TemplateCache {
     tpl: HTMLTemplateElement;
     pathMap: Array<{ nodeIndex: number; name?: string } | null>;
 }
+
+const _descriptorCache = new WeakMap<TemplateStringsArray, DescriptorCache>();
 const _templateCache = new WeakMap<TemplateStringsArray, TemplateCache>();
 
 // =============================================================================
@@ -69,8 +74,8 @@ export function html(
     strings: TemplateStringsArray,
     ...values: unknown[]
 ): NixTemplate {
-    let cached = _templateCache.get(strings);
-    if (!cached) {
+    let descriptorCache = _descriptorCache.get(strings);
+    if (!descriptorCache) {
         const contexts: BindingContext[] = [];
         let accumulated = "";
         for (let i = 0; i < strings.length - 1; i++) {
@@ -78,61 +83,64 @@ export function html(
             contexts.push(detectContext(accumulated));
             accumulated += "__nix__";
         }
+        descriptorCache = { contexts };
+        _descriptorCache.set(strings, descriptorCache);
+    }
+
+    const contexts = descriptorCache.contexts;
+    const descriptor: TemplateDescriptor = { version: 1, strings, values, contexts };
+
+    function getTemplateCache(): TemplateCache {
+        let cached = _templateCache.get(strings);
+        if (cached) return cached;
+        if (typeof document === "undefined") {
+            throw new Error("[Nix] DOM rendering requires a document. Use @deijose/nix-js/server on the server.");
+        }
+
         const tpl = document.createElement("template");
         tpl.innerHTML = buildHTML(strings, contexts);
-
-        // Pre-record paths once on the canonical template content (O(N) single-pass)
         const pathMap = new Array<{ nodeIndex: number; name?: string } | null>(contexts.length).fill(null);
         const root = tpl.content;
-
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
         let nodeIndex = 0;
         let wNode: Node | null;
 
         while ((wNode = walker.nextNode())) {
             nodeIndex++;
-
-            if (wNode.nodeType === 8) { // COMMENT_NODE
+            if (wNode.nodeType === 8) {
                 const val = wNode.nodeValue;
                 if (val && val.startsWith("nix-")) {
                     const idx = parseInt(val.slice(4), 10);
-                    if (!isNaN(idx)) {
-                        pathMap[idx] = { nodeIndex };
-                    }
+                    if (!isNaN(idx)) pathMap[idx] = { nodeIndex };
                 }
-            } else if (wNode.nodeType === 1) { // ELEMENT_NODE
+            } else if (wNode.nodeType === 1) {
                 const el = wNode as Element;
                 const attrs = Array.from(el.attributes);
                 for (let i = 0; i < attrs.length; i++) {
                     const attr = attrs[i];
                     const name = attr.name;
-
                     if (name.startsWith("data-nix-e-")) {
                         const idx = parseInt(name.slice(11), 10);
-                        if (!isNaN(idx)) {
-                            pathMap[idx] = { nodeIndex, name: attr.value };
-                            el.removeAttribute(name);
-                        }
+                        if (!isNaN(idx)) pathMap[idx] = { nodeIndex, name: attr.value };
+                        el.removeAttribute(name);
                         continue;
                     }
                     if (name.startsWith("data-nix-a-")) {
                         const idx = parseInt(name.slice(11), 10);
-                        if (!isNaN(idx)) {
-                            pathMap[idx] = { nodeIndex, name: attr.value };
-                            el.removeAttribute(name);
-                        }
+                        if (!isNaN(idx)) pathMap[idx] = { nodeIndex, name: attr.value };
+                        el.removeAttribute(name);
                     }
                 }
             }
         }
 
-        cached = { contexts, tpl, pathMap };
+        cached = { tpl, pathMap };
         _templateCache.set(strings, cached);
+        return cached;
     }
 
-    const { contexts, tpl, pathMap } = cached;
-
     function _render(parent: Node, before: Node | null): () => void {
+        const { tpl, pathMap } = getTemplateCache();
         const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
         const { disposes, postMountHooks } = activateBindings(
@@ -165,6 +173,7 @@ export function html(
 
     const nixTemplate: NixTemplate = {
         __isNixTemplate: true,
+        [NIX_TEMPLATE_DESCRIPTOR]: descriptor,
 
         _render,
 

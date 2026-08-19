@@ -1,5 +1,5 @@
-export type { NixTemplate, NixMountHandle, NixRef, KeyedList, PortalOutlet, ErrorFallback, TransitionContent } from "./types";
-export { ref, isNixTemplate, isKeyedList, COMMENT } from "./types";
+export type { NixTemplate, NixMountHandle, NixRef, KeyedList, PortalOutlet, ErrorFallback, TransitionContent, TemplateBindingContext, TemplateDescriptor, NixRenderProtocol, ServerRenderProtocolContext } from "./types";
+export { ref, isNixTemplate, isKeyedList, COMMENT, NIX_TEMPLATE_DESCRIPTOR, NIX_RENDER_PROTOCOL } from "./types";
 
 export { html, buildHTML } from "./html";
 

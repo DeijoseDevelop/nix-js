@@ -12,20 +12,31 @@ export function createInjectionKey<T>(description?: string): InjectionKey<T> {
 
 /** Stack of provide maps, one per active component in the render tree. */
 const _stack: Map<unknown, unknown>[] = [];
+let _scopeResolver: (() => Map<unknown, unknown>[] | undefined) | undefined;
+
+function currentStack(): Map<unknown, unknown>[] {
+    return _scopeResolver?.() ?? _stack;
+}
+
+export function _setContextScopeResolver(
+    resolver: (() => Map<unknown, unknown>[] | undefined) | undefined,
+): void {
+    _scopeResolver = resolver;
+}
 
 /** @internal — returns a copy of the stack for capturing in effect closures. */
 export function _captureContextSnapshot(): Map<unknown, unknown>[] {
-    return [..._stack];
+    return [...currentStack()];
 }
 
 /** @internal — pushes an empty context for a new component (static render). */
 export function _pushComponentContext(): void {
-    _stack.push(new Map());
+    currentStack().push(new Map());
 }
 
 /** @internal — pops the current component context (static render). */
 export function _popComponentContext(): void {
-    _stack.pop();
+    currentStack().pop();
 }
 
 /**
@@ -36,14 +47,15 @@ export function _withComponentContext<T>(
     parentSnapshot: Map<unknown, unknown>[],
     fn: () => T
 ): T {
-    const saved = _stack.splice(0);
-    parentSnapshot.forEach(m => _stack.push(m));
-    _stack.push(new Map());
+    const stack = currentStack();
+    const saved = stack.splice(0);
+    parentSnapshot.forEach(m => stack.push(m));
+    stack.push(new Map());
     try {
         return fn();
     } finally {
-        _stack.splice(0);
-        saved.forEach(m => _stack.push(m));
+        stack.splice(0);
+        saved.forEach(m => stack.push(m));
     }
 }
 
@@ -57,7 +69,8 @@ export function provide<T>(
     key: InjectionKey<T> | string | symbol,
     value: T
 ): void {
-    const top = _stack[_stack.length - 1];
+    const stack = currentStack();
+    const top = stack[stack.length - 1];
     if (!top) {
         throw new Error(
             "[Nix] provide() must be called inside onInit() of a NixComponent."
@@ -74,9 +87,10 @@ export function inject<T>(
     key: InjectionKey<T> | string | symbol,
     defaultValue?: T
 ): T | undefined {
-    for (let i = _stack.length - 1; i >= 0; i--) {
-        if (_stack[i].has(key)) {
-            return _stack[i].get(key) as T;
+    const stack = currentStack();
+    for (let i = stack.length - 1; i >= 0; i--) {
+        if (stack[i].has(key)) {
+            return stack[i].get(key) as T;
         }
     }
     return defaultValue;

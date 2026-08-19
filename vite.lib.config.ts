@@ -30,6 +30,8 @@ export default defineConfig({
                 "plugins": resolve("src/nix/plugins.ts"),
                 "async": resolve("src/nix/async.ts"),
                 "template": resolve("src/nix/template/index.ts"),
+                "server": resolve("src/nix/server/index.ts"),
+                "hydrate": resolve("src/nix/hydrate/index.ts"),
                 "component": resolve("src/nix/component.ts"),
                 "context": resolve("src/nix/context.ts"),
                 "lifecycle": resolve("src/nix/lifecycle.ts"),
@@ -41,7 +43,7 @@ export default defineConfig({
 
         rollupOptions: {
             // Nix.js has zero runtime dependencies — nothing to mark external.
-            external: [],
+            external: ["node:async_hooks"],
             output: [
                 {
                     // ESM output

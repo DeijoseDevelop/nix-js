@@ -1,5 +1,5 @@
 import { effect } from "../reactivity";
-import type { NixRef } from "./types";
+import type { NixRef, TemplateBindingContext } from "./types";
 import { activateNodeBinding } from "./node-binding";
 import { queueDOMWrite } from "./dom-write";
 import { isUrlAttrName, isExecutableAttrName, sanitizeUrl } from "./sanitize";
@@ -21,12 +21,7 @@ export function showWhen(el: HTMLElement, condition: boolean): void {
 // --- Binding context ---
 // =============================================================================
 
-type BindingContext =
-    | { type: "node" }
-    | { type: "event"; eventName: string; modifiers: string[]; hadOpenQuote: boolean }
-    | { type: "attr"; attrName: string; hadOpenQuote: boolean; url?: boolean; executable?: boolean };
-
-export type { BindingContext };
+export type BindingContext = TemplateBindingContext;
 
 /**
  * Determines the binding context (node, event, or attribute) for an interpolated

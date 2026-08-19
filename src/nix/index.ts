@@ -1,7 +1,7 @@
 export { Signal, signal, effect, computed, batch, watch, untrack, nextTick } from "./reactivity";
 export type { WatchOptions } from "./reactivity";
-export { html, repeat, ref, showWhen, portal, createPortalOutlet, portalOutlet, provideOutlet, injectOutlet, createErrorBoundary, transition } from "./template";
-export type { NixTemplate, NixMountHandle, KeyedList, NixRef, PortalOutlet, ErrorFallback, TransitionOptions, TransitionContent } from "./template";
+export { html, repeat, ref, showWhen, portal, createPortalOutlet, portalOutlet, provideOutlet, injectOutlet, createErrorBoundary, transition, NIX_TEMPLATE_DESCRIPTOR, NIX_RENDER_PROTOCOL } from "./template";
+export type { NixTemplate, NixMountHandle, KeyedList, NixRef, PortalOutlet, ErrorFallback, TransitionOptions, TransitionContent, TemplateBindingContext, TemplateDescriptor, NixRenderProtocol, ServerRenderProtocolContext } from "./template";
 export { mount } from "./component";
 export type { MountOptions } from "./component";
 export { NixComponent } from "./lifecycle";

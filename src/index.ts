@@ -25,6 +25,8 @@ export {
     injectOutlet,
     createErrorBoundary,
     transition,
+    NIX_TEMPLATE_DESCRIPTOR,
+    NIX_RENDER_PROTOCOL,
     // Components
     mount,
     NixComponent,
@@ -71,6 +73,10 @@ export type {
     // Templates
     NixTemplate,
     NixMountHandle,
+    TemplateBindingContext,
+    TemplateDescriptor,
+    NixRenderProtocol,
+    ServerRenderProtocolContext,
     MountOptions,
     KeyedList,
     NixRef,
