@@ -16,6 +16,7 @@ export {
     // Templates
     html,
     repeat,
+    raw,
     ref,
     showWhen,
     portal,
@@ -64,7 +65,7 @@ export {
     createValidator,
     validators,
     extendValidators,
-} from "./nix";
+} from "./nix/index.js";
 
 // --- Types ---
 export type {
@@ -77,6 +78,8 @@ export type {
     TemplateDescriptor,
     NixRenderProtocol,
     ServerRenderProtocolContext,
+    DomProtocolContext,
+    HydrationProtocolContext,
     MountOptions,
     KeyedList,
     NixRef,
@@ -120,4 +123,4 @@ export type {
     FormOptions,
     ValidatorsBase,
     NixChildren,
-} from "./nix";
+} from "./nix/index.js";

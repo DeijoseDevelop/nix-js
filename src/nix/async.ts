@@ -1,6 +1,6 @@
-import { signal, effect, Signal } from "./reactivity";
-import { NixComponent } from "./lifecycle";
-import { type NixTemplate, html, isNixTemplate } from "./template";
+import { signal, effect, Signal } from "./reactivity.js";
+import { NixComponent } from "./lifecycle.js";
+import { type NixTemplate, html, isNixTemplate } from "./template/index.js";
 
 // --- Types ---
 

@@ -1,4 +1,4 @@
-import type { NixTemplate } from "./template";
+import type { NixTemplate } from "./template/index.js";
 
 // --- NixChildren ---
 
@@ -54,6 +54,9 @@ export abstract class NixComponent {
 
     /** Called before `render()` — no DOM yet. Errors are caught by `onError` if present. */
     onInit?(): void;
+
+    /** Server-only lifecycle hook. Runs during SSR after `onInit()`; never on the client. */
+    onServerRender?(): void;
 
     /** Called after DOM insertion. May return a cleanup function. */
     onMount?(): (() => void) | void;

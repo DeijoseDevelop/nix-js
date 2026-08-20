@@ -1,13 +1,13 @@
-import type { NixTemplate, NixMountHandle } from "./template";
+import type { NixTemplate, NixMountHandle } from "./template/index.js";
 import {
     isNixComponent,
     _debugComponentMountStart,
     _debugComponentMountEnd,
     _debugComponentUnmount,
     type NixComponent,
-} from "./lifecycle";
-import { _pushComponentContext, _popComponentContext, provide } from "./context";
-import { RouterKey, type Router, _debugRegisterRouter, _debugUnregisterRouter } from "./router";
+} from "./lifecycle.js";
+import { _pushComponentContext, _popComponentContext, provide } from "./context.js";
+import { RouterKey, type Router, _debugRegisterRouter, _debugUnregisterRouter } from "./router.js";
 
 export interface MountOptions {
     router?: Router;

@@ -1,5 +1,5 @@
-import { watch, untrack } from "./reactivity";
-import { type NixPlugin, type Store, type GuardFn } from "./store";
+import { watch, untrack } from "./reactivity.js";
+import { type NixPlugin, type Store, type GuardFn } from "./store.js";
 
 /**
  * Minimal interface that any storage adapter must implement.

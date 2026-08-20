@@ -3,13 +3,13 @@ import {
     _debugComponentMountEnd,
     _debugComponentUnmount,
     type NixComponent,
-} from "../lifecycle";
+} from "../lifecycle.js";
 import {
     _captureContextSnapshot,
     _pushComponentContext,
     _popComponentContext,
     _withComponentContext,
-} from "../context";
+} from "../context.js";
 
 // =============================================================================
 // --- Component mounting helpers ---

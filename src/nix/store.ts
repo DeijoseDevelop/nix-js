@@ -5,7 +5,7 @@ import {
     batch,
     watch,
     type WatchOptions,
-} from "./reactivity";
+} from "./reactivity.js";
 
 // ---------------------------------------------------------------------------
 // Types

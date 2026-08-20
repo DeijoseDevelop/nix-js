@@ -1,16 +1,16 @@
-import { effect } from "../reactivity";
-import { batch } from "../reactivity";
-import { isNixComponent } from "../lifecycle";
-import { _captureContextSnapshot } from "../context";
-import type { KEntry } from "./types";
-import { isNixTemplate, isKeyedList } from "./types";
+import { effect } from "../reactivity.js";
+import { isNixComponent } from "../lifecycle.js";
+import { _captureContextSnapshot } from "../context.js";
+import type { KEntry } from "./types.js";
+import type { RepeatKey } from "./keyed.js";
+import { isNixTemplate, isKeyedList, NIX_RENDER_PROTOCOL } from "./types.js";
 import {
     _mountComponent,
     _mountComponentWithCtx,
     _mountComponentDeferred,
-} from "./mount-helpers";
-import { getSequence } from "./keyed";
-import { queueDOMWrite } from "./dom-write";
+} from "./mount-helpers.js";
+import { createKeyedMount, reconcileKeyedList } from "./keyed-diff.js";
+import { queueDOMWrite } from "./dom-write.js";
 
 // =============================================================================
 // --- Reactive node binding ---
@@ -28,6 +28,17 @@ export function activateNodeBinding(
     postMountHooks: Array<() => void>,
 ): void {
     if (typeof value !== "function") {
+        if (value != null && typeof value === "object" && (value as Record<PropertyKey, unknown>)[NIX_RENDER_PROTOCOL] != null) {
+            const proto = (value as Record<PropertyKey, unknown>)[NIX_RENDER_PROTOCOL] as { mountDom?: (ctx: import("./types.js").DomProtocolContext) => (() => void) | void };
+            if (proto.mountDom) {
+                const cleanup = proto.mountDom({
+                    parent: anchor.parentNode!,
+                    before: anchor,
+                });
+                if (cleanup) disposes.push(cleanup);
+                return;
+            }
+        }
         if (isNixComponent(value)) {
             _mountComponentDeferred(value, anchor.parentNode!, anchor, postMountHooks, disposes);
         } else if (isNixTemplate(value)) {
@@ -58,12 +69,13 @@ export function activateNodeBinding(
     let textNode: Text | null = null;
     let innerCleanup: (() => void) | null = null;
 
-    type Key = string | number;
+    type Key = RepeatKey;
     let keyedState: Map<Key, KEntry> | null = null;
     let prevKeyOrder: Key[] = [];
     let keyedZoneStart: Node | null = null;
 
     const ctxSnapshot = _captureContextSnapshot();
+    const keyedMount = createKeyedMount(ctxSnapshot);
 
     let _textQueued = false;
     let _pendingText = "";
@@ -113,6 +125,14 @@ export function activateNodeBinding(
 
         if (v == null || v === false) {
             // Empty
+        } else if (v != null && typeof v === "object" && (v as Record<PropertyKey, unknown>)[NIX_RENDER_PROTOCOL] != null) {
+            const proto = (v as Record<PropertyKey, unknown>)[NIX_RENDER_PROTOCOL] as { mountDom?: (ctx: import("./types.js").DomProtocolContext) => (() => void) | void };
+            if (proto.mountDom) {
+                innerCleanup = proto.mountDom({ parent: anchor.parentNode!, before: anchor }) ?? null;
+            } else {
+                textNode = document.createTextNode(String(v));
+                anchor.parentNode!.insertBefore(textNode, anchor);
+            }
         } else if (isNixTemplate(v)) {
             innerCleanup = v._render(anchor.parentNode!, anchor);
         } else if (isNixComponent(v)) {
@@ -125,145 +145,17 @@ export function activateNodeBinding(
                 anchor.parentNode!.insertBefore(keyedZoneStart, anchor);
             }
 
-            const parent = anchor.parentNode!;
-            const newKeyOrder: Key[] = v.items.map(
-                (item, idx) => v.keyFn(item as never, idx)
-            );
-
-            const newKeySet = new Set(newKeyOrder);
-            let anyKeysSurvive = false;
-            if (keyedState.size > 0) {
-                for (const k of keyedState.keys()) {
-                    if (newKeySet.has(k)) {
-                        anyKeysSurvive = true;
-                        break;
-                    }
-                }
-            }
-
-            // 1. Initial Render or Total Replacement (O(1) path)
-            if (!anyKeysSurvive) {
-                if (keyedState.size > 0) {
-                    const range = document.createRange();
-                    range.setStartAfter(keyedZoneStart!);
-                    range.setEndBefore(anchor);
-                    range.deleteContents();
-                    for (const entry of keyedState.values()) entry.cleanup();
-                    keyedState.clear();
-                }
-
-                if (newKeyOrder.length > 0) {
-                    const frag = document.createDocumentFragment();
-                    batch(() => {
-                        for (let i = 0; i < newKeyOrder.length; i++) {
-                            const key = newKeyOrder[i];
-                            const item = v.items[i];
-                            const start = document.createTextNode("") as unknown as Comment;
-                            const end = document.createTextNode("") as unknown as Comment;
-
-                            frag.appendChild(start);
-                            frag.appendChild(end);
-
-                            const rendered = v.renderFn(item as never, i);
-                            const cleanup = isNixComponent(rendered)
-                                ? _mountComponentWithCtx(rendered, frag, end, ctxSnapshot)
-                                : rendered._render(frag, end);
-
-                            if (keyedState!.has(key)) {
-                                console.warn(`[nix-js] repeat(): duplicate key "${key}". Keys must be unique; the previous entry leaks (orphaned nodes + live effects).`);
-                            }
-                            keyedState?.set(key, { start, end, cleanup });
-                        }
-                    });
-                    parent.insertBefore(frag, anchor);
-                }
-                prevKeyOrder = newKeyOrder;
-                return;
-            }
-
-            // 2. Reconciliation with LIS
-            const keyToNewIndex = new Map<Key, number>();
-            for (let i = 0; i < newKeyOrder.length; i++) {
-                keyToNewIndex.set(newKeyOrder[i], i);
-            }
-
-            const newIndexToOldIndexMap = new Int32Array(newKeyOrder.length);
-            let moved = false;
-            let maxNewIndexSoFar = 0;
-
-            for (let i = 0; i < prevKeyOrder.length; i++) {
-                const key = prevKeyOrder[i];
-                const newIndex = keyToNewIndex.get(key);
-
-                if (newIndex === undefined) {
-                    const entry = keyedState.get(key)!;
-                    entry.cleanup();
-                    let node: Node | null = entry.start;
-                    while (node) {
-                        const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
-                        node.parentNode?.removeChild(node);
-                        if (!next) break;
-                        node = next;
-                    }
-                    keyedState.delete(key);
-                } else {
-                    newIndexToOldIndexMap[newIndex] = i + 1;
-                    if (newIndex >= maxNewIndexSoFar) {
-                        maxNewIndexSoFar = newIndex;
-                    } else {
-                        moved = true;
-                    }
-                }
-            }
-
-            const increasingNewIndexSequence = moved ? getSequence(newIndexToOldIndexMap) : [];
-            let j = increasingNewIndexSequence.length - 1;
-            let insertionPoint: Node = anchor;
-
-            for (let i = newKeyOrder.length - 1; i >= 0; i--) {
-                const key = newKeyOrder[i];
-                const isNew = newIndexToOldIndexMap[i] === 0;
-
-                if (isNew) {
-                    const it = v.items[i];
-                    const sMarker = document.createTextNode("") as unknown as Comment;
-                    const eMarker = document.createTextNode("") as unknown as Comment;
-                    const frag = document.createDocumentFragment();
-
-                    frag.appendChild(sMarker);
-                    frag.appendChild(eMarker);
-
-                    const rendered = v.renderFn(it as never, i);
-                    const cleanup = isNixComponent(rendered)
-                        ? _mountComponentWithCtx(rendered, frag, eMarker, ctxSnapshot)
-                        : rendered._render(frag, eMarker);
-
-                    if (keyedState.has(key)) {
-                        console.warn(`[nix-js] repeat(): duplicate key "${key}". Keys must be unique; the previous entry leaks (orphaned nodes + live effects).`);
-                    }
-                    keyedState.set(key, { start: sMarker, end: eMarker, cleanup });
-                    parent.insertBefore(frag, insertionPoint);
-                    insertionPoint = sMarker;
-                } else {
-                    const entry = keyedState.get(key)!;
-                    if (moved) {
-                        if (j < 0 || i !== increasingNewIndexSequence[j]) {
-                            let node: Node | null = entry.start;
-                            while (node) {
-                                const next: ChildNode | null = node === entry.end ? null : node.nextSibling;
-                                parent.insertBefore(node, insertionPoint);
-                                if (!next) break;
-                                node = next;
-                            }
-                        } else {
-                            j--;
-                        }
-                    }
-                    insertionPoint = entry.start;
-                }
-            }
-
-            prevKeyOrder = newKeyOrder;
+            reconcileKeyedList({
+                zoneStart: keyedZoneStart!,
+                anchor,
+                state: keyedState,
+                prevOrder: prevKeyOrder,
+                list: v,
+                mount: keyedMount,
+                onDuplicateKey: (key) => {
+                    console.warn(`[nix-js] repeat(): duplicate key "${key}". Keys must be unique; the previous entry leaks (orphaned nodes + live effects).`);
+                },
+            });
         } else if (Array.isArray(v)) {
             const cleanups: Array<() => void> = [];
             for (const item of v) {

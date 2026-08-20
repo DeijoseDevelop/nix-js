@@ -1,9 +1,9 @@
-import { effect } from "../reactivity";
-import { isNixComponent } from "../lifecycle";
-import type { NixComponent } from "../lifecycle";
-import type { NixTemplate, NixMountHandle, TransitionContent } from "./types";
-import { COMMENT } from "./types";
-import { _mountComponentSilent } from "./mount-helpers";
+import { effect } from "../reactivity.js";
+import { isNixComponent } from "../lifecycle.js";
+import type { NixComponent } from "../lifecycle.js";
+import type { NixTemplate, NixMountHandle, TransitionContent } from "./types.js";
+import { COMMENT } from "./types.js";
+import { _mountComponentSilent } from "./mount-helpers.js";
 
 // =============================================================================
 // --- TransitionOptions ---

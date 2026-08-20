@@ -1,10 +1,10 @@
-import { _pushErrorHandler, _popErrorHandler } from "../reactivity";
-import { isNixComponent } from "../lifecycle";
-import type { NixComponent } from "../lifecycle";
-import { _pushComponentContext, _popComponentContext } from "../context";
-import type { NixTemplate, NixMountHandle, ErrorFallback } from "./types";
-import { COMMENT } from "./types";
-import { _mountComponentSilent } from "./mount-helpers";
+import { _pushErrorHandler, _popErrorHandler } from "../reactivity.js";
+import { isNixComponent } from "../lifecycle.js";
+import type { NixComponent } from "../lifecycle.js";
+import { _pushComponentContext, _popComponentContext } from "../context.js";
+import type { NixTemplate, NixMountHandle, ErrorFallback } from "./types.js";
+import { COMMENT } from "./types.js";
+import { _mountComponentSilent } from "./mount-helpers.js";
 
 // =============================================================================
 // --- Error Boundary ---

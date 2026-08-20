@@ -2,6 +2,62 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.0.3
+
+### Fixed
+
+- **`raw` export on the main entry** — `@deijose/nix-js` (root import) now
+  re-exports `raw` (trusted raw HTML) and the `DomProtocolContext` /
+  `HydrationProtocolContext` types. v3.0.2 exposed them only through
+  `@deijose/nix-js/template`; the root entry omitted them.
+
+## v3.0.2
+
+### Added — keyed hydration, streaming chunks and render protocols
+
+- **Keyed hydration for `repeat()`** — SSR now emits per-item key markers
+  (`nix-ki`/`nix-ke`) inside hydratable roots; the hydrator reconstructs the
+  key → DOM range map, adopts existing nodes without recreating them, reorders
+  with the same LIS algorithm used by the DOM renderer, and detects duplicate
+  or non-serializable keys with diagnostics (instead of silent `String(key)`
+  collisions). Empty/add/remove/reorder and identity-preservation are covered
+  by 10 new tests (`src/__tests__/hydrate-keyed.test.ts`).
+- **Array range delimiters** — SSR emits `nix-ai`/`nix-aiend` boundaries around
+  each array item so hydration can slice each item into its own range. This
+  fixes a real bug where repeated marker indices across items of a reactive
+  array (e.g. `list.value.map(x => html\`...\`)`) collided during hydration,
+  causing wrong content/event association in the browser.
+- **Interaction before hydration** — when hydrating `value`/`checked`/`selected`
+  property bindings, if the DOM holds a value the user wrote before the binding
+  activated (e.g. inside a lazy `visible`-directive island), the DOM value is
+  kept and propagated to reactive model sources via a microtask event.
+- **`renderToChunks()`** — `@deijose/nix-js/server` now streams incremental
+  `RenderChunk`s (markup/boundary-start/boundary-end/error/done); `renderToString`
+  is now a wrapper over the same chunk renderer, guaranteeing parity.
+- **`createServerRenderScope()`** — public render scope with isolated
+  provide/inject context, `render`, `renderToChunks` and `abort()`.
+- **`RenderErrorInfo` / `onServerRender`** — `onError` now receives structured
+  `RenderErrorInfo`; `NixComponent` gained a server-only `onServerRender()`
+  lifecycle hook.
+- **Render protocols `mountDom`/`hydrateDom`** — `NixRenderProtocol` is now a
+  full protocol (`renderServer`, `mountDom`, `hydrateDom`); the DOM renderer
+  and hydrator invoke them for custom values.
+- **`raw()`** — explicit trusted raw HTML helper (server/mount/hydrate),
+  the only path for unescaped markup (never inferred from plain strings).
+
+### Changed
+
+- **Minification** — library build now uses `minify: "oxc"` (Vite 8/Rolldown
+  native) instead of disabling minification as a workaround. The esbuild
+  name-collision bug from v3.0.1 is not reproduced by Oxc; the minified
+  artifact (ESM + CJS) is validated by `npm run test:artifact`.
+
+### Test
+
+- New `renderToChunks`/scope/protocol tests, SSR/hydration matrix (forms,
+  mismatch, abort, cleanup, nested providers), reactive-array and
+  hydrate-array regression tests. Full suite now at 628 tests (was 595).
+
 ## v3.0.1
 
 ### Fixed — SSR rendering and hydration correctness

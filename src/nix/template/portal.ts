@@ -1,8 +1,8 @@
-import { isNixComponent } from "../lifecycle";
-import type { NixComponent } from "../lifecycle";
-import { provide, inject, createInjectionKey } from "../context";
-import type { NixTemplate, NixMountHandle, NixRef, PortalOutlet } from "./types";
-import { _mountComponent } from "./mount-helpers";
+import { isNixComponent } from "../lifecycle.js";
+import type { NixComponent } from "../lifecycle.js";
+import { provide, inject, createInjectionKey } from "../context.js";
+import type { NixTemplate, NixMountHandle, NixRef, PortalOutlet } from "./types.js";
+import { _mountComponent } from "./mount-helpers.js";
 
 // =============================================================================
 // --- PortalOutlet ---

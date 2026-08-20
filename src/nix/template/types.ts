@@ -17,11 +17,30 @@ export interface TemplateDescriptor {
 export interface ServerRenderProtocolContext {
     readonly markers: boolean;
     readonly signal?: AbortSignal;
+    readonly context?: unknown;
     render(value: unknown, options?: { markers?: boolean }): Promise<string>;
+}
+
+/** Context passed to a custom value's `mountDom` protocol during client-side mount. */
+export interface DomProtocolContext {
+    readonly parent: Node;
+    readonly before: Node | null;
+    readonly context?: unknown;
+}
+
+/** Context passed to a custom value's `hydrateDom` protocol during hydration. */
+export interface HydrationProtocolContext {
+    readonly parent: Node;
+    readonly bounds: { start: Comment; end: Comment } | null;
+    readonly context?: unknown;
+    /** Remounts a value inside the current bounds (used as fallback). */
+    render(value: unknown): unknown;
 }
 
 export interface NixRenderProtocol {
     renderServer?(context: ServerRenderProtocolContext): string | Promise<string>;
+    mountDom?(context: DomProtocolContext): (() => void) | void;
+    hydrateDom?(context: HydrationProtocolContext): (() => void) | void;
 }
 
 export const NIX_TEMPLATE_DESCRIPTOR = Symbol.for("@deijose/nix-js/template-descriptor");
@@ -56,7 +75,7 @@ export interface KeyedList<T = unknown> {
     readonly __isKeyedList: true;
     readonly items: T[];
     readonly keyFn: (item: T, index: number) => string | number;
-    readonly renderFn: (item: T, index: number) => NixTemplate | import("../lifecycle").NixComponent;
+    readonly renderFn: (item: T, index: number) => NixTemplate | import("../lifecycle.js").NixComponent;
 }
 
 export interface KEntry {
@@ -75,14 +94,14 @@ export interface PortalOutlet {
 /** Fallback: a static template/component, or a factory receiving the error. */
 export type ErrorFallback =
     | NixTemplate
-    | import("../lifecycle").NixComponent
-    | ((err: unknown) => NixTemplate | import("../lifecycle").NixComponent);
+    | import("../lifecycle.js").NixComponent
+    | ((err: unknown) => NixTemplate | import("../lifecycle.js").NixComponent);
 
 /** Content that can be wrapped with `transition()`. */
 export type TransitionContent =
     | NixTemplate
-    | import("../lifecycle").NixComponent
-    | (() => NixTemplate | import("../lifecycle").NixComponent | null);
+    | import("../lifecycle.js").NixComponent
+    | (() => NixTemplate | import("../lifecycle.js").NixComponent | null);
 
 export const COMMENT = {
     SCOPE: "nix-scope",

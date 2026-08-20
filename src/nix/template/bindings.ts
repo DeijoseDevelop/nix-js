@@ -1,8 +1,8 @@
-import { effect } from "../reactivity";
-import type { NixRef, TemplateBindingContext } from "./types";
-import { activateNodeBinding } from "./node-binding";
-import { queueDOMWrite } from "./dom-write";
-import { isUrlAttrName, isExecutableAttrName, sanitizeUrl } from "./sanitize";
+import { effect } from "../reactivity.js";
+import type { NixRef, TemplateBindingContext } from "./types.js";
+import { activateNodeBinding } from "./node-binding.js";
+import { queueDOMWrite } from "./dom-write.js";
+import { isUrlAttrName, isExecutableAttrName, sanitizeUrl } from "./sanitize.js";
 
 // =============================================================================
 // --- show / hide ---

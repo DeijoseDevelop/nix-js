@@ -1,9 +1,9 @@
-import { signal } from "./reactivity";
-import type { Signal } from "./reactivity";
-import { NixComponent } from "./lifecycle";
-import type { NixTemplate } from "./template";
-import { html } from "./template";
-import { createInjectionKey, inject } from "./context";
+import { signal } from "./reactivity.js";
+import type { Signal } from "./reactivity.js";
+import { NixComponent } from "./lifecycle.js";
+import type { NixTemplate } from "./template/index.js";
+import { html } from "./template/index.js";
+import { createInjectionKey, inject } from "./context.js";
 
 // =============================================================================
 //  Public types

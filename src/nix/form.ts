@@ -1,5 +1,5 @@
-import { signal, computed, effect, batch } from "./reactivity";
-import type { Signal } from "./reactivity";
+import { signal, computed, effect, batch } from "./reactivity.js";
+import type { Signal } from "./reactivity.js";
 
 // --- Validator ---
 

@@ -279,10 +279,16 @@ import { enableDevTools } from "@deijose/nix-js/devtools";
 ### Server-side rendering (v3.0)
 
 ```typescript
-import { renderToString } from "@deijose/nix-js/server";
+import { renderToString, renderToChunks, createServerRenderScope } from "@deijose/nix-js/server";
 ```
 
 The `server` subpath provides a DOM-free renderer that produces HTML from Nix.js templates without any browser environment or DOM simulation. Works directly on the template descriptor (strings, values, bindings) and serializes to HTML.
+
+- `renderToString(value, options?)` — renders a full string. Supports `markers: "hydration"`, `signal` (abort), `context` and `onError(error, info: RenderErrorInfo)`.
+- `renderToChunks(value, options?)` — streams incremental `RenderChunk`s (`markup`, `boundary-start`, `boundary-end`, `error`, `done`). `renderToString` is a wrapper over the same chunk renderer, so both always produce identical output.
+- `createServerRenderScope(options?)` — an explicit render scope that isolates `provide`/`inject` context per render, exposes `render`, `renderToChunks` and `abort()`, and keeps concurrent renders from sharing state.
+
+Components may define `onServerRender()` — a server-only lifecycle hook that runs after `onInit()` and never on the client.
 
 ### Hydration (v3.0)
 
@@ -290,11 +296,42 @@ The `server` subpath provides a DOM-free renderer that produces HTML from Nix.js
 import { hydrate } from "@deijose/nix-js/hydrate";
 ```
 
-The `hydrate` subpath provides real hydration that activates event bindings, signals, and effects on existing SSR DOM nodes instead of replacing them. Preserves DOM identity, focus, input state, and scroll position. Includes mismatch detection with fallback remount.
+The `hydrate` subpath provides real hydration that activates event bindings, signals, and effects on existing SSR DOM nodes instead of replacing them. Preserves DOM identity, focus, input state, and scroll position. Includes mismatch detection with fallback remount (`throw` / `warn-remount` / `remount`).
+
+Hydration-specific guarantees:
+
+- **Keyed lists** — `repeat()` lists are adopted keyed: SSR emits per-item key markers, hydration maps key → existing DOM range without recreating nodes, and later updates reorder/remove/insert with the same LIS algorithm used by client-side mounting. Duplicate or non-serializable keys produce diagnostics.
+- **Arrays** — SSR emits per-item range delimiters so each array item hydrates into its own DOM range (no marker-index collisions).
+- **Interaction before hydration** — if a user writes into an input before a lazy island hydrates, the DOM value is kept and propagated to the reactive model via a microtask.
+- `context` option threads a public value through `hydrateDom` protocol contexts.
+
+### Render protocols & trusted raw HTML (v3.0.2)
+
+Custom values can implement the `NIX_RENDER_PROTOCOL` protocol with up to three
+entry points, so a single object works across all renderers:
+
+```typescript
+import { NIX_RENDER_PROTOCOL, raw } from "@deijose/nix-js";
+
+const custom = {
+  [NIX_RENDER_PROTOCOL]: {
+    renderServer(ctx) { return "<b>server</b>"; },
+    mountDom({ parent, before }) { /* insert nodes, return cleanup */ },
+    hydrateDom({ parent, bounds }) { /* adopt SSR nodes, return cleanup */ },
+  },
+};
+```
+
+- `raw(markup)` — the **only** explicit trusted path for unescaped HTML
+  (server + mount + hydrate). Never inferred from plain strings.
 
 Both `server` and `hydrate` are opt-in: the main bundle does not include them unless explicitly imported.
 
 This is optional: `import { ... } from "@deijose/nix-js"` remains fully supported.
+
+> **Minified artifact** — the library is minified with Oxc at build time; the
+> minified ESM/CJS artifact is validated by `npm run test:artifact` (guards SSR
+> array/keyed regressions that historically appeared only in minified output).
 
 ---
 
@@ -741,6 +778,11 @@ function repeat<T>(
   renderFn: (item: T, index: number) => NixTemplate | NixComponent
 ): KeyedList<T>
 ```
+
+Keys must be strings or numbers. When rendering with SSR + hydration, `repeat()`
+lists are adopted keyed: nodes are not recreated, reorders preserve DOM identity
+and focus/state, and duplicate or non-serializable keys produce warnings instead
+of silent collisions.
 
 ### DOM refs: `ref()`
 

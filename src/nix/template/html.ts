@@ -1,6 +1,6 @@
-import { NIX_TEMPLATE_DESCRIPTOR, type NixTemplate, type NixMountHandle, type TemplateDescriptor } from "./types";
-import { detectContext, activateBindings } from "./bindings";
-import type { BindingContext } from "./bindings";
+import { NIX_TEMPLATE_DESCRIPTOR, type NixTemplate, type NixMountHandle, type TemplateDescriptor } from "./types.js";
+import { detectContext, activateBindings } from "./bindings.js";
+import type { BindingContext } from "./bindings.js";
 
 // =============================================================================
 // --- Static HTML construction with markers ---

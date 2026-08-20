@@ -1,12 +1,12 @@
-import { _debugGetRouterInternal } from "./router";
+import { _debugGetRouterInternal } from "./router.js";
 import {
     _setComponentDebugHooks,
     type NixComponent,
-} from "./lifecycle";
+} from "./lifecycle.js";
 import {
     _setSignalDebugHooks,
     type Signal,
-} from "./reactivity";
+} from "./reactivity.js";
 
 export interface DevToolsOptions {
     refreshMs?: number;

@@ -1,5 +1,5 @@
-import type { NixTemplate, KeyedList, KEntry } from "./types";
-import type { NixComponent } from "../lifecycle";
+import type { NixTemplate, KeyedList, KEntry } from "./types.js";
+import type { NixComponent } from "../lifecycle.js";
 
 // =============================================================================
 // --- repeat() ---
@@ -15,6 +15,59 @@ export function repeat<T>(
     renderFn: (item: T, index: number) => NixTemplate | NixComponent
 ): KeyedList<T> {
     return { __isKeyedList: true as const, items, keyFn, renderFn };
+}
+
+// =============================================================================
+// --- Key serialization for SSR/hydration markers ---
+// =============================================================================
+
+export type RepeatKey = string | number;
+
+/**
+ * Normalizes a repeat() key to a serializable form. Keys must be strings or
+ * numbers to preserve identity across SSR/hydration. Anything else produces a
+ * diagnostic warning and a deterministic positional fallback so that server
+ * and client agree without silent `String(key)` collisions.
+ */
+export function normalizeRepeatKey(key: unknown, index: number): RepeatKey {
+    if (typeof key === "string" || typeof key === "number") return key;
+    console.warn(
+        `[nix-js] repeat(): key at index ${index} is not a string or number (got ${typeof key}); ` +
+            `using positional fallback. Non-serializable keys cannot preserve identity across SSR/hydration.`,
+    );
+    return `__nix-key:${index}`;
+}
+
+export function utf8ToBase64(value: string): string {
+    const bytes = new TextEncoder().encode(value);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+        binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+    }
+    return btoa(binary);
+}
+
+export function utf8FromBase64(value: string): string {
+    const binary = atob(value);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new TextDecoder().decode(bytes);
+}
+
+/** Serializes a repeat() key for the SSR keyed marker (base64 JSON, safe for HTML comments). */
+export function serializeRepeatKey(key: RepeatKey): string {
+    return utf8ToBase64(JSON.stringify(key));
+}
+
+/** Decodes a repeat() key from a keyed hydration marker. */
+export function deserializeRepeatKey(serialized: string): RepeatKey {
+    try {
+        const parsed: unknown = JSON.parse(utf8FromBase64(serialized));
+        if (typeof parsed === "string" || typeof parsed === "number") return parsed;
+    } catch {
+        // fall through
+    }
+    return serialized;
 }
 
 // =============================================================================

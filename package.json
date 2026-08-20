@@ -1,13 +1,13 @@
 {
   "name": "@deijose/nix-js",
-  "version": "3.0.1",
+  "version": "3.0.3",
   "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
   "license": "MIT",
   "author": "Deiver Vasquez",
   "homepage": "https://nix-js.dev/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/DeijoseDevelop/nix-js.git"
+    "url": "git+https://github.com/DeijoseDevelop/nix-js.git"
   },
   "type": "module",
   "keywords": [
@@ -22,67 +22,106 @@
   ],
   "exports": {
     ".": {
-      "types": "./dist/lib/index.d.ts",
+      "types": {
+        "import": "./dist/lib/index.d.ts",
+        "require": "./dist/lib/index.d.cts"
+      },
       "import": "./dist/lib/nix-js.js",
       "require": "./dist/lib/nix-js.cjs"
     },
     "./signals": {
-      "types": "./dist/lib/nix/reactivity.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/reactivity.d.ts",
+        "require": "./dist/lib/nix/reactivity.d.cts"
+      },
       "import": "./dist/lib/signals.js",
       "require": "./dist/lib/signals.cjs"
     },
     "./router": {
-      "types": "./dist/lib/nix/router.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/router.d.ts",
+        "require": "./dist/lib/nix/router.d.cts"
+      },
       "import": "./dist/lib/router.js",
       "require": "./dist/lib/router.cjs"
     },
     "./form": {
-      "types": "./dist/lib/nix/form.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/form.d.ts",
+        "require": "./dist/lib/nix/form.d.cts"
+      },
       "import": "./dist/lib/form.js",
       "require": "./dist/lib/form.cjs"
     },
     "./store": {
-      "types": "./dist/lib/nix/store.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/store.d.ts",
+        "require": "./dist/lib/nix/store.d.cts"
+      },
       "import": "./dist/lib/store.js",
       "require": "./dist/lib/store.cjs"
     },
     "./async": {
-      "types": "./dist/lib/nix/async.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/async.d.ts",
+        "require": "./dist/lib/nix/async.d.cts"
+      },
       "import": "./dist/lib/async.js",
       "require": "./dist/lib/async.cjs"
     },
     "./template": {
-      "types": "./dist/lib/nix/template/index.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/template/index.d.ts",
+        "require": "./dist/lib/nix/template/index.d.cts"
+      },
       "import": "./dist/lib/template.js",
       "require": "./dist/lib/template.cjs"
     },
     "./server": {
-      "types": "./dist/lib/nix/server/index.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/server/index.d.ts",
+        "require": "./dist/lib/nix/server/index.d.cts"
+      },
       "import": "./dist/lib/server.js",
       "require": "./dist/lib/server.cjs"
     },
     "./hydrate": {
-      "types": "./dist/lib/nix/hydrate/index.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/hydrate/index.d.ts",
+        "require": "./dist/lib/nix/hydrate/index.d.cts"
+      },
       "import": "./dist/lib/hydrate.js",
       "require": "./dist/lib/hydrate.cjs"
     },
     "./component": {
-      "types": "./dist/lib/nix/component.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/component.d.ts",
+        "require": "./dist/lib/nix/component.d.cts"
+      },
       "import": "./dist/lib/component.js",
       "require": "./dist/lib/component.cjs"
     },
     "./context": {
-      "types": "./dist/lib/nix/context.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/context.d.ts",
+        "require": "./dist/lib/nix/context.d.cts"
+      },
       "import": "./dist/lib/context.js",
       "require": "./dist/lib/context.cjs"
     },
     "./lifecycle": {
-      "types": "./dist/lib/nix/lifecycle.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/lifecycle.d.ts",
+        "require": "./dist/lib/nix/lifecycle.d.cts"
+      },
       "import": "./dist/lib/lifecycle.js",
       "require": "./dist/lib/lifecycle.cjs"
     },
     "./devtools": {
-      "types": "./dist/lib/nix/devtools.d.ts",
+      "types": {
+        "import": "./dist/lib/nix/devtools.d.ts",
+        "require": "./dist/lib/nix/devtools.d.cts"
+      },
       "import": "./dist/lib/devtools.js",
       "require": "./dist/lib/devtools.cjs"
     }
@@ -138,6 +177,9 @@
     "!dist/lib/*.map",
     "LICENSE"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "sideEffects": false,
   "engines": {
     "node": ">=20.19.0"
@@ -146,14 +188,17 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "build:lib": "vite build --config vite.lib.config.ts && tsc --project tsconfig.lib.json && find dist/lib -type f \\( -name \"*.js\" -o -name \"*.cjs\" \\) -exec terser \"{}\" -c -m -o \"{}\" \\;",
+    "build:lib": "vite build --config vite.lib.config.ts && tsc --project tsconfig.lib.json && node scripts/copy-dcts.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "coverage": "vitest run --coverage",
+    "check:types": "attw --pack .",
+    "test:artifact": "node scripts/artifact-smoke.mjs",
     "prepublishOnly": "bun run build:lib && cp README.md .readme-full.md && cp .readme-npm.md README.md",
     "postpublish": "mv .readme-full.md README.md"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@types/node": "^22.10.0",
     "@vitest/coverage-v8": "^4.1.3",
     "happy-dom": "^20.8.3",
