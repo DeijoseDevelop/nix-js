@@ -2,26 +2,6 @@
 
 All notable changes to this project will be documented in this file.
 
-## v3.1.0
-
-### Added
-
-- **#1 — Router auto code-splitting via `lazyComponent`** — Route records now accept a `lazyComponent` option (a dynamic `import()` factory). The router automatically wraps it with `lazy()` for code-splitting, generating separate chunks per route. No need to manually call `lazy()` — just use `lazyComponent: () => import("./pages/About")`.
-- **#2 — Route Groups + Layout Slots** — Route records now accept a `slots` option for named layout slots. Use the new `RouterSlot` component inside layout components to render named slot content: `new RouterSlot("sidebar")`. Slots propagate through nested routes.
-- **#3 — CacheAdapter interface** — New pluggable cache system for ISR and server-side caching. Three adapters included: `MemoryCacheAdapter` (development), `FilesystemCacheAdapter` (persistent deployments), and `RedisCacheAdapter` (serverless: Upstash, Redis Cloud, Cloudflare KV). All support TTL and tag-based invalidation.
-- **#4 — Suspense streaming with fallback→replacement** — New `createSuspenseBoundary()` and `streamWithSuspense()` APIs for real Suspense streaming. Emits fallback HTML immediately, then streams a `<template>` chunk with a replacement script that the browser executes to swap fallback→content in-place.
-
-### Changed
-
-- **#5 — `happy-dom` moved to optional peer dependency** — No longer a hard `devDependency`. The SSR server module has never used `happy-dom` or `document`; this change makes the "zero DOM on server" philosophy explicit. Install separately for testing: `npm install -D happy-dom`.
-
-### Exports
-
-- `RouterSlot`, `lazyComponent` on `RouteRecord`, `slots` on `RouteRecord`.
-- `MemoryCacheAdapter`, `FilesystemCacheAdapter`, `RedisCacheAdapter`, `CacheAdapter`, `CacheEntry`.
-- `createSuspenseBoundary`, `streamWithSuspense`, `SuspenseBoundary`.
-- New `RenderChunk` types: `suspense-fallback`, `suspense-resolved` with `boundaryId`.
-
 ## v3.0.3
 
 ### Fixed

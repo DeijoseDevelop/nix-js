@@ -1,4 +1,4 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig } from "vite";
 
 export default defineConfig({
     // History API SPA fallback:
@@ -9,9 +9,6 @@ export default defineConfig({
     // responda con index.html a cualquier ruta no-archivo (ver README).
     appType: "spa",
     test: {
-        // happy-dom is an optional peer dependency (v3.1 — Fix #5).
-        // Install it with: npm install -D happy-dom
-        // Or switch to: environment: "jsdom" if you prefer jsdom.
         environment: "happy-dom",
     },
 });

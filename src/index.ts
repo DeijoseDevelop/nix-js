@@ -40,7 +40,6 @@ export {
     // Router
     createRouter,
     RouterView,
-    RouterSlot,
     Link,
     nixRouter,
     RouterKey,
@@ -125,22 +124,3 @@ export type {
     ValidatorsBase,
     NixChildren,
 } from "./nix/index.js";
-
-// --- Cache Adapters (v3.1 — Fix #3) ---
-export {
-    MemoryCacheAdapter,
-    FilesystemCacheAdapter,
-    RedisCacheAdapter,
-} from "./nix/cache.js";
-export type {
-    CacheAdapter,
-    CacheEntry,
-    RedisCacheAdapterOptions,
-} from "./nix/cache.js";
-
-// --- Suspense Streaming (v3.1 — Fix #4) ---
-export {
-    createSuspenseBoundary,
-    streamWithSuspense,
-} from "./nix/server/index.js";
-export type { SuspenseBoundary } from "./nix/server/index.js";

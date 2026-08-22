@@ -4,7 +4,6 @@ import { NixComponent } from "./lifecycle.js";
 import type { NixTemplate } from "./template/index.js";
 import { html } from "./template/index.js";
 import { createInjectionKey, inject } from "./context.js";
-import { lazy } from "./async.js";
 
 // =============================================================================
 //  Public types
@@ -47,42 +46,12 @@ export interface RouteRecord {
      * mounting and the core never invokes this. In that case, omit it.
      */
     component?: () => NixTemplate | NixComponent;
-    /**
-     * Dynamic import factory for lazy-loading this route's component.
-     * When provided, the component is automatically wrapped with `lazy()`
-     * for code-splitting. The module default export is used as the component.
-     *
-     * ```ts
-     * { path: "/about", lazyComponent: () => import("./pages/About") }
-     * ```
-     *
-     * (v3.1 — Fix #1)
-     */
-    lazyComponent?: () => Promise<Record<string, unknown>>;
     /** Optional arbitrary metadata for guards, layouts, and auth checks. */
     meta?: Record<string, unknown>;
     /** Child routes. Paths are joined with the parent. */
     children?: RouteRecord[];
     /** Route-level guard. Runs only when entering this specific route. */
     beforeEnter?: NavigationGuard;
-    /**
-     * Named layout slots for this route level. The component receives
-     * slot content via `RouterSlot` components.
-     *
-     * ```ts
-     * {
-     *   path: "/dashboard",
-     *   component: DashboardLayout,
-     *   slots: {
-     *     sidebar: () => SidebarContent,
-     *     main: () => MainContent,
-     *   },
-     * }
-     * ```
-     *
-     * (v3.1 — Fix #2)
-     */
-    slots?: Record<string, () => NixTemplate | NixComponent>;
 }
 
 /** Callback for `afterEach` hooks — receives the committed `to` and `from` paths. */
@@ -177,8 +146,6 @@ interface FlatRoute {
     fullPath: string;
     segments: Segment[];
     chain: Array<(() => NixTemplate | NixComponent) | undefined>;
-    /** Per-depth named slots (Fix #2). */
-    slotChains: Array<Record<string, () => NixTemplate | NixComponent> | undefined>;
     name?: string;
     meta?: Record<string, unknown>;
     beforeEnter?: NavigationGuard;
@@ -303,30 +270,23 @@ function flattenRoutes(
     routes: RouteRecord[],
     parentPath = "",
     parentChain: Array<(() => NixTemplate | NixComponent) | undefined> = [],
-    parentSlotChains: Array<Record<string, () => NixTemplate | NixComponent> | undefined> = [],
 ): FlatRoute[] {
     const result: FlatRoute[] = [];
     for (const route of routes) {
         const fullPath = joinPaths(parentPath, route.path);
-        // Auto-wrap lazyComponent with lazy() for code-splitting (Fix #1).
-        const component = route.lazyComponent
-            ? lazy(route.lazyComponent)
-            : route.component;
-        const chain = [...parentChain, component];
-        const slotChains = [...parentSlotChains, route.slots];
+        const chain = [...parentChain, route.component];
         const segments = parseSegments(fullPath);
         result.push({
             fullPath,
             segments,
             chain,
-            slotChains,
             name: route.name,
             meta: route.meta,
             beforeEnter: route.beforeEnter,
             record: route,
         });
         if (route.children?.length) {
-            result.push(...flattenRoutes(route.children, fullPath, chain, slotChains));
+            result.push(...flattenRoutes(route.children, fullPath, chain));
         }
     }
     return result;
@@ -1011,62 +971,6 @@ export class RouterView extends NixComponent {
     }
 }
 
-/**
- * Renders a named layout slot at the current router depth.
- *
- * Use inside a layout component to render named slot content from the
- * matching route record:
- *
- * ```ts
- * function DashboardLayout() {
- *   return html`<div class="dashboard">
- *     <aside>${new RouterSlot("sidebar")}</aside>
- *     <main>${new RouterSlot("main")}</main>
- *   </div>`;
- * }
- * ```
- *
- * (v3.1 — Fix #2)
- */
-export class RouterSlot extends NixComponent {
-    private _name: string;
-    private _depth: number;
-    private _router?: RouterInternal;
-
-    constructor(name: string, depth?: number, router?: Router) {
-        super();
-        this._name = name;
-        // Depth is inferred from the current RouterView context if not provided.
-        this._depth = depth ?? _currentSlotDepth;
-        this._router = router as RouterInternal | undefined;
-    }
-
-    render(): NixTemplate {
-        const name = this._name;
-        const depth = this._depth;
-        const explicitRouter = this._router;
-        return html`
-            <div class="router-slot" data-slot="${name}">
-                ${() => {
-                const router = explicitRouter ?? nixRouter() as RouterInternal;
-                const matched = matchFlat(router.current.value, router._flat);
-                if (!matched) return html`
-                        <span></span>
-                    `;
-                const slots = matched.route.slotChains[depth];
-                if (!slots || !slots[name]) return html`
-                        <span></span>
-                    `;
-                return slots[name]();
-            }}
-            </div>
-        `;
-    }
-}
-
-// Track the current slot depth for RouterSlot auto-depth inference.
-let _currentSlotDepth = 0;
-
 // =============================================================================
 //  Link (unchanged)
 // =============================================================================
@@ -1091,15 +995,9 @@ export class Link extends NixComponent {
         const fullPath = (router._base ? (router._base + appPath) : appPath).replace(/\/+/g, "/");
         const href = router._mode === "hash" ? "#" + fullPath : fullPath;
         return html`
-            <a
-                href=${href}
-                style=${() => router.current.value === to
+            <a     href=${href}     style=${() => router.current.value === to
                 ? "color:#38bdf8;font-weight:700;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px;background:#0c2a3a"
-                : "color:#a3a3a3;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px"}
-                @click=${(e: Event) => { e.preventDefault(); router.navigate(to); }}
-            >
-                ${label}
-            </a>
+                : "color:#a3a3a3;text-decoration:none;cursor:pointer;padding:4px 10px;border-radius:4px"}     @click=${(e: Event) => { e.preventDefault(); router.navigate(to); }}>${label}</a>
         `;
     }
 }
