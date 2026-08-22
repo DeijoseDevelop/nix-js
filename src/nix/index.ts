@@ -9,7 +9,7 @@ export type { NixChildren } from "./lifecycle.js";
 export { createStore } from "./store.js";
 export type { Store, StoreSignals, NixPlugin } from "./store.js";
 export { persistPlugin, loggerPlugin, guardPlugin, bridgePlugin } from "./plugins.js";
-export { createRouter, RouterView, Link, nixRouter, RouterKey, _hasActiveRouter } from "./router.js";
+export { createRouter, RouterView, RouterSlot, Link, nixRouter, RouterKey, _hasActiveRouter } from "./router.js";
 export type {
     Router,
     NamedRouteLocation,

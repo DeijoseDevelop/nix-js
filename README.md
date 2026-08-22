@@ -290,6 +290,31 @@ The `server` subpath provides a DOM-free renderer that produces HTML from Nix.js
 
 Components may define `onServerRender()` — a server-only lifecycle hook that runs after `onInit()` and never on the client.
 
+### Suspense streaming (v3.1)
+
+```typescript
+import { createSuspenseBoundary, streamWithSuspense } from "@deijose/nix-js";
+```
+
+Real Suspense streaming with fallback→replacement. The server emits fallback HTML immediately, then streams a `<template>` chunk with a replacement script that the browser executes to swap the fallback for the resolved content in-place.
+
+- `createSuspenseBoundary()` — returns a `{ id, fallbackHtml, resolvedHtml }` boundary. `fallbackHtml` wraps fallback content in markers; `resolvedHtml` emits a `<template>` + `<script>` that replaces the fallback div.
+- `streamWithSuspense(chunks)` — wraps a `renderToChunks` stream, passing through `suspense-fallback` and `suspense-resolved` chunk types with `boundaryId` for pairing.
+
+### Cache adapters (v3.1)
+
+```typescript
+import { MemoryCacheAdapter, FilesystemCacheAdapter, RedisCacheAdapter } from "@deijose/nix-js";
+```
+
+Pluggable cache for ISR and server-side caching. All adapters implement the `CacheAdapter` interface with `get`, `set`, `delete`, `invalidateTag`, and `clear`.
+
+- `MemoryCacheAdapter` — in-memory cache for development.
+- `FilesystemCacheAdapter(dir)` — persistent cache for traditional deployments.
+- `RedisCacheAdapter({ client, prefix? })` — for serverless (Upstash, Redis Cloud, Cloudflare KV). Accepts any Redis-compatible client with `get/set/del/keys`.
+
+All adapters support TTL (`{ ttl: ms }`) and tag-based invalidation (`{ tags: ["posts"] }`).
+
 ### Hydration (v3.0)
 
 ```typescript
@@ -1253,6 +1278,46 @@ const router = createRouter([
   { path: "/about",   component: () => new AboutPage()   },
   { path: "/users/:id", component: () => new UserDetail() },
   { path: "*",        component: () => new NotFound()    },
+]);
+```
+
+#### Lazy route components (v3.1 — code-splitting)
+
+Use `lazyComponent` instead of `component` for automatic code-splitting. The router wraps it with `lazy()` and generates a separate chunk per route:
+
+```typescript
+const router = createRouter([
+  { path: "/",        lazyComponent: () => import("./pages/Home")    },
+  { path: "/about",   lazyComponent: () => import("./pages/About")   },
+  { path: "/users/:id", lazyComponent: () => import("./pages/User")  },
+]);
+```
+
+#### Layout slots (v3.1)
+
+Route records accept a `slots` option for named layout slots. Use `RouterSlot` inside layout components:
+
+```typescript
+import { RouterSlot } from "./nix";
+
+class DashboardLayout extends NixComponent {
+  render() {
+    return html`<div class="dashboard">
+      <aside>${new RouterSlot("sidebar")}</aside>
+      <main>${new RouterSlot("main")}</main>
+    </div>`;
+  }
+}
+
+const router = createRouter([
+  {
+    path: "/dashboard",
+    component: () => new DashboardLayout(),
+    slots: {
+      sidebar: () => html`<nav>Sidebar</nav>`,
+      main: () => html`<div>Main content</div>`,
+    },
+  },
 ]);
 ```
 

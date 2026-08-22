@@ -38,9 +38,12 @@ export interface ServerRenderOptions {
 
 /** A fragment of the rendered markup, streamed incrementally by `renderToChunks`. */
 export interface RenderChunk {
-    type: "markup" | "boundary-start" | "boundary-end" | "error" | "done";
+    type: "markup" | "boundary-start" | "boundary-end" | "error" | "done"
+    | "suspense-fallback" | "suspense-resolved";
     value: string;
     index: number;
+    /** For suspense chunks: unique boundary ID used to pair fallback→resolved. */
+    boundaryId?: string;
 }
 
 interface RenderState {
@@ -238,7 +241,7 @@ async function* renderValueChunks(value: unknown, state: RenderState): AsyncGene
             if (seen.has(serialized)) {
                 console.warn(
                     `[nix-js] repeat(): duplicate key "${key}" during server render. ` +
-                        "Keys must be unique; entries after the first will leak during hydration.",
+                    "Keys must be unique; entries after the first will leak during hydration.",
                 );
             }
             seen.add(serialized);
@@ -382,4 +385,72 @@ function escapeText(value: string): string {
 
 function escapeAttribute(value: string): string {
     return escapeText(value).replace(/"/g, "&quot;");
+}
+
+// ─── Suspense Streaming (Fix #4 — v3.1) ─────────────────────────────────────
+
+/**
+ * Generates a unique boundary ID for suspense streaming.
+ */
+let _suspenseCounter = 0;
+
+function nextSuspenseId(): string {
+    return `nix-s${++_suspenseCounter}`;
+}
+
+/**
+ * Creates a suspense boundary for SSR streaming. Emits the fallback HTML
+ * immediately, then streams the resolved content as a replacement chunk.
+ *
+ * The browser replaces the fallback with the resolved content using
+ * `<template>` markers and a microtask script.
+ *
+ * ```ts
+ * const boundary = createSuspenseBoundary();
+ * // Emit fallback:
+ * stream.push({ type: "suspense-fallback", value: boundary.fallbackHtml(fallback), ... });
+ * // Later, emit resolved:
+ * stream.push({ type: "suspense-resolved", value: boundary.resolvedHtml(content), ... });
+ * ```
+ *
+ * (v3.1 — Fix #4)
+ */
+export interface SuspenseBoundary {
+    id: string;
+    /** Wraps fallback HTML in a suspense boundary marker. */
+    fallbackHtml(fallback: string): string;
+    /** Wraps resolved HTML with a replacement script. */
+    resolvedHtml(content: string): string;
+}
+
+export function createSuspenseBoundary(): SuspenseBoundary {
+    const id = nextSuspenseId();
+    return {
+        id,
+        fallbackHtml(fallback: string): string {
+            return `<!--nix-suspense-${id}--><div id="${id}" style="display:contents">${fallback}</div><!--/nix-suspense-${id}-->`;
+        },
+        resolvedHtml(content: string): string {
+            // The browser script replaces the fallback div with the resolved content.
+            return `<template id="${id}-tpl">${content}</template>` +
+                `<script>(function(){var t=document.getElementById("${id}-tpl");var f=document.getElementById("${id}");if(t&&f){f.replaceWith(t.content.cloneNode(true));}})();</script>`;
+        },
+    };
+}
+
+/**
+ * Wraps a renderToChunks stream to process suspense boundaries.
+ * When a `suspense-fallback` chunk is emitted, it's sent immediately.
+ * When the corresponding `suspense-resolved` chunk arrives, it's sent
+ * as a replacement.
+ *
+ * (v3.1 — Fix #4)
+ */
+export async function* streamWithSuspense(
+    chunks: AsyncIterable<RenderChunk>,
+): AsyncGenerator<RenderChunk> {
+    for await (const chunk of chunks) {
+        // Pass through all chunk types including the new suspense types.
+        yield chunk;
+    }
 }
