@@ -1,6 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import { resolve, dirname } from "path";
-import { copyFile, mkdir } from "fs/promises";
+import { copyFile, mkdir, readFile } from "fs/promises";
 import { fileURLToPath } from "node:url";
 
 const configDir = dirname(fileURLToPath(import.meta.url));
@@ -34,14 +34,30 @@ function preserveModuleCopies(outDir: string): Plugin {
         name: "nix-js-preserve-module-copies",
         async closeBundle() {
             for (const [entry, modulePath] of Object.entries(ENTRY_TO_MODULE_PATH)) {
-                for (const ext of ["js", "cjs", "js.map", "cjs.map"]) {
+                // Copy .js and .cjs always; copy .map only if the entry
+                // actually has a sourceMappingURL (Rollup doesn't emit .map
+                // for pure re-export entries with preserveModules).
+                for (const ext of ["js", "cjs"]) {
                     const src = resolve(outDir, `${entry}.${ext}`);
                     const dest = resolve(outDir, `${modulePath}.${ext}`);
-                    try {
-                        await mkdir(dirname(dest), { recursive: true });
-                        await copyFile(src, dest);
-                    } catch (err) {
-                        console.warn(`[nix-js] preserveModuleCopies: skipped ${src} (${(err as Error).message})`);
+                    await mkdir(dirname(dest), { recursive: true });
+                    await copyFile(src, dest);
+
+                    // Check if this file references a source map.
+                    const content = await readFile(src, "utf8");
+                    const mapMatch = content.match(/\/\/# sourceMappingURL=(.+)$/);
+                    if (mapMatch) {
+                        const mapExt = `${ext}.map`;
+                        const mapSrc = resolve(outDir, `${entry}.${mapExt}`);
+                        const mapDest = resolve(outDir, `${modulePath}.${mapExt}`);
+                        try {
+                            await copyFile(mapSrc, mapDest);
+                        } catch (err) {
+                            throw new Error(
+                                `[nix-js] preserveModuleCopies: ${entry}.${ext} references ` +
+                                `source map but ${mapSrc} is missing: ${(err as Error).message}`,
+                            );
+                        }
                     }
                 }
             }

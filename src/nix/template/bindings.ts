@@ -152,6 +152,48 @@ function _globalEventHandlerCore(e: Event, propName: string, modsName: string): 
 // live for the application lifetime.
 const _delegatedHandlers = new Map<string, (e: Event) => void>();
 
+/**
+ * Activates a delegated event on an element, using the same global registry
+ * as mount-time bindings. Used by both `activateBindings` (mount) and the
+ * hydrator to ensure consistent event delegation.
+ *
+ * (v3.2 — Fix #3: unified event delegation in hydration)
+ *
+ * @returns A dispose function that removes the handler from the element.
+ */
+export function activateDelegatedEvent(
+    el: Element,
+    eventName: string,
+    modifiers: readonly string[],
+    rawHandler: EventListener,
+): () => void {
+    if (!_delegatedRegistry.has(eventName)) {
+        const propName = `__nix_${eventName}`;
+        const modsName = `__nix_${eventName}_mods`;
+        const boundHandler = (e: Event) => _globalEventHandlerCore(e, propName, modsName);
+        _delegatedHandlers.set(eventName, boundHandler);
+        document.addEventListener(eventName, boundHandler);
+        _delegatedRegistry.add(eventName);
+    }
+
+    const nodePropName = `__nix_${eventName}`;
+    const nodeModsName = `__nix_${eventName}_mods`;
+    (el as any)[nodePropName] = rawHandler;
+    if (modifiers.length > 0) {
+        (el as any)[nodeModsName] = modifiers;
+    }
+
+    return () => {
+        (el as any)[nodePropName] = null;
+        (el as any)[nodeModsName] = null;
+    };
+}
+
+/** Returns true if an event name is in the delegable set. */
+export function isDelegableEvent(eventName: string): boolean {
+    return DELEGABLE_EVENTS.has(eventName);
+}
+
 // =============================================================================
 // --- Binding activation ---
 // =============================================================================
@@ -208,31 +250,12 @@ export function activateBindings(
             const mods = ctx.modifiers;
 
             const canDelegate =
-                DELEGABLE_EVENTS.has(eventName) &&
+                isDelegableEvent(eventName) &&
                 !mods.includes("capture") &&
                 !mods.includes("once");
 
             if (canDelegate) {
-                if (!_delegatedRegistry.has(eventName)) {
-                    const propName = `__nix_${eventName}`;
-                    const modsName = `__nix_${eventName}_mods`;
-                    const boundHandler = (e: Event) => _globalEventHandlerCore(e, propName, modsName);
-                    _delegatedHandlers.set(eventName, boundHandler);
-                    document.addEventListener(eventName, boundHandler);
-                    _delegatedRegistry.add(eventName);
-                }
-
-                const nodePropName = `__nix_${eventName}`;
-                const nodeModsName = `__nix_${eventName}_mods`;
-                (el as any)[nodePropName] = rawHandler;
-                if (mods.length > 0) {
-                    (el as any)[nodeModsName] = mods;
-                }
-
-                disposes.push(() => {
-                    (el as any)[nodePropName] = null;
-                    (el as any)[nodeModsName] = null;
-                });
+                disposes.push(activateDelegatedEvent(el as Element, eventName, mods, rawHandler));
             } else {
                 const listenerOpts: AddEventListenerOptions = {
                     once: mods.includes("once"),

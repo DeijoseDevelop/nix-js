@@ -2,6 +2,53 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.2.0
+
+### Fixed
+
+- **Event delegation in hydration** (Fix #3) — the hydrator now uses
+  `activateDelegatedEvent` for delegable events (`click`, `input`,
+  `change`, etc. without `capture`/`once` modifiers), matching the
+  mount-time behavior. Previously, hydration always used `addEventListener`
+  directly, creating an inconsistency where delegated events in SSR-hydrated
+  pages didn't use the global `document`-level delegation. If the element is
+  not connected to `document`, the hydrator falls back to `addEventListener`
+  so events still work in disconnected containers (e.g. tests).
+- **`structuredClone` escape hatch in stores** (Fix #5) — `createStore`
+  now accepts a `serialize` option. When provided, it replaces
+  `structuredClone` for the store baseline (used by `$reset`). This allows
+  non-serializable state (Map, Set, class instances, functions) in stores
+  without throwing.
+
+### Changed
+
+- **`preserveModuleCopies` plugin** — now checks for `sourceMappingURL`
+  before copying `.map` files. Rollup doesn't emit source maps for pure
+  re-export entries (like `nix-js.js` and `template.js`), so the plugin
+  no longer tries to copy non-existent `.map` files. If a file references
+  a `.map` but it's missing, the build fails loudly instead of silently
+  skipping.
+
+### Documented
+
+- **Effect re-entrancy guard** (Fix #4) — the `MAX_EFFECT_DEPTH = 100`
+  guard is now documented with avoidance patterns: use `computed()` for
+  derived state, `watch()` for side effects, `batch()` to group writes,
+  and never write to a signal you read in the same effect. See
+  `reactivity.ts` and §8.3.1 of the architecture doc.
+
+### Not implemented (documented as roadmap)
+
+- **TreeWalker runtime cost** (Fix #1) — the `TreeWalker` runs once per
+  template (cached in `WeakMap`), not per item. In lists of 1000+ items,
+  `repeat()` clones the already-parsed fragment. An optional Vite plugin
+  to pre-process `html\`\`` at build time is on the roadmap but not
+  implemented — the ROI is low given the existing caching.
+- **Partial attribute interpolation** (Fix #2) — `class="btn ${active}"`
+  still requires `class=${() => \`btn ${active}\`}`. The fix requires
+  changes to `detectContext`/`buildHTML` to preserve static prefixes.
+  On the roadmap.
+
 ## v3.0.3
 
 ### Fixed

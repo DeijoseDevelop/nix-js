@@ -2764,6 +2764,49 @@ Routers injected via `mount(component, host, { router })` are automatically visi
 
 ---
 
+## What's new in v3.2
+
+### Fixed
+
+- **Event delegation in hydration** — SSR-hydrated events now use the same
+  global `document`-level delegation as mount-time bindings. Delegable events
+  (`click`, `input`, `change`, etc.) are registered on `document` once, instead
+  of per-element `addEventListener`.
+
+  ```ts
+  // Before v3.2: hydration used addEventListener directly
+  // After v3.2: hydration uses activateDelegatedEvent (same as mount)
+  const template = html`<button @click=${handler}>Click</button>`;
+  const container = await ssr(template);
+  hydrate(template, container); // now uses global delegation
+  ```
+
+- **`structuredClone` escape hatch in stores** — `createStore` now accepts a
+  `serialize` option for non-serializable state (Map, Set, class instances):
+
+  ```ts
+  const store = createStore(
+    { map: new Map([["a", 1]]) },
+    { serialize: (s) => ({ map: new Map(s.map) }) },
+  );
+  store.$reset(); // works — baseline was created with custom serializer
+  ```
+
+### Documented
+
+- **Effect re-entrancy** — the `MAX_EFFECT_DEPTH = 100` guard and avoidance
+  patterns (`computed()`, `watch()`, `batch()`) are now documented in the
+  architecture doc and in `reactivity.ts`.
+
+### Roadmap (not implemented)
+
+- **TreeWalker build-time elimination** — the `TreeWalker` runs once per
+  template (cached), but an optional Vite plugin could eliminate it entirely.
+- **Partial attribute interpolation** — `class="btn ${active}"` still requires
+  `class=${() => \`btn ${active}\`}`.
+
+---
+
 ## Contributing
 
 Contributions are welcome. Please follow these guidelines:

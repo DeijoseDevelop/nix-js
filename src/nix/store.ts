@@ -156,6 +156,13 @@ export type CreateStoreOptions<
     getters?: (signals: StoreSignals<NoInfer<T>>) => G;
     /** Plugins to extend the store. Each receives the assembled store. */
     plugins?: NixPlugin<NoInfer<T>, A, G>[];
+    /**
+     * Custom serializer for the store baseline (used by `$reset`).
+     * Defaults to `structuredClone`. Provide this when your state contains
+     * non-serializable values (Map, Set, class instances, etc.) that
+     * `structuredClone` cannot handle.
+     */
+    serialize?: (state: NoInfer<T>) => T;
 };
 
 // ---------------------------------------------------------------------------
@@ -231,7 +238,7 @@ export function createStore<
     initialState: T,
     options?: CreateStoreOptions<T, A, G>,
 ): Store<T, A, G> {
-    const { name = "store", actions: actionsFactory, getters: gettersFactory, plugins = [] } = options ?? {};
+    const { name = "store", actions: actionsFactory, getters: gettersFactory, plugins = [], serialize } = options ?? {};
 
     const keys = Object.keys(initialState) as Array<keyof T & string>;
 
@@ -254,12 +261,14 @@ export function createStore<
 
     let _baseline: T;
     try {
-        _baseline = structuredClone(initialState);
+        // Use custom serializer if provided, otherwise structuredClone.
+        _baseline = serialize ? serialize(initialState) : structuredClone(initialState);
     } catch (e) {
         throw new Error(
             `[nix-js] Store "${name}" initialState contains non-serializable data ` +
             `(functions, DOM nodes, Symbols, or WeakRefs). ` +
-            `Remove these before creating the store. Original error: ${e}`
+            `Provide a custom \`serialize\` option or remove these before creating the store. ` +
+            `Original error: ${e}`
         );
     }
 

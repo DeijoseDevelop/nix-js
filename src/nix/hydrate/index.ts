@@ -2,6 +2,7 @@ import { _captureContextSnapshot, _popComponentContext, _pushComponentContext } 
 import { isNixComponent, type NixComponent } from "../lifecycle.js";
 import { effect } from "../reactivity.js";
 import { sanitizeUrl } from "../template/sanitize.js";
+import { activateDelegatedEvent, isDelegableEvent } from "../template/bindings.js";
 import {
     isKeyedList,
     isNixTemplate,
@@ -246,6 +247,24 @@ function activateEvent(
     value: unknown,
 ): () => void {
     if (typeof value !== "function") throw new TypeError(`Event "${eventName}" requires a function`);
+    const rawHandler = value as EventListener;
+
+    // Use global delegation for delegable events without capture/once mods,
+    // matching the mount-time behavior in bindings.ts. The element must be
+    // connected to the document for delegation to work (events bubble to
+    // document where the delegated listener is registered).
+    // (v3.2 — Fix #3: unified event delegation in hydration)
+    const canDelegate =
+        isDelegableEvent(eventName) &&
+        !modifiers.includes("capture") &&
+        !modifiers.includes("once") &&
+        document.body.contains(element);
+
+    if (canDelegate) {
+        return activateDelegatedEvent(element, eventName, modifiers, rawHandler);
+    }
+
+    // Non-delegable events or disconnected elements: use addEventListener directly.
     const options: AddEventListenerOptions = {
         once: modifiers.includes("once"),
         capture: modifiers.includes("capture"),
@@ -255,7 +274,7 @@ function activateEvent(
         if (modifiers.includes("prevent")) event.preventDefault();
         if (modifiers.includes("stop")) event.stopPropagation();
         if (modifiers.includes("self") && event.target !== event.currentTarget) return;
-        (value as EventListener)(event);
+        rawHandler(event);
     };
     element.addEventListener(eventName, listener, options);
     return () => element.removeEventListener(eventName, listener, options);
@@ -527,7 +546,7 @@ function adoptKeyedRange(
         if (clientByKey.has(serialized)) {
             console.warn(
                 `[nix-js] repeat(): duplicate client key "${key}" during hydration. ` +
-                    "Keys must be unique; entries after the first leak.",
+                "Keys must be unique; entries after the first leak.",
             );
         }
         clientByKey.set(serialized, j);
@@ -545,7 +564,7 @@ function adoptKeyedRange(
         if (serializeRepeatKey(key) !== marker.serializedKey) {
             console.warn(
                 `[nix-js] repeat(): hydration key mismatch at index ${clientIndex} ` +
-                    `(${deserializeRepeatKey(marker.serializedKey)} != ${key}). The SSR item is adopted by position.`,
+                `(${deserializeRepeatKey(marker.serializedKey)} != ${key}). The SSR item is adopted by position.`,
             );
         }
         if (state.has(key)) {

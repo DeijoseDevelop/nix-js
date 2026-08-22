@@ -1,6 +1,6 @@
 {
   "name": "@deijose/nix-js",
-  "version": "3.1.1",
+  "version": "3.2.0",
   "description": "A lightweight, fully reactive micro-framework — no virtual DOM, no compiler, just signals and tagged templates.",
   "license": "MIT",
   "author": "Deiver Vasquez",
