@@ -15,7 +15,7 @@
 > **[→ Documentation & Live Demo](https://nix-js.dev/) | [→ Performance Benchmarks](https://js-benchmark.nix-js.dev/)**
 
 ```
-~14 KB gzipped · zero dependencies · TypeScript-first · ES2022
+~15 KB gzipped · zero dependencies · TypeScript-first · ES2022
 ```
 
 ---
@@ -159,7 +159,7 @@ Nix.js is a signal-based reactive micro-framework. Its design goals are:
 - **No virtual DOM.** Bindings update individual DOM nodes directly via `effect()`.
 - **No compiler.** Templates are standard JavaScript tagged template literals.
 - **Fine-grained reactivity.** Only the exact text nodes and attributes that depend on a changed signal are updated — no diffing of full component trees.
-- **Zero runtime dependencies.** The minified bundle is ~24 KB (~14 KB gzipped) with no `node_modules` at runtime.
+- **Zero runtime dependencies.** The minified bundle is ~24 KB (~15 KB gzipped) with no `node_modules` at runtime.
 - **TypeScript-first.** Every public API is fully typed, including typed injection keys and typed store signals.
 
 ### Architecture at a glance
@@ -2699,7 +2699,7 @@ Everything ships in a single zero-dependency import:
 | **Virtual DOM** | No | Yes | Yes | No | No |
 | **Compiler required** | No | JSX transform | SFC compiler | JSX transform | Svelte compiler |
 | **Template system** | Tagged templates | JSX | SFC / JSX | JSX | Svelte syntax |
-| **Min + gzip** | ~14 KB | ~45 KB | ~33 KB | ~10 KB | ~18 KB |
+| **Min + gzip** | ~15 KB | ~45 KB | ~33 KB | ~10 KB | ~18 KB |
 | **TypeScript-first** | Native | Via JSX types | Via SFC tooling | Native | Via compiler |
 
 ### Built-in Features
