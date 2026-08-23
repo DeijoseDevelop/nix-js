@@ -1,6 +1,6 @@
 export { Signal, signal, effect, computed, batch, watch, untrack, nextTick } from "./reactivity.js";
 export type { WatchOptions } from "./reactivity.js";
-export { html, repeat, raw, ref, showWhen, portal, createPortalOutlet, portalOutlet, provideOutlet, injectOutlet, createErrorBoundary, transition, NIX_TEMPLATE_DESCRIPTOR, NIX_RENDER_PROTOCOL } from "./template/index.js";
+export { html, repeat, raw, ref, showWhen, portal, createPortalOutlet, portalOutlet, provideOutlet, injectOutlet, createErrorBoundary, transition, NIX_TEMPLATE_DESCRIPTOR, NIX_RENDER_PROTOCOL, templateFeatures } from "./template/index.js";
 export type { NixTemplate, NixMountHandle, KeyedList, NixRef, PortalOutlet, ErrorFallback, TransitionOptions, TransitionContent, TemplateBindingContext, TemplateDescriptor, NixRenderProtocol, ServerRenderProtocolContext, DomProtocolContext, HydrationProtocolContext } from "./template/index.js";
 export { mount } from "./component.js";
 export type { MountOptions } from "./component.js";

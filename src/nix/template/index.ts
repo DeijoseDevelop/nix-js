@@ -1,7 +1,10 @@
 export type { NixTemplate, NixMountHandle, NixRef, KeyedList, PortalOutlet, ErrorFallback, TransitionContent, TemplateBindingContext, TemplateDescriptor, NixRenderProtocol, ServerRenderProtocolContext, DomProtocolContext, HydrationProtocolContext } from "./types.js";
-export { ref, isNixTemplate, isKeyedList, COMMENT, NIX_TEMPLATE_DESCRIPTOR, NIX_RENDER_PROTOCOL } from "./types.js";
+export { ref, isNixTemplate, isKeyedList, COMMENT, NIX_TEMPLATE_DESCRIPTOR, NIX_RENDER_PROTOCOL, templateFeatures } from "./types.js";
 
 export { html, buildHTML } from "./html.js";
+
+export type { TemplateNormalizationPlan, ValuePlan, CompositeAttributePlan } from "./attribute-interpolation.js";
+export { analyzeTemplate, buildCanonicalValues } from "./attribute-interpolation.js";
 
 export { raw } from "./raw.js";
 

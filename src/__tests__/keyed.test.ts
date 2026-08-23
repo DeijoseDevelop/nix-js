@@ -126,3 +126,24 @@ describe("getSequence() — LIS", () => {
         expect(result.length).toBe(1);
     });
 });
+
+describe("keyed static mount", () => {
+    it("repeat directo en mount renderiza items", () => {
+        const el = document.createElement("div");
+        const list = repeat([{ id: 1, name: "a" }, { id: 2, name: "b" }], (i) => i.id, (i) => html`<li class="item-${i.id}">${i.name}</li>`);
+        html`<ul>${list}</ul>`.mount(el);
+        expect(el.querySelectorAll("li").length).toBe(2);
+        expect(el.querySelector("li")?.className).toBe("item-1");
+        expect(el.querySelectorAll("li")[1].textContent).toBe("b");
+    });
+    it("unmount limpia keyed estatico", () => {
+        const el = document.createElement("div");
+        const list = repeat([1, 2], (i) => i, (i) => html`<li>${i}</li>`);
+        const tpl = html`<ul>${list}</ul>`;
+        const handle = tpl.mount(el);
+        expect(el.querySelectorAll("li").length).toBe(2);
+        handle.unmount();
+        expect(el.querySelectorAll("li").length).toBe(0);
+    });
+});
+

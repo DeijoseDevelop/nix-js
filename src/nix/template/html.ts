@@ -1,6 +1,7 @@
 import { NIX_TEMPLATE_DESCRIPTOR, type NixTemplate, type NixMountHandle, type TemplateDescriptor } from "./types.js";
 import { detectContext, activateBindings } from "./bindings.js";
 import type { BindingContext } from "./bindings.js";
+import { analyzeTemplate, buildCanonicalValues, type TemplateNormalizationPlan } from "./attribute-interpolation.js";
 
 // =============================================================================
 // --- Static HTML construction with markers ---
@@ -65,6 +66,7 @@ interface TemplateCache {
 
 const _descriptorCache = new WeakMap<TemplateStringsArray, DescriptorCache>();
 const _templateCache = new WeakMap<TemplateStringsArray, TemplateCache>();
+const _planCache = new WeakMap<TemplateStringsArray, TemplateNormalizationPlan>();
 
 // =============================================================================
 // --- html`` tag function ---
@@ -74,12 +76,25 @@ export function html(
     strings: TemplateStringsArray,
     ...values: unknown[]
 ): NixTemplate {
+    let plan = _planCache.get(strings);
+    if (!plan) {
+        plan = analyzeTemplate(strings);
+        _planCache.set(strings, plan);
+    }
+
+    // Canonical forms. For templates without partials these are the exact
+    // original references, so the fast path is byte-for-byte identical.
+    const effStrings = plan.hasPartialAttributes ? plan.normalizedStrings : strings;
+    const effValues = plan.hasPartialAttributes
+        ? (buildCanonicalValues(plan, values) as unknown[])
+        : values;
+
     let descriptorCache = _descriptorCache.get(strings);
     if (!descriptorCache) {
         const contexts: BindingContext[] = [];
         let accumulated = "";
-        for (let i = 0; i < strings.length - 1; i++) {
-            accumulated += strings[i];
+        for (let i = 0; i < effStrings.length - 1; i++) {
+            accumulated += effStrings[i];
             contexts.push(detectContext(accumulated));
             accumulated += "__nix__";
         }
@@ -88,7 +103,7 @@ export function html(
     }
 
     const contexts = descriptorCache.contexts;
-    const descriptor: TemplateDescriptor = { version: 1, strings, values, contexts };
+    const descriptor: TemplateDescriptor = { version: 1, strings: effStrings, values: effValues, contexts };
 
     function getTemplateCache(): TemplateCache {
         let cached = _templateCache.get(strings);
@@ -98,7 +113,7 @@ export function html(
         }
 
         const tpl = document.createElement("template");
-        tpl.innerHTML = buildHTML(strings, contexts);
+        tpl.innerHTML = buildHTML(effStrings, contexts);
         const pathMap = new Array<{ nodeIndex: number; name?: string } | null>(contexts.length).fill(null);
         const root = tpl.content;
         const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_COMMENT);
@@ -144,7 +159,7 @@ export function html(
         const fragment = tpl.content.cloneNode(true) as DocumentFragment;
 
         const { disposes, postMountHooks } = activateBindings(
-            fragment, contexts, values, pathMap
+            fragment, contexts, effValues, pathMap
         );
 
         const startMarker = document.createTextNode("");

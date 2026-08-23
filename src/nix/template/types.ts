@@ -46,6 +46,15 @@ export interface NixRenderProtocol {
 export const NIX_TEMPLATE_DESCRIPTOR = Symbol.for("@deijose/nix-js/template-descriptor");
 export const NIX_RENDER_PROTOCOL = Symbol.for("@deijose/nix-js/render-protocol");
 
+/**
+ * Runtime feature capabilities, for tooling to detect support without
+ * inferring it from version strings.
+ */
+export const templateFeatures = {
+    /** Partial attribute interpolation (`class="btn ${size}"`) is supported. */
+    partialAttributeInterpolation: true,
+} as const;
+
 export interface NixTemplate {
     readonly __isNixTemplate: true;
     readonly [NIX_TEMPLATE_DESCRIPTOR]?: TemplateDescriptor;

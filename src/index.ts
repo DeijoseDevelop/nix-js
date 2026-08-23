@@ -28,6 +28,7 @@ export {
     transition,
     NIX_TEMPLATE_DESCRIPTOR,
     NIX_RENDER_PROTOCOL,
+    templateFeatures,
     // Components
     mount,
     NixComponent,

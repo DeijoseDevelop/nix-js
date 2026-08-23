@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Tests](https://img.shields.io/badge/tests-595%20passing-brightgreen.svg)](https://github.com/DeijoseDevelop/nix-js/tree/main/src/__tests__)
 [![Coverage](https://img.shields.io/badge/coverage-95.86%25-brightgreen.svg)]()
-[![Bundle size](https://img.shields.io/badge/min%2Bgzip-~14%20KB-orange.svg)]()
+[![Bundle size](https://img.shields.io/badge/min%2Bgzip-~15%20KB-orange.svg)]()
 [![TypeScript](https://img.shields.io/badge/TypeScript-first-3178C6.svg)]()
 [![Zero Dependencies](https://img.shields.io/badge/dependencies-0-success.svg)]()
 [![Website](https://img.shields.io/badge/website-nix--js-indigo.svg)](https://nix-js.dev/)
@@ -639,15 +639,37 @@ html`
 - `() => value` → reactive, updates via `effect`.
 - `null`, `undefined`, or `false` → attribute is **removed**.
 
-> **Important:** Each attribute binding must be a single interpolation that covers the entire value. Partial interpolation inside a string is not supported:
+> **Partial attribute interpolation** is supported: static text and
+> interpolations can be mixed inside the same attribute value. Every dynamic
+> segment is coerced with `String()`, exactly like a template literal:
 >
 > ```typescript
-> // ✅ Correct — the whole value is one interpolation
-> html`<div class=${() => `item ${active.value ? "active" : ""}`}>`
+> const size = signal("lg");
 >
-> // ❌ Incorrect — mixing a literal prefix with an interpolation
-> html`<div class="item ${() => active.value ? 'active' : ''}">`
+> // ✅ Supported — literal prefixes/suffixes mixed with interpolations
+> html`<div class="btn btn-${() => size.value}">…</div>`
+> // class="btn btn-lg"
+>
+> html`<a href="/blog/${() => slug.value}">Post</a>`
+> html`<input id=${`field-${id}`} data-x="a ${x} b">`
+> html`<div title=${"pre"}${"fix"}>`  // "prefix" — String() per segment
 > ```
+>
+> Semantics:
+> - `null`, `undefined` and `false` inside a partial render as `"null"`,
+>   `"undefined"` and `"false"` (JS interpolation semantics). Only *full*
+>   bindings remove the attribute for those values.
+> - If every segment is static, the string is composed once when the template
+>   is created. If any segment is a function, one single `effect` updates the
+>   attribute (one DOM write per flush).
+> - Partial interpolation on `@event` bindings, `ref`/`show`/`hide` directives
+>   and HTML boolean attributes (`checked`, `disabled`, …) throws a descriptive
+>   error — those values are not concatenable text.
+> - **Security:** for URL attributes the *composed* value is sanitized as a
+>   unit, so a dangerous scheme cannot be smuggled across static/dynamic
+>   segments (`href="java${"script:"}…"` is blocked).
+
+#### Attribute value safety (XSS)
 
 #### Attribute value safety (XSS)
 
@@ -2724,19 +2746,21 @@ Everything ships in a single zero-dependency import:
 
 ## Known Limitations
 
-**Partial attribute interpolation is not supported.**
+**Partial attribute interpolation is supported** — see the
+[Attribute bindings](#attribute-bindings) section. The remaining
+restrictions are deliberate:
 
-Each dynamic attribute must be a single interpolation covering the entire attribute value. Mixing static text and expressions inside one attribute value does not work:
-
-```typescript
-// ✅ Works — the whole value is one expression
-html`<div class=${() => `item ${isActive.value ? "active" : ""}`}>`
-
-// ❌ Does NOT work — static prefix + dynamic suffix in same attribute
-html`<div class="item ${() => isActive.value ? 'active' : ''}">`
-```
-
-Workaround: compute the full string outside the template and bind the result.
+- **Dynamic tag names, dynamic attribute names and spreads are not supported**
+  (e.g. `html`<${tag}>`, `html`<div data-${name}="1">`, `html`<div ${attrs}>``).
+  They would require the runtime to parse the value of an interpolation as
+  markup, breaking the no-innerHTML-that-comes-from-data invariant. Attribute
+  *names* must always be static (author-written).
+- **Partial interpolation on `@event`, `ref`/`show`/`hide` and HTML boolean
+  attributes throws a descriptive error** — those values are not concatenable
+  text (handlers, objects and presence-based attributes).
+- **`hydrate().unmount()` disables bindings and effects without removing the
+  SSR-rendered DOM** — the container remains owned by the caller. Use
+  `template.mount()` for full mount/unmount lifecycle ownership.
 
 ---
 

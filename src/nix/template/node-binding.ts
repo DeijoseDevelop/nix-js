@@ -43,6 +43,32 @@ export function activateNodeBinding(
             _mountComponentDeferred(value, anchor.parentNode!, anchor, postMountHooks, disposes);
         } else if (isNixTemplate(value)) {
             disposes.push(value._render(anchor.parentNode!, anchor));
+        } else if (isKeyedList(value)) {
+            // Static keyed list (`repeat(...)` directly, without a getter):
+            // mirror the reactive path so a direct keyed value never falls
+            // through to `String(value)`.
+            const ctxSnapshot = _captureContextSnapshot();
+            const keyedState = new Map<RepeatKey, KEntry>();
+            const keyedZoneStart = document.createTextNode("");
+            anchor.parentNode!.insertBefore(keyedZoneStart, anchor);
+            reconcileKeyedList({
+                zoneStart: keyedZoneStart,
+                anchor,
+                state: keyedState,
+                prevOrder: [],
+                list: value,
+                mount: createKeyedMount(ctxSnapshot),
+                ctxSnapshot,
+                onDuplicateKey: (key) => {
+                    console.warn(`[nix-js] repeat(): duplicate key "${key}". Keys must be unique; the previous entry leaks (orphaned nodes + live effects).`);
+                },
+            });
+            disposes.push(() => {
+                for (const entry of keyedState.values()) {
+                    entry.cleanup();
+                }
+                keyedState.clear();
+            });
         } else if (Array.isArray(value)) {
             for (const item of value) {
                 if (isNixComponent(item)) {

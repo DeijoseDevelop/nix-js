@@ -2,6 +2,44 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- **Partial attribute interpolation** — static text and interpolations can
+  now be mixed inside the same attribute value:
+  `html`<div class="btn btn-${() => size.value}">…</div>``. The runtime
+  normalizes every partial into a single canonical binding (one `effect`,
+  one DOM write per flush) before the existing template pipeline runs, so
+  mount, SSR, streaming and hydration all share one code path.
+  - Static segments are composed once at template creation; reactive
+    segments become a single composed getter.
+  - `null`/`undefined`/`false` in partials follow JS interpolation
+    semantics (`"null"`, `"undefined"`, `"false"`); full bindings keep
+    their existing attribute-removal semantics.
+  - URL attributes are sanitized as a composed unit — dangerous schemes
+    split across segments are still blocked.
+  - Partial interpolation on `@event`, `ref`/`show`/`hide` and HTML boolean
+    attributes throws a descriptive error with the suggested form.
+  - `templateFeatures.partialAttributeInterpolation` is exposed so tooling
+    can detect support without parsing version strings.
+  - Templates without partials keep byte-identical behavior (fast path
+    returns the original strings/values references).
+- **Browser E2E suite** (`npm run test:e2e`) — a Playwright suite over the
+  real DOM (Chromium/Firefox/WebKit) covering static partials, reactivity
+  (single-write invariants under `batch` and same-tick updates), URL
+  sanitization, SVG/custom elements, SSR without markers, SSR with hydration
+  markers, streaming chunks, keyed `repeat()` and error diagnostics.
+
+### Fixed
+
+- **Static keyed lists on mount** — `html`<ul>${repeat(...)}</ul>`` (a
+  `repeat()` value passed directly, without a getter) previously rendered
+  `[object Object]` on client mount; the SSR and hydration paths handled it,
+  but the mount path fell through to `String(value)`. It now mounts through
+  the same keyed reconciliation used by the reactive path and cleans up on
+  unmount. Found by the new browser E2E suite.
+
 ## v3.2.0
 
 ### Fixed
