@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { createStore } from "../nix/store.js";
 
 // =============================================================================
-// Fix #5: structuredClone escape hatch — custom serialize option
+// structuredClone escape hatch — custom serialize option
 // =============================================================================
 
 describe("Fix #5: Store serialize escape hatch", () => {

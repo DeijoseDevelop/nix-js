@@ -253,7 +253,6 @@ function activateEvent(
     // matching the mount-time behavior in bindings.ts. The element must be
     // connected to the document for delegation to work (events bubble to
     // document where the delegated listener is registered).
-    // (v3.2 — Fix #3: unified event delegation in hydration)
     const canDelegate =
         isDelegableEvent(eventName) &&
         !modifiers.includes("capture") &&

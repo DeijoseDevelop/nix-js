@@ -927,10 +927,6 @@ export function _resetRouter(): void {
     _mountedRouters.length = 0;
 }
 
-// =============================================================================
-//  RouterView (web mode — unchanged)
-// =============================================================================
-
 export class RouterView extends NixComponent {
     private _depth: number;
     private _router?: RouterInternal;
@@ -971,10 +967,6 @@ export class RouterView extends NixComponent {
     }
 }
 
-// =============================================================================
-//  Link (unchanged)
-// =============================================================================
-
 export class Link extends NixComponent {
     private _to: string;
     private _label: string;
@@ -1001,10 +993,6 @@ export class Link extends NixComponent {
         `;
     }
 }
-
-// =============================================================================
-//  Debug (unchanged)
-// =============================================================================
 
 export interface _RouterDebugInternal {
     mode: RouterMode;

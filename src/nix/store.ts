@@ -109,6 +109,15 @@ export type GettersFactory<
 // ---------------------------------------------------------------------------
 
 /**
+ * Function type for mutation guards.
+ * Intercepts $patch and $reset to validate or transform state before it is applied.
+ */
+export type GuardFn<T extends object> = (
+    next: Partial<T>,
+    current: T,
+) => Partial<T> | void;
+
+/**
  * A NixPlugin is a function that receives the assembled store and
  * optionally returns a cleanup function called on $dispose().
  *
@@ -119,15 +128,6 @@ export type GettersFactory<
  *   computed(() => store.someSignal.value) — derive new nodes
  *   store.$snapshot()                      — passive read for logging/persistence
  */
-/**
- * Function type for mutation guards.
- * Intercepts $patch and $reset to validate or transform state before it is applied.
- */
-export type GuardFn<T extends object> = (
-    next: Partial<T>,
-    current: T,
-) => Partial<T> | void;
-
 export type NixPlugin<
     T extends object,
     A extends object = Record<never, never>,

@@ -68,33 +68,32 @@ export function _popErrorHandler(): void {
 
 // --- Batching ---
 
-// --- Effect recursion guard ---
-//
-// Effects re-run synchronously when a signal they depend on changes. If an
-// effect writes to a signal it also reads, this creates a synchronous loop.
-// The guard below caps re-execution at MAX_EFFECT_DEPTH (100) iterations and
-// throws an error to prevent stack overflow.
-//
-// ## Why not auto-recover?
-// When the guard fires, the reactive graph is in an inconsistent state —
-// the effect partially executed, dependencies may be stale, and continuing
-// could produce incorrect UI. Throwing is the safest option: it surfaces
-// the bug immediately instead of silently degrading.
-//
-// ## How to avoid re-entrancy:
-// 1. **Use `computed()` for derived state** — computed signals cache their
-//    result and only recompute when dependencies change. They never write
-//    to other signals, so they can't loop.
-// 2. **Use `watch()` for side effects** — watch callbacks receive the new
-//    value; if you need to update other signals, do it inside `batch()` to
-//    coalesce notifications.
-// 3. **Never write to a signal you read in the same effect** — this is the
-//    direct cause of re-entrancy. If you need to transform a value, use
-//    `computed()` instead.
-// 4. **Use `batch()` to group writes** — batched writes flush once at the
-//    end, preventing intermediate re-runs.
-//
-// (v3.2 — Fix #4: documented re-entrancy guard and avoidance patterns)
+/**
+ * Guards against synchronous effect re-entrancy.
+ *
+ * Effects re-run synchronously when a signal they depend on changes. If an
+ * effect writes to a signal it also reads, this creates a synchronous loop.
+ * The guard below caps re-execution at MAX_EFFECT_DEPTH (100) iterations and
+ * throws an error to prevent stack overflow.
+ *
+ * Throwing is deliberate: when the guard fires, the reactive graph is in an
+ * inconsistent state — the effect partially executed, dependencies may be
+ * stale, and continuing could produce incorrect UI. Throwing surfaces the
+ * bug immediately instead of silently degrading.
+ *
+ * To avoid re-entrancy:
+ * 1. Use `computed()` for derived state — computed signals cache their result
+ *    and only recompute when dependencies change. They never write to other
+ *    signals, so they can't loop.
+ * 2. Use `watch()` for side effects — watch callbacks receive the new value;
+ *    if you need to update other signals, do it inside `batch()` to coalesce
+ *    notifications.
+ * 3. Never write to a signal you read in the same effect — this is the direct
+ *    cause of re-entrancy. If you need to transform a value, use `computed()`
+ *    instead.
+ * 4. Use `batch()` to group writes — batched writes flush once at the end,
+ *    preventing intermediate re-runs.
+ */
 
 const MAX_EFFECT_DEPTH = 100;
 const _NOTIFY_SHRINK_TRIGGER = 64;

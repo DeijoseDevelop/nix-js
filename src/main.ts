@@ -1,11 +1,6 @@
 import { signal, computed, effect, batch } from "./nix";
 import { html } from "./nix";
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 1: Sistema de Reactividad
-//  Tests → #tests | Summary → #summary | Demo → #demo
-// ══════════════════════════════════════════════════════════════
-
 const testsF1 = document.getElementById("tests")!;
 let passedF1 = 0;
 let failedF1 = 0;
@@ -25,7 +20,6 @@ function assertF1(condition: boolean, description: string): void {
   if (condition) { passedF1++; } else { failedF1++; console.error(`❌ FALLÓ F1: ${description}`); }
 }
 
-// ── Signal básico ──
 groupF1("Signal — lectura y escritura");
 const count = signal(0);
 assertF1(count.value === 0, "Valor inicial es 0");
@@ -36,7 +30,6 @@ assertF1(count.value === 50, "update(n => n + 8): ahora es 50");
 count.value = 50;
 assertF1(count.value === 50, "Asignar mismo valor no dispara nada");
 
-// ── Signal con distintos tipos ──
 groupF1("Signal — distintos tipos de dato");
 const text = signal("hola");
 assertF1(text.value === "hola", "Signal de string");
@@ -50,7 +43,6 @@ const obj = signal({ a: 1 });
 obj.value = { a: 2 };
 assertF1(obj.value.a === 2, "Signal de objeto");
 
-// ── peek() ──
 groupF1("Signal — peek (leer sin suscribirse)");
 const spy = signal(0);
 let peekRuns = 0;
@@ -59,7 +51,6 @@ assertF1(peekRuns === 1, "Effect con peek se ejecuta 1 vez (inicial)");
 spy.value = 999;
 assertF1(peekRuns === 1, "Cambiar signal NO re-ejecuta (peek no suscribe)");
 
-// ── Effect básico ──
 groupF1("Effect — auto-tracking");
 const name = signal("Nix");
 let effectRuns = 0;
@@ -73,7 +64,6 @@ assertF1(lastSeen === "JS", "Ve el nuevo valor: 'JS'");
 name.value = "JS";
 assertF1(effectRuns === 2, "NO se re-ejecuta si el valor es igual");
 
-// ── Effect múltiples signals ──
 groupF1("Effect — múltiples dependencias");
 const firstName = signal("Juan");
 const lastName = signal("Pérez");
@@ -89,7 +79,6 @@ lastName.value = "García";
 assertF1(multiRuns === 3, "Re-ejecuta al cambiar lastName");
 assertF1(fullName === "Ana García", "Actualiza correctamente");
 
-// ── Effect cleanup ──
 groupF1("Effect — cleanup y dispose");
 const toggle = signal(true);
 let cleanupRuns = 0;
@@ -102,7 +91,6 @@ assertF1(cleanupRuns === 2, "Cleanup se ejecuta al disponer");
 toggle.value = true;
 assertF1(cleanupRuns === 2, "Después de dispose, ya no reacciona");
 
-// ── Dependencias condicionales ──
 groupF1("Effect — dependencias condicionales");
 const condition = signal(true);
 const depA = signal("A");
@@ -120,7 +108,6 @@ depB.value = "B2";
 assertF1(condRuns === 1, "Cambiar depB SÍ dispara (es dependencia actual)");
 assertF1(condResult === "B2", "Resultado correcto: 'B2'");
 
-// ── Computed ──
 groupF1("Computed — valores derivados");
 const precio = signal(100);
 const cantidad = signal(3);
@@ -131,7 +118,6 @@ assertF1(total.value === 600, "200 × 3 = 600 (reacciona a precio)");
 cantidad.value = 5;
 assertF1(total.value === 1000, "200 × 5 = 1000 (reacciona a cantidad)");
 
-// ── Computed encadenado ──
 groupF1("Computed — encadenamiento");
 const base = signal(10);
 const doubled = computed(() => base.value * 2);
@@ -145,7 +131,6 @@ assertF1(doubled.value === 10, "base=5 → doubled=10");
 assertF1(quadrupled.value === 20, "→ quadrupled=20");
 assertF1(label.value === "Resultado: 20", "→ label='Resultado: 20'");
 
-// ── Computed dentro de effect ──
 groupF1("Computed — dentro de effect");
 const radius = signal(5);
 const area = computed(() => Math.PI * radius.value ** 2);
@@ -155,7 +140,6 @@ assertF1(areaLog === "Área: 78.54", "Área de radio 5");
 radius.value = 10;
 assertF1(areaLog === "Área: 314.16", "Área de radio 10 (effect reacciona)");
 
-// ── Batch ──
 groupF1("Batch — agrupar actualizaciones");
 const x = signal(0);
 const y = signal(0);
@@ -169,7 +153,6 @@ batch(() => { x.value = 10; y.value = 20; });
 assertF1(batchRuns === 1, "Con batch: 2 cambios = 1 sola ejecución");
 assertF1(x.value === 10 && y.value === 20, "Valores correctos después del batch");
 
-// ── Batch anidado ──
 groupF1("Batch — anidado");
 const z = signal(0);
 let nestedRuns = 0;
@@ -179,7 +162,6 @@ batch(() => { z.value = 1; batch(() => { z.value = 2; z.value = 3; }); z.value =
 assertF1(nestedRuns === 1, "Batch anidado: todo se resuelve al final del externo");
 assertF1(z.value === 4, "Valor final: 4");
 
-// ── Resumen F1 ──
 const summaryF1 = document.getElementById("summary")!;
 const allPassedF1 = failedF1 === 0;
 summaryF1.innerHTML = `
@@ -189,7 +171,6 @@ summaryF1.innerHTML = `
   </div>
 `;
 
-// ── Demo Interactivo F1 ──
 const demoF1 = document.getElementById("demo")!;
 const clicks = signal(0);
 const username = signal("Nix");
@@ -235,12 +216,6 @@ effect(() => {
   document.getElementById("demo-log")!.textContent = `El DOM se ha actualizado ${renderCount} veces`;
 });
 
-
-// ══════════════════════════════════════════════════════════════
-//  FASE 2: Template Engine
-//  Tests → #tests2 | Summary → #summary2 | Demo → #demo2
-// ══════════════════════════════════════════════════════════════
-
 const testsF2 = document.getElementById("tests2")!;
 let passedF2 = 0;
 let failedF2 = 0;
@@ -268,7 +243,6 @@ function sandbox(): HTMLDivElement {
   return el;
 }
 
-// ── Test 1: Template estático ─────────────────────────────────────────────────
 groupF2("html`` — 1. Template estático");
 {
   const el = sandbox();
@@ -278,7 +252,6 @@ groupF2("html`` — 1. Template estático");
   assertF2(el.children[0].textContent === "Hola mundo", "Texto: 'Hola mundo'");
 }
 
-// ── Test 2: Texto reactivo ────────────────────────────────────────────────────
 groupF2("html`` — 2. Texto reactivo");
 {
   const el = sandbox();
@@ -292,7 +265,6 @@ groupF2("html`` — 2. Texto reactivo");
   assertF2(p.textContent === "Hola JS", "Segunda actualización: 'Hola JS'");
 }
 
-// ── Test 3: Valor estático interpolado ───────────────────────────────────────
 groupF2("html`` — 3. Valor estático interpolado");
 {
   const el = sandbox();
@@ -301,7 +273,6 @@ groupF2("html`` — 3. Valor estático interpolado");
   assertF2(el.querySelector("span")!.textContent === "v1.0.0", "Texto estático interpolado: 'v1.0.0'");
 }
 
-// ── Test 4: Eventos ───────────────────────────────────────────────────────────
 groupF2("html`` — 4. Eventos (@event)");
 {
   const el = sandbox();
@@ -315,7 +286,6 @@ groupF2("html`` — 4. Eventos (@event)");
   assertF2(clicks2 === 3, "Tres clicks → 3");
 }
 
-// ── Test 5: Atributos reactivos ───────────────────────────────────────────────
 groupF2("html`` — 5. Atributos reactivos");
 {
   const el = sandbox();
@@ -329,7 +299,6 @@ groupF2("html`` — 5. Atributos reactivos");
   assertF2(div.getAttribute("class") === "green", "class → 'green'");
 }
 
-// ── Test 5b: Atributo null → removeAttribute ─────────────────────────────────
 groupF2("html`` — 5b. Atributo null → removeAttribute");
 {
   const el = sandbox();
@@ -341,7 +310,6 @@ groupF2("html`` — 5b. Atributo null → removeAttribute");
   assertF2(!div.hasAttribute("title"), "title removido cuando null");
 }
 
-// ── Test 6: Condicional ───────────────────────────────────────────────────────
 groupF2("html`` — 6. Condicional (() => template | null)");
 {
   const el = sandbox();
@@ -355,7 +323,6 @@ groupF2("html`` — 6. Condicional (() => template | null)");
   assertF2(container.querySelector(".vis") !== null, "show=true → vuelve a existir");
 }
 
-// ── Test 7: Condicional entre dos templates ───────────────────────────────────
 groupF2("html`` — 7. Condicional entre dos templates");
 {
   const el = sandbox();
@@ -372,7 +339,6 @@ groupF2("html`` — 7. Condicional entre dos templates");
   assertF2(el.querySelector("#t7-about") !== null, "page=about → #t7-about existe");
 }
 
-// ── Test 8: Lista ─────────────────────────────────────────────────────────────
 groupF2("html`` — 8. Lista (() => NixTemplate[])");
 {
   const el = sandbox();
@@ -391,7 +357,6 @@ groupF2("html`` — 8. Lista (() => NixTemplate[])");
   assertF2(ul.querySelectorAll("li").length === 4, "Expansión: 4 elementos");
 }
 
-// ── Test 9: Template anidado estático ────────────────────────────────────────
 groupF2("html`` — 9. Template anidado (componente)");
 {
   function Badge(props: { text: string }) {
@@ -404,7 +369,6 @@ groupF2("html`` — 9. Template anidado (componente)");
   assertF2(div.querySelector(".badge")!.textContent === "Nix", "Texto del badge: 'Nix'");
 }
 
-// ── Test 10: Computed dentro de template ─────────────────────────────────────
 groupF2("html`` — 10. Computed reactivo en template");
 {
   const el = sandbox();
@@ -417,7 +381,6 @@ groupF2("html`` — 10. Computed reactivo en template");
   assertF2(p.textContent === "5 × 2 = 10", "Actualizado: '5 × 2 = 10'");
 }
 
-// ── Test 11: unmount limpia efectos ──────────────────────────────────────────
 groupF2("html`` — 11. unmount() limpia efectos");
 {
   const el = sandbox();
@@ -434,7 +397,6 @@ groupF2("html`` — 11. unmount() limpia efectos");
   assertF2(el.querySelector("span") === null, "El <span> fue removido del DOM");
 }
 
-// ── Test 12: batch con template ──────────────────────────────────────────────
 groupF2("html`` — 12. batch agrupa actualizaciones");
 {
   const el = sandbox();
@@ -448,7 +410,6 @@ groupF2("html`` — 12. batch agrupa actualizaciones");
   assertF2(el.querySelector("p")!.textContent === "10+20=30", "Resultado correcto: '10+20=30'");
 }
 
-// ── Resumen F2 ────────────────────────────────────────────────────────────────
 const summaryF2 = document.getElementById("summary2")!;
 const allPassedF2 = failedF2 === 0;
 summaryF2.innerHTML = `
@@ -458,7 +419,6 @@ summaryF2.innerHTML = `
   </div>
 `;
 
-// ── Demo Interactivo F2 ───────────────────────────────────────────────────────
 const demoF2 = document.getElementById("demo2")!;
 
 function Counter(props: { initial?: number; label?: string } = {}) {
@@ -559,12 +519,6 @@ html`
   </div>
 `.mount(demoF2);
 
-
-// ══════════════════════════════════════════════════════════════
-//  FASE 3: Componentes + mount()
-//  Tests → #tests3 | Summary → #summary3 | Demo → #demo3
-// ══════════════════════════════════════════════════════════════
-
 import { mount } from "./nix";
 
 const testsF3 = document.getElementById("tests3")!;
@@ -593,7 +547,6 @@ function sandbox3(): HTMLDivElement {
   return el;
 }
 
-// ── Test 1: Componente simple ────────────────────────────────────────────────
 groupF3("Componentes — 1. Componente simple (función → html``)");
 {
   function Greeting(props: { name: string }) {
@@ -607,7 +560,6 @@ groupF3("Componentes — 1. Componente simple (función → html``)");
   assertF3(el.querySelector("h2")!.textContent === "Hola Nix!", "Texto: 'Hola Nix!'");
 }
 
-// ── Test 2: Props estáticos ──────────────────────────────────────────────────
 groupF3("Componentes — 2. Props estáticos");
 {
   function Badge(props: { text: string; color?: string }) {
@@ -630,7 +582,6 @@ groupF3("Componentes — 2. Props estáticos");
   assertF3(el.querySelector(".badge-blue")!.textContent === "beta", "Texto: 'beta'");
 }
 
-// ── Test 3: Componente con estado interno ────────────────────────────────────
 groupF3("Componentes — 3. Estado interno (signal local)");
 {
   function Counter3(props: { initial: number }) {
@@ -653,7 +604,6 @@ groupF3("Componentes — 3. Estado interno (signal local)");
   assertF3(el.querySelector("#c3-val")!.textContent === "9", "Tras 2 clicks: 9");
 }
 
-// ── Test 4: Composición (componentes dentro de otros) ────────────────────────
 groupF3("Componentes — 4. Composición simple");
 {
   function Header4(props: { title: string }) {
@@ -685,7 +635,6 @@ groupF3("Componentes — 4. Composición simple");
   assertF3(el.querySelector("#t4-footer") !== null, "<footer> existe");
 }
 
-// ── Test 5: Props reactivos (signal como prop) ───────────────────────────────
 groupF3("Componentes — 5. Props reactivos (Signal como prop)");
 {
   function Display5(props: { count: ReturnType<typeof signal<number>> }) {
@@ -716,7 +665,6 @@ groupF3("Componentes — 5. Props reactivos (Signal como prop)");
   assertF3(el.querySelector("#t5-dbl")!.textContent === "8", "Doble reactivo: 8");
 }
 
-// ── Test 6: Componente condicional ───────────────────────────────────────────
 groupF3("Componentes — 6. Componente condicional");
 {
   function Welcome6() {
@@ -744,7 +692,6 @@ groupF3("Componentes — 6. Componente condicional");
   assertF3(el.querySelector("#t6-welcome") !== null, "visible=true → Welcome vuelve");
 }
 
-// ── Test 7: Lista de componentes ─────────────────────────────────────────────
 groupF3("Componentes — 7. Lista de componentes");
 {
   function Item7(props: { text: string; onRemove: () => void }) {
@@ -783,7 +730,6 @@ groupF3("Componentes — 7. Lista de componentes");
   assertF3(el.querySelectorAll(".t7-item").length === 3, "Tras push: 3 items");
 }
 
-// ── Test 8: mount() global devuelve unmount() funcional ─────────────────────
 groupF3("Componentes — 8. mount() global → unmount() limpia");
 {
   const ticker3 = signal(0);
@@ -808,7 +754,6 @@ groupF3("Componentes — 8. mount() global → unmount() limpia");
   assertF3(el.querySelector("#t8-ticker") === null, "Nodo removido del DOM");
 }
 
-// ── Test 9: Dos instancias del mismo componente tienen estado independiente ──
 groupF3("Componentes — 9. Instancias independientes");
 {
   // NOTA: los IDs se calculan ANTES del template — el engine solo soporta
@@ -844,7 +789,6 @@ groupF3("Componentes — 9. Instancias independientes");
   assertF3(el.querySelector("#cb-val")!.textContent === "1", "Counter B: 1");
 }
 
-// ── Resumen F3 ────────────────────────────────────────────────────────────────
 const summaryF3 = document.getElementById("summary3")!;
 const allPassedF3 = failedF3 === 0;
 summaryF3.innerHTML = `
@@ -854,7 +798,6 @@ summaryF3.innerHTML = `
   </div>
 `;
 
-// ── Demo Interactivo F3 ───────────────────────────────────────────────────────
 const demoF3 = document.getElementById("demo3")!;
 
 // Componentes del demo
@@ -976,11 +919,6 @@ function DApp() {
 
 mount(DApp(), demoF3);
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 4: Lifecycle Hooks (Clases — Opción A)
-//  Tests → #tests4 | Summary → #summary4 | Demo → #demo4
-// ══════════════════════════════════════════════════════════════
-
 import { NixComponent } from "./nix";
 
 let passedF4 = 0;
@@ -1008,7 +946,6 @@ function sandbox4(): HTMLDivElement {
   return document.createElement("div");
 }
 
-// ── Test 1: onMount se ejecuta tras inserción en el DOM ──────────────────────
 groupF4("Lifecycle — 1. onMount se ejecuta tras mount()");
 {
   class Comp1 extends NixComponent {
@@ -1022,7 +959,6 @@ groupF4("Lifecycle — 1. onMount se ejecuta tras mount()");
   assertF4(c1.fired, "Después de mount: disparado ✓");
 }
 
-// ── Test 2: onMount NO se ejecuta si la instancia no se monta ─────────────
 groupF4("Lifecycle — 2. onMount no dispara si la instancia no se monta");
 {
   class Comp2 extends NixComponent {
@@ -1034,7 +970,6 @@ groupF4("Lifecycle — 2. onMount no dispara si la instancia no se monta");
   assertF4(!c2.fired, "Instancia creada sin montar: onMount NO disparó");
 }
 
-// ── Test 3: cleanup devuelto por onMount se llama al desmontar ────────────
 groupF4("Lifecycle — 3. Cleanup devuelto por onMount se ejecuta al desmontar");
 {
   class Comp3 extends NixComponent {
@@ -1053,7 +988,6 @@ groupF4("Lifecycle — 3. Cleanup devuelto por onMount se ejecuta al desmontar")
   assertF4(c3.cleaned, "Tras unmount: cleanup de onMount ejecutado");
 }
 
-// ── Test 4: onUnmount explícito se ejecuta al desmontar ─────────────────
 groupF4("Lifecycle — 4. onUnmount explícito");
 {
   class Comp4 extends NixComponent {
@@ -1069,7 +1003,6 @@ groupF4("Lifecycle — 4. onUnmount explícito");
   assertF4(c4.log === "MU", "Tras unmount: 'MU'");
 }
 
-// ── Test 5: onError captura errores lanzados en onMount ────────────────
 groupF4("Lifecycle — 5. onError captura error lanzado en onMount");
 {
   class Comp5 extends NixComponent {
@@ -1085,7 +1018,6 @@ groupF4("Lifecycle — 5. onError captura error lanzado en onMount");
   assertF4(el5.querySelector("#c5-alive")?.textContent === "presente", "Componente sigue en el DOM");
 }
 
-// ── Test 6: NixComponent como valor estático en html`` ─────────────────
 groupF4("Lifecycle — 6. NixComponent como valor estático en html`");
 {
   class Badge6 extends NixComponent {
@@ -1098,7 +1030,6 @@ groupF4("Lifecycle — 6. NixComponent como valor estático en html`");
   assertF4(el6.querySelector(".b6")?.textContent === "Hola", "Renderiza como valor embebido en template");
 }
 
-// ── Test 7: onMount dispara para NixComponent embebido inline ───────────
 groupF4("Lifecycle — 7. onMount dispara para NixComponent embebido inline");
 {
   class WithMount7 extends NixComponent {
@@ -1112,7 +1043,6 @@ groupF4("Lifecycle — 7. onMount dispara para NixComponent embebido inline");
   assertF4(inst7.fired, "Inline en template: onMount disparó");
 }
 
-// ── Test 8: Cleanup ejecutado al desmontar el template padre ────────────
 groupF4("Lifecycle — 8. Cleanup ejecutado al desmontar el template padre");
 {
   class WithCleanup8 extends NixComponent {
@@ -1127,7 +1057,6 @@ groupF4("Lifecycle — 8. Cleanup ejecutado al desmontar el template padre");
   assertF4(inst8.cleaned, "Tras unmount del padre: cleanup ejecutado");
 }
 
-// ── Test 9: Instancias independientes tienen estado propio ──────────────
 groupF4("Lifecycle — 9. Instancias independientes tienen estado propio");
 {
   class Counter9 extends NixComponent {
@@ -1146,7 +1075,6 @@ groupF4("Lifecycle — 9. Instancias independientes tienen estado propio");
   assertF4(spans9[1].textContent === "0", "Instancia B sigue en 0 (independiente)");
 }
 
-// ── Test 10: onInit se ejecuta antes de render(), sin DOM ───────────────────
 groupF4("Lifecycle — 10. onInit antes de render(), sin DOM");
 {
   const order: string[] = [];
@@ -1174,7 +1102,6 @@ groupF4("Lifecycle — 10. onInit antes de render(), sin DOM");
   );
 }
 
-// ── Test 11: onError captura errores de onInit ───────────────────────────────
 groupF4("Lifecycle — 11. onError captura error en onInit");
 {
   class Comp11 extends NixComponent {
@@ -1190,7 +1117,6 @@ groupF4("Lifecycle — 11. onError captura error en onInit");
   assertF4(el11.querySelector("#c11-alive")?.textContent === "presente", "DOM presente tras error capturado");
 }
 
-// ── Resumen F4 ────────────────────────────────────────────────────────────────────
 const summaryF4 = document.getElementById("summary4")!;
 const allPassedF4 = failedF4 === 0;
 summaryF4.innerHTML = `
@@ -1200,10 +1126,8 @@ summaryF4.innerHTML = `
   </div>
 `;
 
-// ── Demo Interactivo F4 ──────────────────────────────────────────────────────────────────
 const demoF4 = document.getElementById("demo4")!;
 
-// ─── Demo A: Cronómetro — setInterval en onMount, clearInterval en cleanup ───
 class Stopwatch4 extends NixComponent {
   seconds = signal(0);
   running = signal(false);
@@ -1244,7 +1168,6 @@ class Stopwatch4 extends NixComponent {
   }
 }
 
-// ─── Demo B: Log de lifecycle — onMount / onUnmount en tiempo real ──────────
 const lifecycleLog4 = signal<string[]>([]);
 let instanceId4 = 0;
 
@@ -1306,11 +1229,6 @@ mount(
 
 mount(new Stopwatch4(), demoF4);
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 5: Global Stores
-//  Tests → #tests5 | Summary → #summary5 | Demo → #demo5
-// ══════════════════════════════════════════════════════════════
-
 import { createStore } from "./nix";
 
 let passedF5 = 0;
@@ -1334,7 +1252,6 @@ function assertF5(condition: boolean, label: string) {
   testsContainerF5.appendChild(li);
 }
 
-// ── Test 1: createStore devuelve signals por cada propiedad ──────────────────
 groupF5("Store — 1. Signals creados por cada propiedad");
 {
   const s1 = createStore({ count: 0, name: "Nix" });
@@ -1344,7 +1261,6 @@ groupF5("Store — 1. Signals creados por cada propiedad");
   assertF5(s1.count.value === 5, "count tras asignación: 5");
 }
 
-// ── Test 2: effect rastrea cambios en el store ───────────────────────────────
 groupF5("Store — 2. effect rastrea cambios en el store");
 {
   const s2 = createStore({ x: 10 });
@@ -1358,7 +1274,6 @@ groupF5("Store — 2. effect rastrea cambios en el store");
   assertF5(captured === 99, "tras dispose: no re-ejecuta");
 }
 
-// ── Test 3: computed sobre el store ─────────────────────────────────────────
 groupF5("Store — 3. computed sobre el store");
 {
   const s3 = createStore({ price: 100, qty: 3 });
@@ -1370,7 +1285,6 @@ groupF5("Store — 3. computed sobre el store");
   assertF5(total.value === 250, "total tras price=50: 250");
 }
 
-// ── Test 4: $reset restaura valores iniciales ────────────────────────────────
 groupF5("Store — 4. $reset restaura valores iniciales");
 {
   const s4 = createStore({ a: 1, b: "hola", c: true as boolean });
@@ -1383,7 +1297,6 @@ groupF5("Store — 4. $reset restaura valores iniciales");
   assertF5((s4.c.value as boolean) === true, "c reset: true");
 }
 
-// ── Test 5: acciones ─────────────────────────────────────────────────────────
 groupF5("Store — 5. Acciones");
 {
   const s5 = createStore(
@@ -1403,7 +1316,6 @@ groupF5("Store — 5. Acciones");
   assertF5(s5.count.value === 0, "reset(): 0");
 }
 
-// ── Test 6: store compartido entre dos componentes ────────────────────────────
 groupF5("Store — 6. Store compartido entre componentes");
 {
   const shared = createStore({ value: 42 });
@@ -1423,7 +1335,6 @@ groupF5("Store — 6. Store compartido entre componentes");
   assertF5(spans6[0].textContent === "7" && spans6[1].textContent === "7", "Ambos reaccionan: 7");
 }
 
-// ── Test 7: batch con store ───────────────────────────────────────────────────
 groupF5("Store — 7. batch agrupa notificaciones del store");
 {
   const s7 = createStore({ a: 0, b: 0 });
@@ -1441,7 +1352,6 @@ groupF5("Store — 7. batch agrupa notificaciones del store");
   dispose();
 }
 
-// ── Test 8: store con array — update no muta el original ─────────────────────
 groupF5("Store — 8. Store con array (inmutabilidad)");
 {
   const s8 = createStore({ items: [] as string[] });
@@ -1453,7 +1363,6 @@ groupF5("Store — 8. Store con array (inmutabilidad)");
   assertF5(s8.items.value.length === 0, "$reset limpia el array");
 }
 
-// ── Test 9: template usa store directamente ───────────────────────────────────
 groupF5("Store — 9. Template reacciona al store");
 {
   const s9 = createStore({ msg: "inicio" });
@@ -1464,7 +1373,6 @@ groupF5("Store — 9. Template reacciona al store");
   assertF5(el9.querySelector("#p9")!.textContent === "cambiado", "reactivo: 'cambiado'");
 }
 
-// ── Test 10: múltiples stores independientes ──────────────────────────────────
 groupF5("Store — 10. Múltiples stores son independientes");
 {
   const sa = createStore({ n: 1 });
@@ -1474,7 +1382,6 @@ groupF5("Store — 10. Múltiples stores son independientes");
   assertF5(sb.n.value === 1, "store B: sigue en 1 (independiente)");
 }
 
-// ── Resumen F5 ────────────────────────────────────────────────────────────────
 const summaryF5 = document.getElementById("summary5")!;
 const allPassedF5 = failedF5 === 0;
 summaryF5.innerHTML = `
@@ -1484,7 +1391,6 @@ summaryF5.innerHTML = `
   </div>
 `;
 
-// ── Demo Interactivo F5 ───────────────────────────────────────────────────────
 const demoF5 = document.getElementById("demo5")!;
 
 // Store global de carrito de compras
@@ -1527,7 +1433,6 @@ const discountStore = createStore(
   })
 );
 
-// ─── Componente: fila de item ───
 class CartItem extends NixComponent {
   private item: { id: number; name: string; qty: number; price: number };
   constructor(item: { id: number; name: string; qty: number; price: number }) {
@@ -1552,7 +1457,6 @@ class CartItem extends NixComponent {
   }
 }
 
-// ─── Componente: resumen de totales ───
 class CartSummary extends NixComponent {
   render() {
     const subtotal = computed(() =>
@@ -1596,7 +1500,6 @@ class CartSummary extends NixComponent {
   }
 }
 
-// ─── Componente raíz: carrito ───
 const PRODUCTS = [
   { name: "Signal Kit", price: 19.99 },
   { name: "Template Pro", price: 29.99 },
@@ -1633,14 +1536,9 @@ mount(
   demoF5
 );
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 6: Router
-//  Tests → #tests6 | Summary → #summary6 | Demo → #demo6
-// ══════════════════════════════════════════════════════════════
 import { createRouter, RouterView, Link, nixRouter } from "./nix";
 import type { NixTemplate } from "./nix";
 
-// ── helpers Fase 6 ────────────────────────────────────────────────────────────
 const testsF6 = document.getElementById("tests6")!;
 const summaryF6 = document.getElementById("summary6")!;
 let passF6 = 0, failF6 = 0;
@@ -1666,7 +1564,6 @@ function summaryDoneF6() {
   </div>`;
 }
 
-// ── Test 1: createRouter devuelve la API correcta ─────────────────────────────
 groupF6("Router — 1. createRouter devuelve current, navigate, routes");
 {
   const r = createRouter([
@@ -1678,7 +1575,6 @@ groupF6("Router — 1. createRouter devuelve current, navigate, routes");
   assertF6(Array.isArray(r.routes) && r.routes.length === 1, "routes es array con 1 entrada");
 }
 
-// ── Test 2: navigate actualiza current síncronamente ─────────────────────────
 groupF6("Router — 2. navigate actualiza current de forma síncrona");
 {
   const r = createRouter([{ path: "/x", component: () => html`<span>x</span>` }]);
@@ -1688,7 +1584,6 @@ groupF6("Router — 2. navigate actualiza current de forma síncrona");
   assertF6(r.current.value === "/y", "current.value === '/y' tras segundo navigate");
 }
 
-// ── Test 3: navigate actualiza window.location.hash ──────────────────────────
 groupF6("Router — 3. navigate actualiza window.location.pathname");
 {
   const r = createRouter([]);
@@ -1696,7 +1591,6 @@ groupF6("Router — 3. navigate actualiza window.location.pathname");
   assertF6(window.location.pathname === "/pathname-test", "pathname === '/pathname-test'");
 }
 
-// ── Test 4: computed sobre current ───────────────────────────────────────────
 groupF6("Router — 4. computed reactivo sobre router.current");
 {
   const r = createRouter([]);
@@ -1707,7 +1601,6 @@ groupF6("Router — 4. computed reactivo sobre router.current");
   assertF6(label.value === "estás en home", "computed: 'estás en home'");
 }
 
-// ── Test 5: effect se dispara al cambiar ruta ─────────────────────────────────
 groupF6("Router — 5. effect se ejecuta al navegar");
 {
   const r = createRouter([]);
@@ -1720,7 +1613,6 @@ groupF6("Router — 5. effect se ejecuta al navegar");
   assertF6(log.includes("/a") && log.includes("/b"), "log contiene /a y /b");
 }
 
-// ── Test 6: RouterView monta el componente correcto ───────────────────────────
 groupF6("Router — 6. RouterView renderiza la ruta correcta");
 {
   const r = createRouter([
@@ -1736,7 +1628,6 @@ groupF6("Router — 6. RouterView renderiza la ruta correcta");
   host6.remove();
 }
 
-// ── Test 7: RouterView cambia vista al navegar ────────────────────────────────
 groupF6("Router — 7. RouterView actualiza vista al cambiar ruta");
 {
   const r = createRouter([
@@ -1754,7 +1645,6 @@ groupF6("Router — 7. RouterView actualiza vista al cambiar ruta");
   host7.remove();
 }
 
-// ── Test 8: RouterView muestra 404 sin wildcard ───────────────────────────────
 groupF6("Router — 8. RouterView muestra 404 cuando no hay ruta ni wildcard");
 {
   const r = createRouter([{ path: "/known", component: () => html`<span>known</span>` }]);
@@ -1766,7 +1656,6 @@ groupF6("Router — 8. RouterView muestra 404 cuando no hay ruta ni wildcard");
   host8.remove();
 }
 
-// ── Test 9: RouterView usa fallback wildcard * ────────────────────────────────
 groupF6("Router — 9. RouterView usa ruta wildcard '*' como fallback");
 {
   const r = createRouter([
@@ -1781,7 +1670,6 @@ groupF6("Router — 9. RouterView usa ruta wildcard '*' como fallback");
   host9.remove();
 }
 
-// ── Test 10: Link renders con href correcto ───────────────────────────────────
 groupF6("Router — 10. Link renderiza href con el prefijo '#'");
 {
   const r = createRouter([]);
@@ -1795,7 +1683,6 @@ groupF6("Router — 10. Link renderiza href con el prefijo '#'");
   host10.remove();
 }
 
-// ── Test 11: Link aplica estilos activo/inactivo ──────────────────────────────
 groupF6("Router — 11. Link aplica estilo activo/inactivo según ruta actual");
 {
   const r = createRouter([]);
@@ -1814,7 +1701,6 @@ groupF6("Router — 11. Link aplica estilo activo/inactivo según ruta actual");
   hostOther.remove();
 }
 
-// ── Test 12: Rutas anidadas (children) ─────────────────────────────────────
 groupF6("Router — 12. Rutas anidadas con children");
 {
   const r = createRouter([
@@ -1840,7 +1726,6 @@ groupF6("Router — 12. Rutas anidadas con children");
   host12.remove();
 }
 
-// ── Test 13: Parámetro dinámico simple (:id) ──────────────────────────────────
 groupF6("Router — 13. Parámetro dinámico :id");
 {
   const r = createRouter([
@@ -1857,7 +1742,6 @@ groupF6("Router — 13. Parámetro dinámico :id");
   assertF6(r.params.value.id === "alice", "params.id === 'alice'");
 }
 
-// ── Test 14: Múltiples parámetros en la misma ruta ────────────────────────────
 groupF6("Router — 14. Múltiples params (:slug y :cid)");
 {
   const r = createRouter([
@@ -1879,7 +1763,6 @@ groupF6("Router — 14. Múltiples params (:slug y :cid)");
 
 summaryDoneF6();
 
-// ── Tests 15-19: Query params ───────────────────────────────────────────────
 groupF6("Router — 15. query inicial vacío");
 {
   const r = createRouter([]);
@@ -1929,7 +1812,6 @@ groupF6("Router — 19. query es reactivo (effect + computed)");
   assertF6(label.value === "vista lista", "computed: vuelve a lista sin query");
 }
 
-// ── Demo Fase 6: Mini-SPA ─────────────────────────────────────────────────────
 const demoF6 = document.getElementById("demo6")!;
 
 const appRouter = createRouter([
@@ -1941,7 +1823,6 @@ const appRouter = createRouter([
   { path: "*", component: () => new NotFoundPage() },
 ]);
 
-// Iniciar en /
 appRouter.navigate("/");
 
 class HomePage extends NixComponent {
@@ -2059,7 +1940,6 @@ class UserDetailPage extends NixComponent {
   }
 }
 
-// ── Nav + RouterView ──────────────────────────────────────────────────────────
 mount(
   html`
     <div>
@@ -2083,9 +1963,6 @@ mount(
 );
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 7: repeat() — Keyed Diffing
-//  Tests → #tests7 | Summary → #summary7 | Demo → #demo7
-// ══════════════════════════════════════════════════════════════
 import { repeat } from "./nix";
 
 const testsF7 = document.getElementById("tests7")!;
@@ -2111,7 +1988,6 @@ function summaryDoneF7() {
   </div>`;
 }
 
-// ── Test 1: repeat renderiza la lista inicial ────────────────────────────────
 groupF7("repeat — 1. Renderiza lista inicial");
 {
   const items = signal([{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }]);
@@ -2124,7 +2000,6 @@ groupF7("repeat — 1. Renderiza lista inicial");
   host.remove();
 }
 
-// ── Test 2: agregar item al final ─────────────────────────────────────────
 groupF7("repeat — 2. Añade item al final");
 {
   const items = signal([{ id: 1 }, { id: 2 }]);
@@ -2137,7 +2012,6 @@ groupF7("repeat — 2. Añade item al final");
   host.remove();
 }
 
-// ── Test 3: eliminar item ──────────────────────────────────────────────────ngroupF7("repeat — 3. Elimina item");
 {
   const items = signal([{ id: 1 }, { id: 2 }, { id: 3 }]);
   const host = document.createElement("div");
@@ -2149,7 +2023,6 @@ groupF7("repeat — 2. Añade item al final");
   host.remove();
 }
 
-// ── Test 4: los nodos DOM existentes se PRESERVAN (no se recrean) ────────
 groupF7("repeat — 4. Preserva nodos DOM existentes al actualizar");
 {
   const items = signal([{ id: 1 }, { id: 2 }, { id: 3 }]);
@@ -2169,7 +2042,6 @@ groupF7("repeat — 4. Preserva nodos DOM existentes al actualizar");
   host.remove();
 }
 
-// ── Test 5: reordenar la lista ────────────────────────────────────────────────ngroupF7("repeat — 5. Reordena sin recrear nodos");
 {
   const items = signal([{ id: 1 }, { id: 2 }, { id: 3 }]);
   const host = document.createElement("div");
@@ -2186,7 +2058,6 @@ groupF7("repeat — 4. Preserva nodos DOM existentes al actualizar");
   host.remove();
 }
 
-// ── Test 6: lista vacía ───────────────────────────────────────────────────────────ngroupF7("repeat — 6. Lista vacía inicial y rellenado posterior");
 {
   const items = signal<{ id: number }[]>([]);
   const host = document.createElement("div");
@@ -2200,7 +2071,6 @@ groupF7("repeat — 4. Preserva nodos DOM existentes al actualizar");
   host.remove();
 }
 
-// ── Test 7: repeat con NixComponent ──────────────────────────────────────────
 groupF7("repeat — 7. Funciona con NixComponent");
 {
   class TagComp extends NixComponent {
@@ -2221,7 +2091,6 @@ groupF7("repeat — 7. Funciona con NixComponent");
 
 summaryDoneF7();
 
-// ── Demo Fase 7: Todo list con keyed diffing ────────────────────────────
 const demoF7 = document.getElementById("demo7")!;
 
 interface TodoItem { id: number; text: string; done: boolean; }
@@ -2291,9 +2160,6 @@ mount(
 );
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 8: lazy() + suspend() — Lazy loading & Suspense
-//  Tests → #tests8 | Summary → #summary8 | Demo → #demo8
-// ══════════════════════════════════════════════════════════════
 import { suspend, lazy } from "./nix";
 
 const testsF8 = document.getElementById("tests8")!;
@@ -2319,7 +2185,6 @@ function summaryDoneF8() {
   </div>`;
 }
 
-// ── Test 1: suspend muestra fallback inmediatamente ──────────────────────────
 groupF8("suspend — 1. Muestra fallback mientras la promesa está pendiente");
 {
   const host = document.createElement("div");
@@ -2336,7 +2201,6 @@ groupF8("suspend — 1. Muestra fallback mientras la promesa está pendiente");
   host.remove();
 }
 
-// ── Test 2: suspend renderiza el contenido tras resolver ─────────────────────
 groupF8("suspend — 2. Renderiza contenido después de que la promesa resuelve");
 {
   const host = document.createElement("div");
@@ -2360,7 +2224,6 @@ groupF8("suspend — 2. Renderiza contenido después de que la promesa resuelve"
   });
 }
 
-// ── Test 3: suspend muestra errorFallback en caso de rechazo ─────────────────
 groupF8("suspend — 3. Muestra errorFallback cuando la promesa falla");
 {
   const host = document.createElement("div");
@@ -2382,7 +2245,6 @@ groupF8("suspend — 3. Muestra errorFallback cuando la promesa falla");
   });
 }
 
-// ── Test 4: suspend sin opciones usa fallback por defecto ────────────────────
 groupF8("suspend — 4. Fallback por defecto (spinner) sin opciones");
 {
   const host = document.createElement("div");
@@ -2395,7 +2257,6 @@ groupF8("suspend — 4. Fallback por defecto (spinner) sin opciones");
   host.remove();
 }
 
-// ── Test 5: lazy retorna NixComponent la primera vez (pending) ───────────────
 groupF8("lazy — 5. Primera llamada carga el chunk (muestra fallback)");
 {
   const host = document.createElement("div");
@@ -2425,7 +2286,6 @@ groupF8("lazy — 5. Primera llamada carga el chunk (muestra fallback)");
   }, 50);
 }
 
-// ── Test 6: lazy cachea — segunda invocación no reimporta ────────────────────
 groupF8("lazy — 6. Resultado cacheado: segunda llamada instancia directamente");
 {
   let importCount = 0;
@@ -2461,7 +2321,6 @@ groupF8("lazy — 6. Resultado cacheado: segunda llamada instancia directamente"
   });
 }
 
-// ── Demo Fase 8: suspend + lazy en acción ────────────────────────────────────
 const demoF8 = document.getElementById("demo8")!;
 
 // Simula un API con latencia configurable
@@ -2476,7 +2335,6 @@ interface UserProfile { name: string; role: string; avatar: string; }
 const demoDelay = signal(800);
 const demoFail = signal(false);
 
-// ── Slot donde se monta el suspend component ─────────────────────────────────
 // (se añade al DOM antes de montar controles para mantener el orden visual)
 const profileSlot = document.createElement("div");
 const controlsSlot = document.createElement("div");
@@ -2543,7 +2401,6 @@ function refreshProfile() {
   profileUnmount = handle.unmount;
 }
 
-// ── Controles ─────────────────────────────────────────────────────────────────
 mount(
   html`
     <div style="display:flex;align-items:center;flex-wrap:wrap;gap:16px;margin-bottom:12px">
@@ -2573,9 +2430,6 @@ mount(
 refreshProfile();
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 9: ref() — Referencias a elementos DOM
-//  Tests → #tests9 | Summary → #summary9 | Demo → #demo9
-// ══════════════════════════════════════════════════════════════
 import { ref } from "./nix";
 
 const testsF9 = document.getElementById("tests9")!;
@@ -2596,14 +2450,12 @@ function groupF9(label: string) {
   testsF9.appendChild(h);
 }
 
-// ── Test 1: ref.el es null antes de montar ───────────────────────────────────
 groupF9("ref — 1. ref.el es null antes de montar");
 {
   const r = ref<HTMLSpanElement>();
   assertF9(r.el === null, "ref.el === null antes del mount");
 }
 
-// ── Test 2: ref.el apunta al elemento correcto tras montar ───────────────────
 groupF9("ref — 2. ref.el apunta al elemento correcto tras montar");
 {
   const host = document.createElement("div");
@@ -2617,7 +2469,6 @@ groupF9("ref — 2. ref.el apunta al elemento correcto tras montar");
   document.body.removeChild(host);
 }
 
-// ── Test 3: ref.el vuelve a null tras desmontar ──────────────────────────────
 groupF9("ref — 3. ref.el === null después de unmount");
 {
   const host = document.createElement("div");
@@ -2630,7 +2481,6 @@ groupF9("ref — 3. ref.el === null después de unmount");
   document.body.removeChild(host);
 }
 
-// ── Test 4: múltiples refs en el mismo template ──────────────────────────────
 groupF9("ref — 4. Múltiples refs en el mismo template apuntan a elementos distintos");
 {
   const host = document.createElement("div");
@@ -2648,7 +2498,6 @@ groupF9("ref — 4. Múltiples refs en el mismo template apuntan a elementos dis
   document.body.removeChild(host);
 }
 
-// ── Test 5: ref dentro de NixComponent — onMount puede usar el ref ───────────
 groupF9("ref — 5. ref dentro de NixComponent disponible en onMount");
 {
   const host = document.createElement("div");
@@ -2673,7 +2522,6 @@ groupF9("ref — 5. ref dentro de NixComponent disponible en onMount");
   document.body.removeChild(host);
 }
 
-// ── Test 6: ref en elemento condicional ──────────────────────────────────────
 groupF9("ref — 6. ref en template condicional: asignado o null según visibilidad");
 {
   const host = document.createElement("div");
@@ -2697,7 +2545,6 @@ groupF9("ref — 6. ref en template condicional: asignado o null según visibili
   document.body.removeChild(host);
 }
 
-// ── Test 7: ref en input — se puede llamar focus() ───────────────────────────
 groupF9("ref — 7. ref en <input> permite llamar .focus() sin errores");
 {
   const host = document.createElement("div");
@@ -2715,13 +2562,11 @@ groupF9("ref — 7. ref en <input> permite llamar .focus() sin errores");
   document.body.removeChild(host);
 }
 
-// ── Resumen Fase 9 ────────────────────────────────────────────────────────────
 const totalF9 = passF9 + failF9;
 summaryF9.innerHTML = `<div class="summary ${failF9 === 0 ? 'all-pass' : 'has-fail'}">
   Fase 9 — ref(): ${passF9}/${totalF9} tests pasados ${failF9 === 0 ? "🎉" : `❌ ${failF9} fallaron`}
 </div>`;
 
-// ── Demo Interactivo Fase 9 ───────────────────────────────────────────────────
 const demoF9 = document.getElementById("demo9")!;
 
 class FocusDemo extends NixComponent {
@@ -2770,9 +2615,6 @@ class FocusDemo extends NixComponent {
 mount(new FocusDemo(), demoF9);
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 10: Event Modifiers
-//  Tests → #tests10 | Summary → #summary10 | Demo → #demo10
-// ══════════════════════════════════════════════════════════════
 
 const testsF10 = document.getElementById("tests10")!;
 const summaryF10 = document.getElementById("summary10")!;
@@ -2792,7 +2634,6 @@ function groupF10(label: string) {
   testsF10.appendChild(h);
 }
 
-// ── Test 1: .prevent — llama preventDefault() ────────────────────────────────
 groupF10("modifiers — 1. .prevent llama e.preventDefault()");
 {
   const host = document.createElement("div");
@@ -2807,7 +2648,6 @@ groupF10("modifiers — 1. .prevent llama e.preventDefault()");
   document.body.removeChild(host);
 }
 
-// ── Test 2: .stop — llama stopPropagation() ──────────────────────────────────
 groupF10("modifiers — 2. .stop detiene la propagación al padre");
 {
   const host = document.createElement("div");
@@ -2824,7 +2664,6 @@ groupF10("modifiers — 2. .stop detiene la propagación al padre");
   document.body.removeChild(host);
 }
 
-// ── Test 3: .once — el handler se dispara solo una vez ───────────────────────
 groupF10("modifiers — 3. .once dispara el handler exactamente una vez");
 {
   const host = document.createElement("div");
@@ -2838,7 +2677,6 @@ groupF10("modifiers — 3. .once dispara el handler exactamente una vez");
   document.body.removeChild(host);
 }
 
-// ── Test 4: .self — solo dispara si el target es el propio elemento ──────────
 groupF10("modifiers — 4. .self solo dispara cuando e.target === e.currentTarget");
 {
   const host = document.createElement("div");
@@ -2859,7 +2697,6 @@ groupF10("modifiers — 4. .self solo dispara cuando e.target === e.currentTarge
   document.body.removeChild(host);
 }
 
-// ── Test 5: .enter — solo dispara con tecla Enter ────────────────────────────
 groupF10("modifiers — 5. .enter solo reacciona a la tecla Enter");
 {
   const host = document.createElement("div");
@@ -2875,7 +2712,6 @@ groupF10("modifiers — 5. .enter solo reacciona a la tecla Enter");
   document.body.removeChild(host);
 }
 
-// ── Test 6: .escape — solo dispara con tecla Escape ──────────────────────────
 groupF10("modifiers — 6. .escape solo reacciona a la tecla Escape");
 {
   const host = document.createElement("div");
@@ -2890,7 +2726,6 @@ groupF10("modifiers — 6. .escape solo reacciona a la tecla Escape");
   document.body.removeChild(host);
 }
 
-// ── Test 7: .prevent.stop — múltiples modificadores combinados ───────────────
 groupF10("modifiers — 7. Múltiples modificadores: .prevent.stop");
 {
   const host = document.createElement("div");
@@ -2911,7 +2746,6 @@ groupF10("modifiers — 7. Múltiples modificadores: .prevent.stop");
   document.body.removeChild(host);
 }
 
-// ── Test 8: sin modifiers — comportamiento original sin cambios ───────────────
 groupF10("modifiers — 8. Sin modificadores: comportamiento original intacto");
 {
   const host = document.createElement("div");
@@ -2924,13 +2758,11 @@ groupF10("modifiers — 8. Sin modificadores: comportamiento original intacto");
   document.body.removeChild(host);
 }
 
-// ── Resumen Fase 10 ───────────────────────────────────────────────────────────
 const totalF10 = passF10 + failF10;
 summaryF10.innerHTML = `<div class="summary ${failF10 === 0 ? 'all-pass' : 'has-fail'}">
   Fase 10 — Event Modifiers: ${passF10}/${totalF10} tests pasados ${failF10 === 0 ? "🎉" : `❌ ${failF10} fallaron`}
 </div>`;
 
-// ── Demo Interactivo Fase 10 ──────────────────────────────────────────────────
 const demoF10 = document.getElementById("demo10")!;
 
 {
@@ -3000,9 +2832,6 @@ const demoF10 = document.getElementById("demo10")!;
 }
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 11: watch() — Observadores reactivos
-//  Tests → #tests11 | Summary → #summary11 | Demo → #demo11
-// ══════════════════════════════════════════════════════════════
 import { watch } from "./nix";
 
 const testsF11 = document.getElementById("tests11")!;
@@ -3023,7 +2852,6 @@ function groupF11(label: string) {
   testsF11.appendChild(h);
 }
 
-// ── Test 1: watch no llama callback al crearlo (lazy por defecto) ─────────────
 groupF11("watch — 1. No llama callback al crear (lazy by default)");
 {
   const s = signal(0);
@@ -3033,7 +2861,6 @@ groupF11("watch — 1. No llama callback al crear (lazy by default)");
   stop();
 }
 
-// ── Test 2: watch llama callback cuando la señal cambia ──────────────────────
 groupF11("watch — 2. Llama callback cuando la señal cambia");
 {
   const s = signal(0);
@@ -3046,7 +2873,6 @@ groupF11("watch — 2. Llama callback cuando la señal cambia");
   stop();
 }
 
-// ── Test 3: watch con getter compuesto ───────────────────────────────────────
 groupF11("watch — 3. Getter compuesto: () => a.value + b.value");
 {
   const a = signal(1);
@@ -3058,7 +2884,6 @@ groupF11("watch — 3. Getter compuesto: () => a.value + b.value");
   stop();
 }
 
-// ── Test 4: immediate: true — llama callback con el valor actual ──────────────
 groupF11("watch — 4. { immediate: true } llama callback de inmediato");
 {
   const s = signal("hola");
@@ -3070,7 +2895,6 @@ groupF11("watch — 4. { immediate: true } llama callback de inmediato");
   stop();
 }
 
-// ── Test 5: immediate + cambio posterior ─────────────────────────────────────
 groupF11("watch — 5. { immediate: true } + cambio posterior");
 {
   const s = signal(1);
@@ -3084,7 +2908,6 @@ groupF11("watch — 5. { immediate: true } + cambio posterior");
   stop();
 }
 
-// ── Test 6: once: true — se detiene después del primer cambio ─────────────────
 groupF11("watch — 6. { once: true } dispara solo en el primer cambio");
 {
   const s = signal(0);
@@ -3096,7 +2919,6 @@ groupF11("watch — 6. { once: true } dispara solo en el primer cambio");
   assertF11(calls <= 1, `once: callback llamado ${calls} vez/veces (se esperaba ≤1)`);
 }
 
-// ── Test 7: stop() detiene las actualizaciones ───────────────────────────────
 groupF11("watch — 7. stop() detiene las actualizaciones");
 {
   const s = signal(0);
@@ -3109,7 +2931,6 @@ groupF11("watch — 7. stop() detiene las actualizaciones");
   assertF11(calls === 1, `stop(): solo 1 llamada antes del stop (fueron ${calls})`);
 }
 
-// ── Test 8: stop() — watcher no reactiva tras detenerse ──────────────────────
 groupF11("watch — 8. Watcher no reactiva señales después de stop()");
 {
   const s = signal("a");
@@ -3122,13 +2943,11 @@ groupF11("watch — 8. Watcher no reactiva señales después de stop()");
   assertF11(val === "b", "sigue siendo 'b' después del stop (no capturó 'c')");
 }
 
-// ── Resumen Fase 11 ───────────────────────────────────────────────────────────
 const totalF11 = passF11 + failF11;
 summaryF11.innerHTML = `<div class="summary ${failF11 === 0 ? 'all-pass' : 'has-fail'}">
   Fase 11 — watch(): ${passF11}/${totalF11} tests pasados ${failF11 === 0 ? "🎉" : `❌ ${failF11} fallaron`}
 </div>`;
 
-// ── Demo Interactivo Fase 11 ──────────────────────────────────────────────────
 const demoF11 = document.getElementById("demo11")!;
 
 {
@@ -3191,9 +3010,6 @@ const demoF11 = document.getElementById("demo11")!;
 }
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 12: nextTick() — Microtask hook
-//  Tests → #tests12 | Summary → #summary12 | Demo → #demo12
-// ══════════════════════════════════════════════════════════════
 import { nextTick } from "./nix";
 
 const testsF12 = document.getElementById("tests12")!;
@@ -3218,7 +3034,6 @@ function groupF12(label: string) {
 // resumen cuando todos terminan.
 (async () => {
 
-  // ── Test 1: nextTick() retorna una promesa ────────────────────────────────────
   groupF12("nextTick — 1. Retorna una Promise");
   {
     const p = nextTick();
@@ -3226,7 +3041,6 @@ function groupF12(label: string) {
     await p;
   }
 
-  // ── Test 2: nextTick() resuelve después del tick síncrono ────────────────────
   groupF12("nextTick — 2. El código tras 'await nextTick()' corre después del tick síncrono");
   {
     const order: string[] = [];
@@ -3244,7 +3058,6 @@ function groupF12(label: string) {
     );
   }
 
-  // ── Test 3: DOM actualizado después de nextTick ───────────────────────────────
   groupF12("nextTick — 3. DOM refleja cambios reactivos después de await nextTick()");
   {
     const host = document.createElement("div");
@@ -3265,7 +3078,6 @@ function groupF12(label: string) {
     document.body.removeChild(host);
   }
 
-  // ── Test 4: nextTick(callback) ejecuta fn en microtask ───────────────────────
   groupF12("nextTick — 4. nextTick(fn) ejecuta el callback en el microtask");
   {
     const order: string[] = [];
@@ -3279,7 +3091,6 @@ function groupF12(label: string) {
     );
   }
 
-  // ── Test 5: batch + nextTick — efectos resueltos antes de nextTick ────────────
   groupF12("nextTick — 5. Tras batch(), los efectos ya corrieron al hacer await nextTick()");
   {
     const host = document.createElement("div");
@@ -3301,7 +3112,6 @@ function groupF12(label: string) {
     document.body.removeChild(host);
   }
 
-  // ── Test 6: múltiples nextTick encadenados ────────────────────────────────────
   groupF12("nextTick — 6. Múltiples await nextTick() encadenados resuelven en orden");
   {
     const ticks: number[] = [];
@@ -3315,13 +3125,11 @@ function groupF12(label: string) {
       `orden correcto: [${ticks.join(", ")}]`);
   }
 
-  // ── Resumen Fase 12 ───────────────────────────────────────────────────────────
   const totalF12 = passF12 + failF12;
   summaryF12.innerHTML = `<div class="summary ${failF12 === 0 ? 'all-pass' : 'has-fail'}">
   Fase 12 — nextTick(): ${passF12}/${totalF12} tests pasados ${failF12 === 0 ? "🎉" : `❌ ${failF12} fallaron`}
 </div>`;
 
-  // ── Demo Interactivo Fase 12 ──────────────────────────────────────────────────
   const demoF12 = document.getElementById("demo12")!;
 
   {
@@ -3381,9 +3189,6 @@ function groupF12(label: string) {
 })(); // fin bloque async
 
 // ╔══════════════════════════════════════════════════════════════
-//  FASE 13: provide() / inject() — Inyección de dependencias
-//  Tests → #tests13 | Summary → #summary13 | Demo → #demo13
-// ══════════════════════════════════════════════════════════════
 import { provide, inject, createInjectionKey } from "./nix";
 import type { InjectionKey } from "./nix";
 
@@ -3405,7 +3210,6 @@ function groupF13(label: string) {
   testsF13.appendChild(h);
 }
 
-// ── Test 1: inject fuera de un componente retorna undefined ──────────────────
 // (ejecutado a nivel módulo, fuera de cualquier render)
 groupF13("inject — 1. inject() fuera de render retorna undefined");
 {
@@ -3413,7 +3217,6 @@ groupF13("inject — 1. inject() fuera de render retorna undefined");
   assertF13(inject(K) === undefined, "inject fuera de componente === undefined");
 }
 
-// ── Test 2: provide + inject en jerarquía directa padre → hijo ───────────────
 groupF13("provide/inject — 2. Hijo inyecta valor provisto por el padre");
 {
   const host = document.createElement("div");
@@ -3438,7 +3241,6 @@ groupF13("provide/inject — 2. Hijo inyecta valor provisto por el padre");
   document.body.removeChild(host);
 }
 
-// ── Test 3: inject a través de múltiples niveles (abuelo → padre → hijo) ─────
 groupF13("provide/inject — 3. Inyección a través de múltiples niveles");
 {
   const host = document.createElement("div");
@@ -3465,7 +3267,6 @@ groupF13("provide/inject — 3. Inyección a través de múltiples niveles");
   document.body.removeChild(host);
 }
 
-// ── Test 4: hijo anula el provide del padre (override más cercano) ──────────
 groupF13("provide/inject — 4. Override: hijo provee otro valor, nieto ve el del hijo");
 {
   const host = document.createElement("div");
@@ -3494,7 +3295,6 @@ groupF13("provide/inject — 4. Override: hijo provee otro valor, nieto ve el de
   document.body.removeChild(host);
 }
 
-// ── Test 5: claves distintas no se confunden ─────────────────────────────────
 groupF13("provide/inject — 5. Claves distintas no se confunden");
 {
   const host = document.createElement("div");
@@ -3520,7 +3320,6 @@ groupF13("provide/inject — 5. Claves distintas no se confunden");
   document.body.removeChild(host);
 }
 
-// ── Test 6: provide con Signal — cambios reactivos llegan al hijo ────────────
 groupF13("provide/inject — 6. Signal provista: cambios reactivos llegan al consumidor");
 {
   const host = document.createElement("div");
@@ -3547,7 +3346,6 @@ groupF13("provide/inject — 6. Signal provista: cambios reactivos llegan al con
   document.body.removeChild(host);
 }
 
-// ── Test 7: provide() fuera de componente lanza error ───────────────────────
 groupF13("provide — 7. provide() fuera de componente lanza Error");
 {
   const K = createInjectionKey<string>("k7");
@@ -3556,13 +3354,11 @@ groupF13("provide — 7. provide() fuera de componente lanza Error");
   assertF13(threw, "provide() fuera de componente lanzó Error");
 }
 
-// ── Resumen Fase 13 ───────────────────────────────────────────────────────────
 const totalF13 = passF13 + failF13;
 summaryF13.innerHTML = `<div class="summary ${failF13 === 0 ? 'all-pass' : 'has-fail'}">
   Fase 13 — provide/inject: ${passF13}/${totalF13} tests pasados ${failF13 === 0 ? "🎉" : `❌ ${failF13} fallaron`}
 </div>`;
 
-// ── Demo Interactivo Fase 13 ──────────────────────────────────────────────────
 const demoF13 = document.getElementById("demo13")!;
 
 {
@@ -3570,7 +3366,6 @@ const demoF13 = document.getElementById("demo13")!;
   const THEME_KEY: InjectionKey<ReturnType<typeof signal<string>>> =
     createInjectionKey("demo13-theme");
 
-  // ── Componentes consumidores (no saben de dónde viene el tema)
   class ThemedCard extends NixComponent {
     theme = inject(THEME_KEY)!;
     override render() {
@@ -3605,7 +3400,6 @@ const demoF13 = document.getElementById("demo13")!;
     }
   }
 
-  // ── Proveedor raíz
   class ThemeProvider extends NixComponent {
     theme = signal("dark");
     override onInit() { provide(THEME_KEY, this.theme); }
@@ -3640,10 +3434,6 @@ const demoF13 = document.getElementById("demo13")!;
   mount(new ThemeProvider(), demoF13);
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 15: Forms
-//  Tests → #tests15 | Summary → #summary15 | Demo → #demo15
-// ══════════════════════════════════════════════════════════════
 import {
   nixField, createForm,
   required, minLength, maxLength, email, min, max,
@@ -3669,7 +3459,6 @@ import type { FieldState } from "./nix";
     field.onInput({ target: el } as unknown as Event);
   }
   function blur(field: FieldState<unknown>) { field.onBlur(); }
-  // ── nixField ─────────────────────────────────────────────────────────────
   const f1 = nixField("hello");
   assert15(f1.value.value === "hello", "nixField — initial value");
   assert15(!f1.touched.value, "nixField — not touched initially");
@@ -3689,7 +3478,6 @@ import type { FieldState } from "./nix";
   assert15(!f2.touched.value, "nixField — reset clears touched");
   assert15(f2.error.value === null, "nixField — error hidden after reset");
 
-  // ── Built-in validators ──────────────────────────────────────────────────
   const fMin = nixField("", [minLength(3)]);
   blur(fMin); type(fMin, "ab");
   assert15(fMin.error.value !== null, "minLength — fails when too short");
@@ -3716,7 +3504,6 @@ import type { FieldState } from "./nix";
   fNum.value.value = 200;
   assert15(fNum.error.value !== null, "max — fails above maximum");
 
-  // ── External error injection (_setExternalError) ─────────────────────────
   const fExt = nixField("ok");
   fExt._setExternalError("Server error");
   assert15(fExt.error.value === "Server error", "_setExternalError — injects external error");
@@ -3724,7 +3511,6 @@ import type { FieldState } from "./nix";
   type(fExt, "new value");
   assert15(fExt.error.value === null, "_setExternalError — clears when user re-types");
 
-  // ── createForm ───────────────────────────────────────────────────────────
   const form1 = createForm({ name: "", email: "" });
   assert15("name" in form1.fields && "email" in form1.fields, "createForm — creates fields for all keys");
 
@@ -3780,11 +3566,9 @@ import type { FieldState } from "./nix";
   assert15(!form7.dirty.value, "reset — dirty cleared");
   assert15(form7.fields.x.value.value === "", "reset — value restored");
 
-  // ── Summary ───────────────────────────────────────────────────────────────
   summaryEl.textContent = `${pass} passed, ${fail} failed`;
   summaryEl.className = fail === 0 ? "pass" : "fail";
 
-  // ── Demo — Registration form ──────────────────────────────────────────────
   const demoEl = document.getElementById("demo15")!;
 
   const regForm = createForm(
@@ -3805,7 +3589,6 @@ import type { FieldState } from "./nix";
 
   const submitted = signal<null | typeof regForm.values.value>(null);
 
-  // ── Field row helper ──────────────────────────────────────────────────────
   function fieldRow(
     label: string,
     field: FieldState<string | number>,
@@ -3868,10 +3651,6 @@ import type { FieldState } from "./nix";
   `, demoEl);
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 14: Children & Slots
-//  Tests → #tests14 | Summary → #summary14 | Demo → #demo14
-// ══════════════════════════════════════════════════════════════
 import type { NixChildren } from "./nix";
 
 {
@@ -3887,7 +3666,6 @@ import type { NixChildren } from "./nix";
     if (condition) pass++; else { fail++; console.error("❌ F14:", label); }
   }
 
-  // ── TEST 1: children en class component ──────────────────────────────────
   class Box extends NixComponent {
     override render() {
       return html`<div class="box">${this.children}</div>`;
@@ -3898,7 +3676,6 @@ import type { NixChildren } from "./nix";
   new Box().setChildren(html`<span id="child14a">hola</span>`).render().mount(div14a);
   assert14(!!div14a.querySelector("#child14a"), "class component — children default slot se renderiza");
 
-  // ── TEST 2: named slots ───────────────────────────────────────────────────
   class TwoSlot extends NixComponent {
     override render() {
       return html`
@@ -3923,7 +3700,6 @@ import type { NixChildren } from "./nix";
   assert14(!!div14b.querySelector("#slot-body"), "children (default slot) se renderiza junto a named slots");
   assert14(!!div14b.querySelector("#slot-footer"), "named slot 'footer' se renderiza");
 
-  // ── TEST 3: children en función componente ────────────────────────────────
   function FnCard({ children }: { children?: NixChildren }) {
     return html`<article class="fn-card">${children}</article>`;
   }
@@ -3932,7 +3708,6 @@ import type { NixChildren } from "./nix";
   FnCard({ children: html`<span id="fn-child">fn children</span>` }).mount(div14c);
   assert14(!!div14c.querySelector("#fn-child"), "function component — children como prop funciona");
 
-  // ── TEST 4: children puede ser un NixComponent ────────────────────────────
   class Inner extends NixComponent {
     override render() { return html`<b id="inner-comp">inner</b>`; }
   }
@@ -3941,7 +3716,6 @@ import type { NixChildren } from "./nix";
   new Box().setChildren(new Inner()).render().mount(div14d);
   assert14(!!div14d.querySelector("#inner-comp"), "children puede ser un NixComponent");
 
-  // ── TEST 5: slot vacío no rompe ──────────────────────────────────────────
   const div14e = document.createElement("div");
   let threw = false;
   try {
@@ -3949,15 +3723,12 @@ import type { NixChildren } from "./nix";
   } catch { threw = true; }
   assert14(!threw, "slot vacío (undefined) no lanza error");
 
-  // ── TEST 6: setChildren es fluido (retorna this) ──────────────────────────
   const box = new Box();
   assert14(box.setChildren(html`<span>x</span>`) === box, "setChildren() retorna this (fluent API)");
 
-  // ── TEST 7: setSlot es fluido ─────────────────────────────────────────────
   const ts = new TwoSlot();
   assert14(ts.setSlot("header", html`<h1>h</h1>`) === ts, "setSlot() retorna this (fluent API)");
 
-  // ── TEST 8: children array ────────────────────────────────────────────────
   const div14f = document.createElement("div");
   new Box().setChildren([
     html`<span id="arr-a">A</span>`,
@@ -3966,7 +3737,6 @@ import type { NixChildren } from "./nix";
   assert14(!!div14f.querySelector("#arr-a") && !!div14f.querySelector("#arr-b"),
     "children acepta array de templates");
 
-  // ── TEST 9: children con señales reactivas ────────────────────────────────
   const reactive14 = signal("v1");
   const div14g = document.createElement("div");
   new Box().setChildren(html`<span id="react-child">${() => reactive14.value}</span>`).render().mount(div14g);
@@ -3974,11 +3744,9 @@ import type { NixChildren } from "./nix";
   reactive14.value = "v2";
   assert14(div14g.querySelector("#react-child")?.textContent === "v2", "children reactivos actualizan al cambiar señal");
 
-  // ── Summary ───────────────────────────────────────────────────────────────
   summaryEl.textContent = `${pass} passed, ${fail} failed`;
   summaryEl.className = fail === 0 ? "pass" : "fail";
 
-  // ── Demo ──────────────────────────────────────────────────────────────────
   const demoEl = document.getElementById("demo14")!;
 
   class DemoCard extends NixComponent {
@@ -4031,14 +3799,9 @@ import type { NixChildren } from "./nix";
   `, demoEl);
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 16: show / hide directive
-// ══════════════════════════════════════════════════════════════
-
 import { showWhen } from "./nix";
 
 {
-  // ─── Helpers ──────────────────────────────────────────────────────────────
   let passed16 = 0, failed16 = 0;
   function assert16(cond: boolean, label: string) {
     if (cond) {
@@ -4052,7 +3815,6 @@ import { showWhen } from "./nix";
 
   console.group("Fase 16 — show / hide directive");
 
-  // ─── show attribute ───────────────────────────────────────────────────────
   const vis = signal(true);
 
   // Test container
@@ -4112,7 +3874,6 @@ import { showWhen } from "./nix";
 
   console.groupEnd();
 
-  // ─── Summary ──────────────────────────────────────────────────────────────
   const tests16El = document.getElementById("tests16");
   const summary16El = document.getElementById("summary16");
 
@@ -4129,7 +3890,6 @@ import { showWhen } from "./nix";
     summary16El.innerHTML = `<p style="font-weight:600;color:${failed16 === 0 ? "#22c55e" : "#ef4444"}">${passed16}/${total} tests pasados</p>`;
   }
 
-  // ─── Demo ─────────────────────────────────────────────────────────────────
   const demo16El = document.getElementById("demo16");
   if (demo16El) {
     const visible = signal(true);
@@ -4184,10 +3944,6 @@ import { showWhen } from "./nix";
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 17: Portal
-// ══════════════════════════════════════════════════════════════
-
 import { portal } from "./nix";
 
 {
@@ -4199,7 +3955,6 @@ import { portal } from "./nix";
 
   console.group("Fase 17 — Portal");
 
-  // ─── portal() renders into target, NOT into tree position ───────────────
   const target = document.createElement("div");
   target.id = "portal-target-17";
   document.body.appendChild(target);
@@ -4235,7 +3990,6 @@ import { portal } from "./nix";
     "portal content has correct text"
   );
 
-  // ─── Reactive portal: mounted when signal is true, unmounted when false ───
   const showPortal = signal(true);
   const target2 = document.createElement("div");
   document.body.appendChild(target2);
@@ -4266,7 +4020,6 @@ import { portal } from "./nix";
     "reactive portal re-mounts when condition becomes true again"
   );
 
-  // ─── CSS selector string as target ────────────────────────────────────
   const target3 = document.createElement("div");
   target3.id = "portal-selector-target";
   document.body.appendChild(target3);
@@ -4281,7 +4034,6 @@ import { portal } from "./nix";
     "portal() accepts a CSS selector string as target"
   );
 
-  // ─── unmount() cleans up portal content ─────────────────────────────
   const target4 = document.createElement("div");
   document.body.appendChild(target4);
   const handle4 = portal(
@@ -4310,7 +4062,6 @@ import { portal } from "./nix";
 
   console.groupEnd();
 
-  // ─── Summary ──────────────────────────────────────────────────────────────────
   const tests17El = document.getElementById("tests17");
   const summary17El = document.getElementById("summary17");
 
@@ -4337,7 +4088,6 @@ import { portal } from "./nix";
     summary17El.innerHTML = `<p style="font-weight:600;color:${failed17 === 0 ? "#22c55e" : "#ef4444"}">${passed17}/${total} tests pasados</p>`;
   }
 
-  // ─── Demo ──────────────────────────────────────────────────────────────────
   const demo17El = document.getElementById("demo17");
   if (demo17El) {
     const showModal = signal(false);
@@ -4423,13 +4173,9 @@ import { portal } from "./nix";
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 17b: Portal Ergonomics
 //  Option A: createPortalOutlet + portalOutlet
 //  Option B: portal() con NixRef
 //  Option C: provideOutlet + injectOutlet
-//  Tests → #tests17b | Summary → #summary17b | Demo → #demo17b
-// ══════════════════════════════════════════════════════════════
 import { createPortalOutlet, portalOutlet, provideOutlet, injectOutlet } from "./nix";
 import type { PortalOutlet } from "./nix";
 
@@ -4443,8 +4189,6 @@ import type { PortalOutlet } from "./nix";
   }
 
   console.group("Fase 17b — Portal Ergonomics");
-
-  // ─── Option A: createPortalOutlet + portalOutlet ───────────────────────────
 
   // Test 1: token shape
   const outletA = createPortalOutlet();
@@ -4480,8 +4224,6 @@ import type { PortalOutlet } from "./nix";
   hostA.remove();
   hostClean.remove();
 
-  // ─── Option B: portal() con NixRef ────────────────────────────────────────
-
   // Test 5: portal renders into ref.el
   const refTarget = ref<HTMLElement>();
   const hostRef = document.createElement("div");
@@ -4504,8 +4246,6 @@ import type { PortalOutlet } from "./nix";
   hostRef.remove();
   hostRef2.remove();
 
-  // ─── Option C: provideOutlet + injectOutlet ────────────────────────────────
-
   let injectedOutlet: PortalOutlet | undefined;
   const outletC = createPortalOutlet();
 
@@ -4527,7 +4267,6 @@ import type { PortalOutlet } from "./nix";
 
   console.groupEnd();
 
-  // ─── Summary ──────────────────────────────────────────────────────────────
   const tests17bEl = document.getElementById("tests17b");
   const summary17bEl = document.getElementById("summary17b");
 
@@ -4542,7 +4281,6 @@ import type { PortalOutlet } from "./nix";
     summary17bEl.innerHTML = `<p style="font-weight:600;color:${failed17b === 0 ? "#22c55e" : "#ef4444"}">${passed17b}/${total} tests pasados</p>`;
   }
 
-  // ─── Demo ─────────────────────────────────────────────────────────────────
   const demo17bEl = document.getElementById("demo17b");
   if (demo17bEl) {
     // AppLayout provides a PortalOutlet; ModalButton injects it.
@@ -4612,13 +4350,8 @@ import type { PortalOutlet } from "./nix";
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 18: Error Boundaries
-//  Tests → #tests18 | Summary → #summary18 | Demo → #demo18
-// ══════════════════════════════════════════════════════════════
 import { createErrorBoundary } from "./nix";
 
-// CANARY — does Phase 18 code execute at all?
 document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started";
 
 {
@@ -4632,7 +4365,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
 
   console.group("Fase 18 — Error Boundaries");
 
-  // ─── Test 1: renders content when no error ────────────────────────────────
   const host1 = document.createElement("div");
   document.body.appendChild(host1);
   createErrorBoundary(
@@ -4643,7 +4375,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18(host1.querySelector("#eb-fb1") === null, "no error → fallback NOT rendered");
   host1.remove();
 
-  // ─── Test 2: renders fallback when template throws on render ─────────────
   const host2 = document.createElement("div");
   document.body.appendChild(host2);
   createErrorBoundary(
@@ -4653,7 +4384,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18(host2.querySelector("#eb-fb2") !== null, "render throw → fallback shown");
   host2.remove();
 
-  // ─── Test 3: fallback receives the error ──────────────────────────────────
   const host3 = document.createElement("div");
   document.body.appendChild(host3);
   const caughtErr = signal<unknown>(null);
@@ -4665,7 +4395,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18((caughtErr.value as Error).message === "typed error", "fallback fn: correct error message");
   host3.remove();
 
-  // ─── Test 4: NixComponent — onInit throws ─────────────────────────────────
   class BrokenInit extends NixComponent {
     onInit() { throw new Error("init fail"); }
     render() { return html`<span id="eb-broken-init">never</span>`; }
@@ -4677,7 +4406,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18(host4.querySelector("#eb-fb4") !== null, "onInit throw → fallback shown");
   host4.remove();
 
-  // ─── Test 5: NixComponent — render() throws ──────────────────────────────
   class BrokenRender extends NixComponent {
     render() { throw new Error("render method fail"); return html``; }
   }
@@ -4687,7 +4415,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18(host5.querySelector("#eb-fb5") !== null, "render() throw → fallback shown");
   host5.remove();
 
-  // ─── Test 6: reactive error triggers fallback ─────────────────────────────
   const boom = signal(false);
   const host6 = document.createElement("div");
   document.body.appendChild(host6);
@@ -4705,7 +4432,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18(host6.querySelector("#eb-fb6") !== null, "reactive throw → fallback shown");
   host6.remove();
 
-  // ─── Test 7: unmount cleans up boundary ──────────────────────────────────
   const host7 = document.createElement("div");
   document.body.appendChild(host7);
   const handle7 = createErrorBoundary(
@@ -4717,7 +4443,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   assert18(host7.querySelector("#eb-unmount") === null, "after unmount: content removed");
   host7.remove();
 
-  // ─── Test 8: nested boundaries — inner catches first ─────────────────────
   const host8 = document.createElement("div");
   document.body.appendChild(host8);
   const innerErr = signal(false);
@@ -4741,7 +4466,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
 
   console.groupEnd();
 
-  // ─── Summary ──────────────────────────────────────────────────────────────
   const tests18El = document.getElementById("tests18");
   const summary18El = document.getElementById("summary18");
 
@@ -4756,7 +4480,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
     summary18El.innerHTML = `<p style="font-weight:600;color:${failed18 === 0 ? "#22c55e" : "#ef4444"}">${passed18}/${total} tests pasados</p>`;
   }
 
-  // ─── Demo ─────────────────────────────────────────────────────────────────
   const demo18El = document.getElementById("demo18");
   if (demo18El) {
     // Simulates a widget that can fail on demand
@@ -4826,10 +4549,6 @@ document.getElementById("tests18")!.textContent = "CANARY: Phase 18 code started
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 19: Transitions / Animations
-//  Tests → #tests19 | Summary → #summary19 | Demo → #demo19
-// ══════════════════════════════════════════════════════════════
 import { transition } from "./nix";
 
 {
@@ -4845,7 +4564,6 @@ import { transition } from "./nix";
 
   console.group("Fase 19 — Transitions");
 
-  // ─── Test 1: static content renders in DOM (no appear) ────────────────────
   {
     const host = document.createElement("div");
     document.body.appendChild(host);
@@ -4855,7 +4573,6 @@ import { transition } from "./nix";
     ).mount(host);
     const rendered = host.querySelector(".t19-static");
     assert19(rendered !== null, "T1 — static content rendered in DOM");
-    // No enter classes without appear
     assert19(
       !rendered?.classList.contains("fade-enter-from"),
       "T1 — no enter-from class without appear"
@@ -4864,7 +4581,6 @@ import { transition } from "./nix";
     assert19(host.querySelector(".t19-static") === null, "T1 — cleanup removes DOM");
   }
 
-  // ─── Test 2: static content with appear adds enter classes ────────────────
   {
     const host = document.createElement("div");
     document.body.appendChild(host);
@@ -4885,7 +4601,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 3: reactive null→value triggers enter ───────────────────────────
   {
     const show = signal(false);
     const host = document.createElement("div");
@@ -4904,7 +4619,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 4: reactive value→null triggers leave (element still in DOM) ────
   {
     const show = signal(true);
     const host = document.createElement("div");
@@ -4913,7 +4627,6 @@ import { transition } from "./nix";
       () => show.value ? html`<div class="t19-leave">Leave</div>` : null,
       { name: "fade" }
     ).mount(host);
-    // Initially visible
     assert19(host.querySelector(".t19-leave") !== null, "T4 — content starts visible");
     show.value = false;
     // During leave transition, element still in DOM with leave classes
@@ -4925,7 +4638,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 5: JS hooks onBeforeEnter / onAfterEnter fire ───────────────────
   {
     let beforeFired = false;
     const host = document.createElement("div");
@@ -4943,7 +4655,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 6: JS hooks onBeforeLeave fires ────────────────────────────────
   {
     let leaveFired = false;
     const show = signal(true);
@@ -4958,7 +4669,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 7: custom class name overrides ─────────────────────────────────
   {
     const host = document.createElement("div");
     document.body.appendChild(host);
@@ -4972,7 +4682,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 8: leave cancelled by re-enter (instant swap) ──────────────────
   {
     const show = signal(true);
     const host = document.createElement("div");
@@ -4988,7 +4697,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Test 9: unmount cleans up transition content from DOM ───────────────
   {
     const host = document.createElement("div");
     document.body.appendChild(host);
@@ -5002,7 +4710,6 @@ import { transition } from "./nix";
     host.remove();
   }
 
-  // ─── Summary ────────────────────────────────────────────────────────────
   console.groupEnd();
 
   const tests19El = document.getElementById("tests19");
@@ -5019,7 +4726,6 @@ import { transition } from "./nix";
     summary19El.innerHTML = `<p style="font-weight:600;color:${failed19 === 0 ? "#22c55e" : "#ef4444"}">${passed19}/${total} tests pasados</p>`;
   }
 
-  // ─── Demo ────────────────────────────────────────────────────────────────
   const demo19El = document.querySelector("#demo19");
   if (demo19El) {
     const showFade = signal(true);
@@ -5092,10 +4798,6 @@ import { transition } from "./nix";
   }
 }
 
-// ══════════════════════════════════════════════════════════════
-//  FASE 20: Route Guards
-//  Tests → #tests20 | Summary → #summary20 | Demo → #demo20
-// ══════════════════════════════════════════════════════════════
 import type { NavigationGuard } from "./nix";
 
 {
@@ -5117,7 +4819,6 @@ import type { NavigationGuard } from "./nix";
     { path: "/admin", component: () => html`<span>admin</span>` },
   ];
 
-  // ─── Test 1: beforeEach fires on navigate ─────────────────────────────────
   {
     const r = createRouter(makeRoutes());
     let fired = false;
@@ -5126,7 +4827,6 @@ import type { NavigationGuard } from "./nix";
     assert20(fired, "T1 — beforeEach fires on navigate");
   }
 
-  // ─── Test 2: beforeEach returning false cancels navigation ────────────────
   {
     const r = createRouter(makeRoutes());
     const beforePath = r.current.value;
@@ -5135,7 +4835,6 @@ import type { NavigationGuard } from "./nix";
     assert20(r.current.value === beforePath, "T2 — beforeEach false cancels navigation");
   }
 
-  // ─── Test 3: beforeEach returning a string redirects ─────────────────────
   {
     const r = createRouter(makeRoutes());
     r.beforeEach((to) => {
@@ -5145,7 +4844,6 @@ import type { NavigationGuard } from "./nix";
     assert20(r.current.value === "/", "T3 — beforeEach redirect: /admin → /");
   }
 
-  // ─── Test 4: beforeEach receives correct to/from arguments ───────────────
   {
     const r = createRouter(makeRoutes());
     let capturedTo = "", capturedFrom = "";
@@ -5154,7 +4852,6 @@ import type { NavigationGuard } from "./nix";
     assert20(capturedTo === "/about" && capturedFrom === "/", "T4 — guard receives correct to/from");
   }
 
-  // ─── Test 5: per-route beforeEnter fires only for that route ─────────────
   {
     let adminGuardFired = false;
     const routes = [
@@ -5172,7 +4869,6 @@ import type { NavigationGuard } from "./nix";
     assert20(notFiredYet && adminGuardFired, "T5 — beforeEnter fires only for /admin");
   }
 
-  // ─── Test 6: per-route beforeEnter returning false blocks navigation ──────
   {
     const routes = [
       { path: "/", component: () => html`<span>home</span>` },
@@ -5187,7 +4883,6 @@ import type { NavigationGuard } from "./nix";
     assert20(r.current.value === beforePath, "T6 — beforeEnter false blocks /secret");
   }
 
-  // ─── Test 7: multiple beforeEach guards run in registration order ─────────
   {
     const r = createRouter(makeRoutes());
     const order: number[] = [];
@@ -5198,7 +4893,6 @@ import type { NavigationGuard } from "./nix";
     assert20(order[0] === 1 && order[1] === 2 && order[2] === 3, "T7 — guards run in order [1,2,3]");
   }
 
-  // ─── Test 8: beforeEach unsubscribe removes the guard ────────────────────
   {
     const r = createRouter(makeRoutes());
     let count = 0;
@@ -5209,7 +4903,6 @@ import type { NavigationGuard } from "./nix";
     assert20(count === 1, "T8 — unsubscribed guard does not fire after stop()");
   }
 
-  // ─── Test 9: first guard returning false short-circuits remaining guards ──
   {
     const r = createRouter(makeRoutes());
     let secondFired = false;
@@ -5219,7 +4912,6 @@ import type { NavigationGuard } from "./nix";
     assert20(!secondFired, "T9 — second guard skipped when first returns false");
   }
 
-  // ─── Summary ────────────────────────────────────────────────────────────
   console.groupEnd();
 
   const tests20El = document.getElementById("tests20");
@@ -5236,7 +4928,6 @@ import type { NavigationGuard } from "./nix";
     summary20El.innerHTML = `<p style="font-weight:600;color:${failed20 === 0 ? "#22c55e" : "#ef4444"}">${passed20}/${total} tests pasados</p>`;
   }
 
-  // ─── Demo ────────────────────────────────────────────────────────────────
   const demo20El = document.querySelector("#demo20");
   if (demo20El) {
     const isLoggedIn = signal(false);

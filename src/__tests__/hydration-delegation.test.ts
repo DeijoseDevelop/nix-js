@@ -4,7 +4,7 @@ import { hydrate } from "../nix/hydrate/index.js";
 import { renderToString } from "../nix/server/index.js";
 
 // =============================================================================
-// Fix #3: Unified event delegation in hydration
+// Unified event delegation in hydration
 // =============================================================================
 // The hydrator must use the same global _delegatedRegistry as mount-time
 // bindings, not addEventListener directly.

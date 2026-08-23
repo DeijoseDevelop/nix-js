@@ -98,7 +98,6 @@ describe("_mountComponent()", () => {
         const before = document.createTextNode("END");
         parent.appendChild(before);
 
-        // Supongo que makeComp() está definido más arriba en tu archivo
         const comp = makeComp();
         _mountComponent(comp as any, parent, before);
 

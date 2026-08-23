@@ -157,8 +157,6 @@ const _delegatedHandlers = new Map<string, (e: Event) => void>();
  * as mount-time bindings. Used by both `activateBindings` (mount) and the
  * hydrator to ensure consistent event delegation.
  *
- * (v3.2 — Fix #3: unified event delegation in hydration)
- *
  * @returns A dispose function that removes the handler from the element.
  */
 export function activateDelegatedEvent(
