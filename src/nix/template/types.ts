@@ -49,10 +49,14 @@ export const NIX_RENDER_PROTOCOL = Symbol.for("@deijose/nix-js/render-protocol")
 /**
  * Runtime feature capabilities, for tooling to detect support without
  * inferring it from version strings.
+ *
+ * NOTE: Partial attribute interpolation is now handled at compile time by
+ * @deijose/vite-plugin-nix-js. The core runtime does not support it natively.
+ * Use the Vite plugin for partial interpolation support.
  */
 export const templateFeatures = {
     /** Partial attribute interpolation (`class="btn ${size}"`) is supported. */
-    partialAttributeInterpolation: true,
+    partialAttributeInterpolation: false,
 } as const;
 
 export interface NixTemplate {

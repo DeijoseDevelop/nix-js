@@ -2,6 +2,35 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.4.0
+
+### Changed
+
+- **Partial attribute interpolation moved to the Vite plugin** — the
+  compile-time lexer (`attribute-interpolation.ts`) has been moved from the
+  core runtime to `@deijose/vite-plugin-nix-js`. The core `html()` function
+  no longer normalizes partial attribute interpolations (`class="btn ${size}"`).
+  Use the Vite plugin for partial interpolation support.
+  - `attribute-interpolation.ts` removed from the core.
+  - `templateFeatures.partialAttributeInterpolation` is now `false`.
+  - `analyzeTemplate`, `buildCanonicalValues`, `CompositeAttributePlan`,
+    `TemplateNormalizationPlan`, and `ValuePlan` are no longer exported from
+    `@deijose/nix-js/template`.
+  - Templates with only full bindings (`class=${value}`) are unaffected.
+  - Without the plugin, partial interpolations produce corrupt markup —
+    this is documented, not a regression. The recommended setup is to always
+    use `@deijose/vite-plugin-nix-js`.
+  - Bundle size reduced by ~2 KB (the lexer is no longer shipped in the
+    runtime).
+
+### Migration
+
+- Install `@deijose/vite-plugin-nix-js` >= 1.1.0 and add it to your Vite config.
+- If using `@deijose/nix-js-kit`, the kit's legacy interpolation transform
+  remains as a fallback when the Vite plugin is not installed.
+- If using Nix.js directly via importmap (no bundler), only full bindings
+  are supported. Use `class=${"btn " + size}` instead of `class="btn ${size}"`.
+
 ## v3.3.0
 
 ### Added

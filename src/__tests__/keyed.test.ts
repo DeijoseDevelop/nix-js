@@ -130,7 +130,7 @@ describe("getSequence() — LIS", () => {
 describe("keyed static mount", () => {
     it("repeat directo en mount renderiza items", () => {
         const el = document.createElement("div");
-        const list = repeat([{ id: 1, name: "a" }, { id: 2, name: "b" }], (i) => i.id, (i) => html`<li class="item-${i.id}">${i.name}</li>`);
+        const list = repeat([{ id: 1, name: "a" }, { id: 2, name: "b" }], (i) => i.id, (i) => html`<li class=${"item-" + i.id}>${i.name}</li>`);
         html`<ul>${list}</ul>`.mount(el);
         expect(el.querySelectorAll("li").length).toBe(2);
         expect(el.querySelector("li")?.className).toBe("item-1");

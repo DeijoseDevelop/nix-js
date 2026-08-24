@@ -3,9 +3,6 @@ export { ref, isNixTemplate, isKeyedList, COMMENT, NIX_TEMPLATE_DESCRIPTOR, NIX_
 
 export { html, buildHTML } from "./html.js";
 
-export type { TemplateNormalizationPlan, ValuePlan, CompositeAttributePlan } from "./attribute-interpolation.js";
-export { analyzeTemplate, buildCanonicalValues } from "./attribute-interpolation.js";
-
 export { raw } from "./raw.js";
 
 export { showWhen } from "./bindings.js";

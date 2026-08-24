@@ -639,25 +639,48 @@ html`
 - `() => value` → reactive, updates via `effect`.
 - `null`, `undefined`, or `false` → attribute is **removed**.
 
-> **Partial attribute interpolation** is supported: static text and
-> interpolations can be mixed inside the same attribute value. Every dynamic
-> segment is coerced with `String()`, exactly like a template literal:
+> **Partial attribute interpolation** (`class="btn btn-${size}"`) is supported
+> via the **`@deijose/vite-plugin-nix-js`** Vite plugin (>= 1.1.0). The plugin
+> runs a compile-time lexer that rewrites partial interpolations into full
+> bindings before the core sees them. Install the plugin and add it to your
+> Vite config:
+>
+> ```bash
+> npm install -D @deijose/vite-plugin-nix-js
+> ```
+>
+> ```typescript
+> // vite.config.ts
+> import nix from "@deijose/vite-plugin-nix-js";
+> export default defineConfig({ plugins: [nix()] });
+> ```
+>
+> With the plugin, static text and interpolations can be mixed inside the same
+> attribute value. Every dynamic segment is coerced with `String()`, exactly
+> like a template literal:
 >
 > ```typescript
 > const size = signal("lg");
 >
-> // ✅ Supported — literal prefixes/suffixes mixed with interpolations
+> // ✅ Supported with the Vite plugin
 > html`<div class="btn btn-${() => size.value}">…</div>`
 > // class="btn btn-lg"
 >
 > html`<a href="/blog/${() => slug.value}">Post</a>`
 > html`<input id=${`field-${id}`} data-x="a ${x} b">`
-> html`<div title=${"pre"}${"fix"}>`  // "prefix" — String() per segment
 > ```
 >
-> Semantics:
+> Without the plugin (importmap, no bundler), only **full bindings** are
+> supported. Use concatenation instead:
+>
+> ```typescript
+> // Without the plugin — use full bindings only
+> html`<div class=${"btn btn-" + size.value}>…</div>`
+> ```
+>
+> Semantics (with the plugin):
 > - `null`, `undefined` and `false` inside a partial render as `"null"`,
->   `"undefined"` and `"false"` (JS interpolation semantics). Only *full*
+>   `"undefined"`, `"false"` (JS interpolation semantics). Only *full*
 >   bindings remove the attribute for those values.
 > - If every segment is static, the string is composed once when the template
 >   is created. If any segment is a function, one single `effect` updates the
