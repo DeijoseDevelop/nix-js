@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file.
 
+## v3.5.0
+
+### Added
+
+- **Compiler runtime facade exports** — internal APIs are now exported with
+  underscore-prefixed names so the build-time compiler
+  (`@deijose/nix-js-compiler`) and Vite plugin (`@deijose/vite-plugin-nix-js`)
+  can generate direct DOM manipulation code without duplicating runtime logic:
+  - `_activateBindingsWithNodes` — activates bindings using pre-resolved nodes,
+    skipping the TreeWalker phase (used by compiled factories).
+  - `_activateNodeBinding` — activates a single node binding directly.
+  - `_ensureDelegatedEvent` — registers a global delegated event listener.
+  - `_setDelegatedEvent` — sets a delegated event handler on an element.
+  - `_activateDelegatedEvent` — alias of `activateDelegatedEvent` for the plugin.
+  - `_queueDOMWrite` — queues a DOM write for batched flushing.
+  - `_createKeyedMount` — creates a keyed list mount point.
+  - `_reconcileKeyedList` — reconciles a keyed list with new items.
+  - `_getKeyedSequence` — alias of `getSequence` for the plugin.
+  - `_captureContextSnapshot`, `_withContextSnapshot` — capture and restore
+    the context stack for compiled component rendering.
+  - `KEntry` type now exported from `@deijose/nix-js/template`.
+  - `NIX_TEMPLATE_DESCRIPTOR`, `NIX_RENDER_PROTOCOL` already exported.
+
+### Changed
+
+- `activateBindings` now delegates to `_activateBindingsWithNodes` after the
+  TreeWalker phase, reducing code duplication.
+- `activateDelegatedEvent` refactored to use `_ensureDelegatedEvent` and
+  `_setDelegatedEvent` internally.
+
+### Compatibility
+
+- No breaking changes for existing applications.
+- These exports are internal (`_`-prefixed) and intended for the compiler
+  and plugin only. They may change between minor versions.
+
 ## v3.4.0
 
 ### Changed

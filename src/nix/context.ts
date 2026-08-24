@@ -29,6 +29,21 @@ export function _captureContextSnapshot(): Map<unknown, unknown>[] {
     return [...currentStack()];
 }
 
+export function _withContextSnapshot<T>(
+    snapshot: Map<unknown, unknown>[],
+    fn: () => T,
+): T {
+    const stack = currentStack();
+    const saved = stack.splice(0);
+    snapshot.forEach((entry) => stack.push(entry));
+    try {
+        return fn();
+    } finally {
+        stack.splice(0);
+        saved.forEach((entry) => stack.push(entry));
+    }
+}
+
 /** @internal — pushes an empty context for a new component (static render). */
 export function _pushComponentContext(): void {
     currentStack().push(new Map());

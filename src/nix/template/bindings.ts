@@ -159,12 +159,7 @@ const _delegatedHandlers = new Map<string, (e: Event) => void>();
  *
  * @returns A dispose function that removes the handler from the element.
  */
-export function activateDelegatedEvent(
-    el: Element,
-    eventName: string,
-    modifiers: readonly string[],
-    rawHandler: EventListener,
-): () => void {
+export function _ensureDelegatedEvent(eventName: string): void {
     if (!_delegatedRegistry.has(eventName)) {
         const propName = `__nix_${eventName}`;
         const modsName = `__nix_${eventName}_mods`;
@@ -173,14 +168,30 @@ export function activateDelegatedEvent(
         document.addEventListener(eventName, boundHandler);
         _delegatedRegistry.add(eventName);
     }
+}
 
+export function _setDelegatedEvent(
+    el: Element,
+    eventName: string,
+    modifiers: readonly string[],
+    rawHandler: EventListener,
+): void {
+    _ensureDelegatedEvent(eventName);
     const nodePropName = `__nix_${eventName}`;
     const nodeModsName = `__nix_${eventName}_mods`;
     (el as any)[nodePropName] = rawHandler;
-    if (modifiers.length > 0) {
-        (el as any)[nodeModsName] = modifiers;
-    }
+    if (modifiers.length > 0) (el as any)[nodeModsName] = modifiers;
+}
 
+export function activateDelegatedEvent(
+    el: Element,
+    eventName: string,
+    modifiers: readonly string[],
+    rawHandler: EventListener,
+): () => void {
+    _setDelegatedEvent(el, eventName, modifiers, rawHandler);
+    const nodePropName = `__nix_${eventName}`;
+    const nodeModsName = `__nix_${eventName}_mods`;
     return () => {
         (el as any)[nodePropName] = null;
         (el as any)[nodeModsName] = null;
@@ -203,9 +214,6 @@ export function activateBindings(
     values: unknown[],
     pathMap: Array<{ nodeIndex: number; name?: string } | null>,
 ): { disposes: Array<() => void>; postMountHooks: Array<() => void> } {
-    const disposes: Array<() => void> = [];
-    const postMountHooks: Array<() => void> = [];
-
     // PHASE 1: READ — single-pass TreeWalker O(N)
     const resolvedNodes = new Array<Node | null>(contexts.length);
 
@@ -232,7 +240,24 @@ export function activateBindings(
         resolvedNodes[i] = info ? flatNodes[info.nodeIndex] : null;
     }
 
-    // PHASE 2: MUTATE
+    // PHASE 2: MUTATE (delegated to _activateBindingsWithNodes)
+    return _activateBindingsWithNodes(fragment, contexts, values, pathMap, resolvedNodes);
+}
+
+/**
+ * Activates bindings using pre-resolved nodes — skips the TreeWalker phase.
+ * Used by the compiler's __nixCompiledTemplate to eliminate the second TreeWalker.
+ */
+export function _activateBindingsWithNodes(
+    _fragment: DocumentFragment,
+    contexts: BindingContext[],
+    values: unknown[],
+    pathMap: Array<{ nodeIndex: number; name?: string } | null>,
+    resolvedNodes: Array<Node | null>,
+): { disposes: Array<() => void>; postMountHooks: Array<() => void> } {
+    const disposes: Array<() => void> = [];
+    const postMountHooks: Array<() => void> = [];
+
     for (let i = 0; i < contexts.length; i++) {
         const ctx = contexts[i];
         const value = values[i];
